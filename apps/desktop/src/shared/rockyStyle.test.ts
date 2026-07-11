@@ -87,6 +87,19 @@ describe("Rocky style evaluator", () => {
     expect(result.failures).toContain("too many sentences: 5/4");
   });
 
+  it("rejects an ordinary reply that is too terse to carry Rocky personality", () => {
+    const result = evaluateRockyStyle(ROCKY_DEFAULT_REPLY_CASE, "Yes yes yes.");
+    expect(result.failures).toContain("too short: 3/4 words");
+  });
+
+  it("keeps Rocky's one question at the end of the reply", () => {
+    const result = evaluateRockyStyle(
+      ROCKY_DEFAULT_REPLY_CASE,
+      "What powers ship, question? Rocky has three ideas.",
+    );
+    expect(result.failures).toContain("question must end reply");
+  });
+
   it("applies the central cadence profile to ordinary Realtime replies", () => {
     const result = evaluateRockyStyle(
       ROCKY_DEFAULT_REPLY_CASE,

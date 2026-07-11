@@ -25,4 +25,11 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("React first. Then ask at most one specific question");
     expect(ROCKY_INSTRUCTIONS).toContain("No therapy");
   });
+
+  it("includes the three signature Rocky phrases without making them mandatory catchphrases", () => {
+    expect(ROCKY_INSTRUCTIONS).toContain('"Amaze. Amaze. Amaze."');
+    expect(ROCKY_INSTRUCTIONS).toContain('"Fist my bump."');
+    expect(ROCKY_INSTRUCTIONS).toContain('"Can hear."');
+    expect(ROCKY_INSTRUCTIONS).toContain("Never force more than one into a reply");
+  });
 });

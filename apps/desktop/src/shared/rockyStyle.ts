@@ -3,6 +3,7 @@ import { ROCKY_CADENCE } from "./personality.ts";
 export interface RockyStyleCase {
   name: string;
   input: string;
+  minWords?: number;
   maxWords: number;
   requiredAll?: string[];
   requiredAny?: string[];
@@ -10,6 +11,7 @@ export interface RockyStyleCase {
   minQuestions?: number;
   maxQuestions?: number;
   maxSentences?: number;
+  questionsMustEndReply?: boolean;
 }
 
 export interface RockyStyleResult {
@@ -28,6 +30,7 @@ export const ROCKY_GREETING_CASE: RockyStyleCase = {
   input: "A new family voice session just started. Give the first greeting.",
   maxWords: ROCKY_CADENCE.greetingMaxWords,
   requiredAll: ["rocky", "question?"],
+  questionsMustEndReply: true,
   forbiddenAny: [
     "warm",
     "resonant",
@@ -46,9 +49,11 @@ export const ROCKY_GREETING_CASE: RockyStyleCase = {
 export const ROCKY_DEFAULT_REPLY_CASE: RockyStyleCase = {
   name: "Realtime default reply cadence",
   input: "Ongoing family conversation.",
+  minWords: ROCKY_CADENCE.defaultMinWords,
   maxWords: ROCKY_CADENCE.defaultMaxWords,
   maxQuestions: ROCKY_CADENCE.maxQuestionsPerReply,
   maxSentences: ROCKY_CADENCE.defaultMaxSentences,
+  questionsMustEndReply: true,
 };
 
 export const ROCKY_NEGATIVE_PATTERNS = [
@@ -80,6 +85,9 @@ export function evaluateRockyStyle(testCase: RockyStyleCase, text: string): Rock
   const questions = (text.match(/\?/g) ?? []).length;
   const sentences = text.split(/[.!?]+/).map((part) => part.trim()).filter(Boolean).length;
 
+  if (testCase.minWords !== undefined && words < testCase.minWords) {
+    failures.push(`too short: ${words}/${testCase.minWords} words`);
+  }
   if (words > testCase.maxWords) failures.push(`too long: ${words}/${testCase.maxWords} words`);
   if (testCase.minQuestions !== undefined && questions < testCase.minQuestions) {
     failures.push(`too few questions: ${questions}/${testCase.minQuestions}`);
@@ -89,6 +97,9 @@ export function evaluateRockyStyle(testCase: RockyStyleCase, text: string): Rock
   }
   if (testCase.maxSentences !== undefined && sentences > testCase.maxSentences) {
     failures.push(`too many sentences: ${sentences}/${testCase.maxSentences}`);
+  }
+  if (testCase.questionsMustEndReply && questions > 0 && !/\?\s*$/.test(text)) {
+    failures.push("question must end reply");
   }
   for (const pattern of ROCKY_NEGATIVE_PATTERNS) {
     if (pattern.test(text)) failures.push(`negative pattern: ${pattern}`);
