@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -12,6 +13,18 @@ import type {
 const MAX_SHEETS = 6;
 const MAX_COLUMNS = 20;
 const MAX_ROWS = 200;
+
+export function nextSpreadsheetPath(outputDirectory: string, filename: string): string {
+  const initialPath = path.join(outputDirectory, filename);
+  if (!existsSync(initialPath)) return initialPath;
+
+  const parsed = path.parse(filename);
+  for (let revision = 2; revision < 10_000; revision += 1) {
+    const candidate = path.join(outputDirectory, `${parsed.name}-${revision}${parsed.ext}`);
+    if (!existsSync(candidate)) return candidate;
+  }
+  throw new Error(`Too many revisions of ${filename}`);
+}
 
 function cleanText(value: unknown, fallback: string, maxLength: number): string {
   if (typeof value !== "string") return fallback;
@@ -120,8 +133,11 @@ export async function writeSpreadsheet(
     applySheetStyle(worksheet, sheet);
   }
 
-  const filename = spec.filename ?? cleanFilename(undefined, spec.title);
-  const filePath = path.join(outputDirectory, filename);
+  const requestedFilename = spec.filename ?? cleanFilename(undefined, spec.title);
+  // ONLYOFFICE keeps an open workbook cached and does not reliably refresh when another process
+  // replaces the same path. A distinct revision guarantees that the updated workbook opens visibly.
+  const filePath = nextSpreadsheetPath(outputDirectory, requestedFilename);
+  const filename = path.basename(filePath);
   await workbook.xlsx.writeFile(filePath);
 
   return {
@@ -131,4 +147,3 @@ export async function writeSpreadsheet(
     sheets: spec.sheets,
   };
 }
-

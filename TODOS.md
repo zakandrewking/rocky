@@ -30,6 +30,8 @@
 - [ ] make sure our spreadsheet system works with tools and command line capabilities like this:
   /var/folders/6w/1gtm6b0n6s16j6p_fvlqbrfm0000gn/T/claude-hostloop-plugins/ccb68a6b8377b360/skills/xlsx/SKILL.md
 - [ ] Test a spoken spreadsheet tool call end to end.
+- [x] Make repeated spreadsheet updates open as distinct workbook revisions so ONLYOFFICE visibly
+  foregrounds the new content instead of showing a cached copy of the original path.
   - [ ] Verify that asking for all Minecraft biomes proactively opens a scoped biome workbook.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
   - [x] Add repeatable text-mode style evals and preserve failed phrases as negative examples.

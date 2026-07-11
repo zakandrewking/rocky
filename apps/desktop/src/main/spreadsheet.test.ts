@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
+import { nextSpreadsheetPath, normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
 
 describe("spreadsheet writer", () => {
   it("normalizes filenames and uneven rows", () => {
@@ -30,5 +30,21 @@ describe("spreadsheet writer", () => {
     expect(result.filename).toBe("Experiment.xlsx");
     expect(bytes.subarray(0, 2).toString()).toBe("PK");
   });
-});
 
+  it("creates a visible revision instead of replacing a workbook already open in ONLYOFFICE", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "rocky-sheet-revision-"));
+    const spec = {
+      title: "Minecraft Biomes",
+      filename: "minecraft_biomes.xlsx",
+      sheets: [{ name: "Biomes", columns: ["Biome"], rows: [["Plains"]] }],
+    };
+
+    const first = await writeSpreadsheet(spec, directory);
+    expect(nextSpreadsheetPath(directory, first.filename)).toBe(path.join(directory, "minecraft_biomes-2.xlsx"));
+    const second = await writeSpreadsheet(spec, directory);
+
+    expect(first.filename).toBe("minecraft_biomes.xlsx");
+    expect(second.filename).toBe("minecraft_biomes-2.xlsx");
+    expect(second.path).not.toBe(first.path);
+  });
+});
