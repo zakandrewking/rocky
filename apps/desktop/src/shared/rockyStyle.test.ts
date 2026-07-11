@@ -36,6 +36,20 @@ describe("Rocky style evaluator", () => {
     ]));
   });
 
+  it.each([
+    "Rocky cannot help because it’s broken.",
+    "You’re safe now, question?",
+    "They’ve fixed engine.",
+    "Rocky couldn’t open tank.",
+    "We haven’t tested pipe.",
+  ])("rejects contractions: %s", (text) => {
+    const result = evaluateRockyStyle(
+      { name: "contractions", input: "", maxWords: 40 },
+      text,
+    );
+    expect(result.failures.some((failure) => failure.startsWith("negative pattern"))).toBe(true);
+  });
+
   it("rejects reopening the household-cleaner topic", () => {
     const result = evaluateRockyStyle(
       {

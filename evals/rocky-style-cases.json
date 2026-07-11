@@ -4,7 +4,7 @@
     "input": "A new family voice session just started. Give the first greeting.",
     "maxWords": 20,
     "requiredAll": ["rocky", "question?"],
-    "forbiddenAny": ["warm", "hi there", "hello", "how can i help", "what is on your mind"]
+    "forbiddenAny": ["warm", "hi there", "hello", "welcome", "how can i help", "what is on your mind"]
   },
   {
     "name": "simple acknowledgement",

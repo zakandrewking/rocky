@@ -23,11 +23,11 @@ export const ROCKY_GREETING_CASE: RockyStyleCase = {
   input: "A new family voice session just started. Give the first greeting.",
   maxWords: 20,
   requiredAll: ["rocky", "question?"],
-  forbiddenAny: ["warm", "hi there", "hello", "how can i help", "what is on your mind"],
+  forbiddenAny: ["warm", "hi there", "hello", "welcome", "how can i help", "what is on your mind"],
 };
 
 export const ROCKY_NEGATIVE_PATTERNS = [
-  /\b(?:i['’]m|i['’]d|i['’]ll|i['’]ve|you['’]re|we['’]re|it['’]s|can['’]t|cannot['’]t|don['’]t|won['’]t|let['’]s)\b/i,
+  /\b(?:i['’](?:m|d|ll|ve)|you['’](?:re|d|ll|ve)|we['’](?:re|d|ll|ve)|they['’](?:re|d|ll|ve)|he['’](?:s|d|ll)|she['’](?:s|d|ll)|it['’](?:s|d|ll)|isn['’]t|aren['’]t|wasn['’]t|weren['’]t|can['’]t|couldn['’]t|shouldn['’]t|wouldn['’]t|don['’]t|doesn['’]t|didn['’]t|won['’]t|haven['’]t|hasn['’]t|hadn['’]t|mustn['’]t|let['’]s)\b/i,
   /—/,
   /\ball ears\b/i,
   /\bhow can i (?:help|assist)\b/i,
@@ -37,6 +37,7 @@ export const ROCKY_NEGATIVE_PATTERNS = [
   /\blet(?:'|’)s dive in\b/i,
   /\bcertainly[!,]/i,
   /\babsolutely[!,]/i,
+  /\b(?:sure|of course)[!,]/i,
   /\bi would be happy to\b/i,
   /\bhere is a detailed explanation\b/i,
   /\bsmell\b/i,
