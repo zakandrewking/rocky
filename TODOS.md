@@ -70,6 +70,8 @@
   - [x] Port Lahiru Maramba's MIT-licensed Eridian alien-voice synthesizer to TypeScript/Web Audio:
     deterministic three-note word chords, special emotional vocabulary, stable hashed chords for
     unknown words, melodic name signatures, punctuation/excitement dynamics, and pre-warmed caching.
+  - [x] Add an offline WAV renderer for auditioning the live Eridian vocabulary and timing without
+    launching a conversation or spending an API call.
   - [ ] Layer the Eridian voice with translated English without harming intelligibility. Family-test
     quiet simultaneous chords versus a short emotional chord before speech, with independent volume
     and mute controls; keep the alien voice instant, local, and available even if English TTS fails.

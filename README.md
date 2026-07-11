@@ -64,6 +64,7 @@ pnpm check     # lint, strict typecheck, tests, and production build
 pnpm eval:rocky # run text-mode Rocky persona evals before voice testing
 pnpm review:rocky # review all saved Rocky utterances against the current style contract
 pnpm text:rocky # interactive text-only personality/cadence lab
+pnpm alien:demo # render an ignored WAV using the same Eridian chords as the live app
 pnpm voice:check # verify optional ignored local voice-clone assets
 pnpm voice:server # run the experimental loopback-only YourTTS worker
 pnpm dist:mac  # create an unpacked macOS application
@@ -71,6 +72,10 @@ pnpm dist:mac  # create an unpacked macOS application
 
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.
+
+`pnpm alien:demo` writes `local-data/voice-clone/eridian-demo.wav`. Add words after `--` to audition
+a custom line, for example `pnpm alien:demo -- "Rocky friend. Amaze!"`. This uses the same chord
+mapping and timing as the live browser audio layer and does not make an API call.
 
 ### Persona prompt iteration
 
