@@ -37,5 +37,5 @@ contract.
 - Contains `Rocky` and ends its short question with `question?`.
 - No contractions, em dash, markup, human idioms, or assistant-service language.
 - Does not start with “Hi there” or “Hello.”
-- Does not verbalize acting directions such as “warm.”
-
+- Does not verbalize acting directions or nonverbal sound labels such as “warm,” “resonant,”
+  “hum,” or “chirp.”

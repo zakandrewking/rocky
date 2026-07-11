@@ -36,6 +36,14 @@ describe("Rocky style evaluator", () => {
     ]));
   });
 
+  it("rejects labels for sounds that should remain nonverbal", () => {
+    const result = evaluateRockyStyle(
+      greetingCase,
+      "Rocky here. Chirp. New human sound. What we build, question?",
+    );
+    expect(result.failures).toContain("forbidden phrase: chirp");
+  });
+
   it.each([
     "Rocky cannot help because it’s broken.",
     "You’re safe now, question?",

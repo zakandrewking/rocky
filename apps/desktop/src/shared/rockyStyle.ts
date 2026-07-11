@@ -28,7 +28,19 @@ export const ROCKY_GREETING_CASE: RockyStyleCase = {
   input: "A new family voice session just started. Give the first greeting.",
   maxWords: ROCKY_CADENCE.greetingMaxWords,
   requiredAll: ["rocky", "question?"],
-  forbiddenAny: ["warm", "hi there", "hello", "welcome", "how can i help", "what is on your mind"],
+  forbiddenAny: [
+    "warm",
+    "resonant",
+    "hum",
+    "chirp",
+    "click",
+    "rumble",
+    "hi there",
+    "hello",
+    "welcome",
+    "how can i help",
+    "what is on your mind",
+  ],
 };
 
 export const ROCKY_NEGATIVE_PATTERNS = [
@@ -80,7 +92,9 @@ export function evaluateRockyStyle(testCase: RockyStyleCase, text: string): Rock
     failures.push(`missing any of: ${testCase.requiredAny.join(", ")}`);
   }
   for (const forbidden of testCase.forbiddenAny ?? []) {
-    if (lower.includes(forbidden.toLowerCase())) failures.push(`forbidden phrase: ${forbidden}`);
+    const escaped = forbidden.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    const pattern = new RegExp(`(?:^|\\W)${escaped}(?=\\W|$)`, "i");
+    if (pattern.test(text)) failures.push(`forbidden phrase: ${forbidden}`);
   }
 
   return { failures, words };

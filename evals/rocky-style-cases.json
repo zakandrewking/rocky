@@ -7,7 +7,7 @@
     "maxQuestions": 1,
     "maxSentences": 3,
     "requiredAll": ["rocky", "question?"],
-    "forbiddenAny": ["warm", "hi there", "hello", "welcome", "how can i help", "what is on your mind"]
+    "forbiddenAny": ["warm", "resonant", "hum", "chirp", "click", "rumble", "hi there", "hello", "welcome", "how can i help", "what is on your mind"]
   },
   {
     "name": "simple acknowledgement",
