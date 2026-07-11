@@ -23,6 +23,10 @@
 - [x] Standardize spreadsheet viewing and editing on open-source ONLYOFFICE Desktop Editors.
 - [ ] Test a spoken spreadsheet tool call end to end.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
+- [ ] Replace the preset voice with the trained Rocky voice from
+  [Pedram Amini's Rocky voice-clone project](https://pedsidian.pedramamini.com/Claude/Blog/2026-03-28-rocky-voice-clone#The%20Final%20Product).
+  Locate the model/artifacts, confirm their license and permitted use, and determine the lowest-latency
+  way to combine them with the conversational model.
 - [ ] Add a friendly settings screen for model, voice, and API-key status.
 - [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.
 - [ ] Add optional long-term family memory with clear parental controls.
