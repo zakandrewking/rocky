@@ -1,3 +1,5 @@
+import type { RockyStyleFailure } from "./rockyStyle";
+
 export type CellValue = string | number | boolean | null;
 
 export interface SpreadsheetSheet {
@@ -51,6 +53,7 @@ export interface RockyApi {
   createRealtimeSession: () => Promise<RealtimeSessionSecret>;
   startTranscript: () => Promise<TranscriptSession>;
   appendTranscript: (entry: TranscriptEntry) => Promise<void>;
+  recordStyleFailure: (failure: RockyStyleFailure) => Promise<void>;
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   openSpreadsheet: (filePath: string) => Promise<void>;
   revealSpreadsheet: (filePath: string) => Promise<void>;

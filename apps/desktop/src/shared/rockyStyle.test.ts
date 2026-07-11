@@ -1,14 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateRockyStyle, type RockyStyleCase } from "./rockyStyle";
+import { evaluateRockyStyle, ROCKY_GREETING_CASE } from "./rockyStyle";
 
-const greetingCase: RockyStyleCase = {
-  name: "first greeting",
-  input: "start",
-  maxWords: 24,
-  requiredAll: ["rocky", "question?"],
-  forbiddenAny: ["warm"],
-};
+const greetingCase = ROCKY_GREETING_CASE;
 
 describe("Rocky style evaluator", () => {
   it("accepts a compact Rocky greeting", () => {
@@ -55,4 +49,3 @@ describe("Rocky style evaluator", () => {
     expect(result.failures).toContain("forbidden phrase: what cleaners");
   });
 });
-

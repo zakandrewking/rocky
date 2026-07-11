@@ -12,6 +12,20 @@ export interface RockyStyleResult {
   words: number;
 }
 
+export interface RockyStyleFailure {
+  caseName: string;
+  text: string;
+  failures: string[];
+}
+
+export const ROCKY_GREETING_CASE: RockyStyleCase = {
+  name: "Realtime first greeting",
+  input: "A new family voice session just started. Give the first greeting.",
+  maxWords: 24,
+  requiredAll: ["rocky", "question?"],
+  forbiddenAny: ["warm"],
+};
+
 export const ROCKY_NEGATIVE_PATTERNS = [
   /\b(?:i['’]m|i['’]d|i['’]ll|i['’]ve|you['’]re|we['’]re|it['’]s|can['’]t|cannot['’]t|don['’]t|won['’]t|let['’]s)\b/i,
   /—/,
@@ -51,4 +65,3 @@ export function evaluateRockyStyle(testCase: RockyStyleCase, text: string): Rock
 
   return { failures, words };
 }
-

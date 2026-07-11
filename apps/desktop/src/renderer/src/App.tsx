@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { RockyConfig, SpreadsheetSpec } from "../../shared/types";
+import { evaluateRockyStyle, ROCKY_GREETING_CASE } from "../../shared/rockyStyle";
 
 type Phase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
 
@@ -40,6 +41,7 @@ export function App(): React.JSX.Element {
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const rockyUtteranceCountRef = useRef(0);
 
   useEffect(() => {
     window.rocky.getConfig().then(setConfig).catch((caught) => setError(friendlyError(caught)));
@@ -117,7 +119,21 @@ export function App(): React.JSX.Element {
           if (event.transcript) logTranscript("user", event.transcript);
           break;
         case "response.output_audio_transcript.done":
-          if (event.transcript) logTranscript("rocky", event.transcript);
+          if (event.transcript) {
+            logTranscript("rocky", event.transcript);
+            if (rockyUtteranceCountRef.current === 0) {
+              const result = evaluateRockyStyle(ROCKY_GREETING_CASE, event.transcript);
+              if (result.failures.length) {
+                logTranscript("system", `Greeting style eval failed: ${result.failures.join("; ")}`);
+                void window.rocky.recordStyleFailure({
+                  caseName: ROCKY_GREETING_CASE.name,
+                  text: event.transcript,
+                  failures: result.failures,
+                }).catch(() => undefined);
+              }
+            }
+            rockyUtteranceCountRef.current += 1;
+          }
           break;
         case "response.done":
           for (const item of event.response?.output ?? []) {
@@ -144,6 +160,7 @@ export function App(): React.JSX.Element {
     peerRef.current = null;
     streamRef.current = null;
     sessionIdRef.current = null;
+    rockyUtteranceCountRef.current = 0;
     setPhase("idle");
   }, [logTranscript]);
 
