@@ -33,6 +33,8 @@ export interface RockyConfig {
   spreadsheetDirectory: string;
   spreadsheetApplication: string;
   localDataDirectory: string;
+  alienVoiceEnabled: boolean;
+  alienVoiceVolume: number;
 }
 
 export interface MemoryFact {

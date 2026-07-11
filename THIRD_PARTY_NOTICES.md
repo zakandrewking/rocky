@@ -42,3 +42,13 @@ XTTS v2's Coqui Public Model License restrictions, and notes that the film voice
 film production company's intellectual property. Rocky does not commit or redistribute the source
 film audio, extracted reference audio, model weights, or generated samples. Any local copies live
 only under ignored `local-data/voice-clone/`.
+
+## Lahiru Maramba's Rocky
+
+Rocky's optional browser-native Eridian chord layer adapts the deterministic word-to-chord
+synthesizer from [Lahiru Maramba's Rocky](https://github.com/lahirumaramba/rocky), including its
+emotional chord vocabulary, stable generated chords, name melody, and question indicator.
+
+Copyright (c) 2026 Lahiru Maramba
+
+Used under the MIT License. The upstream repository retains the full license text.

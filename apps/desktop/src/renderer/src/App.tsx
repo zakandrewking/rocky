@@ -7,12 +7,14 @@ import {
   ROCKY_GREETING_CASE,
 } from "../../shared/rockyStyle";
 import { START_GREETING_EVENT } from "../../shared/realtimeEvents";
+import { EridianAudio } from "./eridianAudio";
 
 type Phase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
 
 interface RealtimeEvent {
   type?: string;
   transcript?: string;
+  delta?: string;
   response?: {
     output?: Array<{
       type?: string;
@@ -36,6 +38,7 @@ export function App(): React.JSX.Element {
   const remoteAudioContextRef = useRef<AudioContext | null>(null);
   const remoteAudioFrameRef = useRef<number | null>(null);
   const remoteSpeakingRef = useRef(false);
+  const eridianAudioRef = useRef<EridianAudio | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const rockyUtteranceCountRef = useRef(0);
   const userSpokeBeforeFirstRockyRef = useRef(false);
@@ -47,6 +50,7 @@ export function App(): React.JSX.Element {
       streamRef.current?.getTracks().forEach((track) => track.stop());
       if (remoteAudioFrameRef.current !== null) cancelAnimationFrame(remoteAudioFrameRef.current);
       void remoteAudioContextRef.current?.close();
+      void eridianAudioRef.current?.close();
     };
   }, []);
 
@@ -176,6 +180,7 @@ export function App(): React.JSX.Element {
     (event: RealtimeEvent) => {
       switch (event.type) {
         case "input_audio_buffer.speech_started":
+          eridianAudioRef.current?.stop();
           setPhase("listening");
           break;
         case "input_audio_buffer.speech_stopped":
@@ -188,8 +193,12 @@ export function App(): React.JSX.Element {
             logTranscript("user", event.transcript);
           }
           break;
+        case "response.output_audio_transcript.delta":
+          if (event.delta) eridianAudioRef.current?.pushTranscriptDelta(event.delta);
+          break;
         case "response.output_audio_transcript.done":
           if (event.transcript) {
+            eridianAudioRef.current?.flushTranscript();
             logTranscript("rocky", event.transcript);
             const styleCase = rockyUtteranceCountRef.current === 0 && !userSpokeBeforeFirstRockyRef.current
               ? ROCKY_GREETING_CASE
@@ -233,6 +242,8 @@ export function App(): React.JSX.Element {
     peerRef.current = null;
     streamRef.current = null;
     stopRemoteAudioMonitor();
+    void eridianAudioRef.current?.close();
+    eridianAudioRef.current = null;
     sessionIdRef.current = null;
     rockyUtteranceCountRef.current = 0;
     userSpokeBeforeFirstRockyRef.current = false;
@@ -247,6 +258,11 @@ export function App(): React.JSX.Element {
 
     setPhase("connecting");
     try {
+      const config = await window.rocky.getConfig();
+      if (config.alienVoiceEnabled) {
+        eridianAudioRef.current ??= new EridianAudio(config.alienVoiceVolume);
+        await eridianAudioRef.current.resume();
+      }
       const transcriptSession = await window.rocky.startTranscript();
       sessionIdRef.current = transcriptSession.sessionId;
       const secret = await window.rocky.createRealtimeSession();

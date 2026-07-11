@@ -57,6 +57,9 @@
   - [x] A/B raw and 1.5× YourTTS output against the author's published final-product sample; initial
     family feedback says the generated examples are not good enough.
   - [ ] Select a voice engine only after it clearly beats the published YourTTS sample in family A/B.
+  - [ ] Evaluate Hume custom voice cloning from the Rocky seed/reference audio. Verify the current
+    creation workflow, account-private voice-ID behavior, API availability, latency, pricing, and
+    personal-use terms; never commit the Hume API key or voice ID. A/B it against Piper candidates.
   - [ ] A/B the public Piper `en_US-lessac-low` and `en_US-joe-medium` ONNX voices with identical
     Rocky lines; tune speech rate and Piper variation controls, and verify each model card/license.
   - [ ] Keep searching the internet for stronger public Piper ONNX candidates. Prefer candidates
@@ -64,7 +67,7 @@
     provenance, and personal-use-compatible licensing so expectations can be set before setup.
   - [ ] Try to obtain Lahiru Maramba's missing `rocky_model_2999.onnx` and matching JSON, or use his
     MIT-licensed Qwen3-TTS-to-Piper Colab pipeline to train our own only if public models fall short.
-  - [ ] Port Lahiru Maramba's MIT-licensed Eridian alien-voice synthesizer to TypeScript/Web Audio:
+  - [x] Port Lahiru Maramba's MIT-licensed Eridian alien-voice synthesizer to TypeScript/Web Audio:
     deterministic three-note word chords, special emotional vocabulary, stable hashed chords for
     unknown words, melodic name signatures, punctuation/excitement dynamics, and pre-warmed caching.
   - [ ] Layer the Eridian voice with translated English without harming intelligibility. Family-test

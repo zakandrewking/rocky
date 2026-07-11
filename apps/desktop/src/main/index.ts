@@ -154,6 +154,8 @@ function registerIpc(): void {
     spreadsheetDirectory: spreadsheetDirectory(),
     spreadsheetApplication: process.platform === "darwin" ? "ONLYOFFICE" : "System default",
     localDataDirectory: localDataDirectory(),
+    alienVoiceEnabled: process.env.ROCKY_ALIEN_VOICE !== "0",
+    alienVoiceVolume: Math.max(0, Math.min(0.18, Number(process.env.ROCKY_ALIEN_VOICE_VOLUME) || 0.045)),
   }));
   ipcMain.handle("rocky:create-realtime-session", createRealtimeSession);
   ipcMain.handle("rocky:start-transcript", startTranscript);
