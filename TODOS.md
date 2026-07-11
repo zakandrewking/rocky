@@ -66,8 +66,13 @@
       output, and advertised model latency near 100 ms before network transit.
     - [x] Add a no-secret, ignored-output audition command that generates three original adult alien
       voice designs. Prefer this consent-safe design route unless suitable rights for cloning exist.
-    - [ ] Add a local Hume API key and family-rank the three candidates; save only the winner as a
-      private account voice and keep its ID in `.env`.
+    - [x] Add a local Hume API key, generate three original Voice Design candidates, and family-rank
+      them; candidate 3 was the clear initial winner.
+    - [ ] Save Voice Design candidate 3 as a private account voice and keep its ID in ignored local
+      configuration.
+    - [ ] Try a Hume voice clone from the best available Rocky reference audio after confirming the
+      necessary rights or speaker consent. A/B the clone directly against Voice Design candidate 3;
+      keep all uploaded source audio, generated samples, and private voice IDs local and uncommitted.
     - [ ] Implement Hume Octave 2 bidirectional streaming behind a provider boundary, with buffered
       incremental text, immediate barge-in cancellation, and the Eridian chord layer mixed locally.
   - [ ] A/B the public Piper `en_US-lessac-low` and `en_US-joe-medium` ONNX voices with identical
