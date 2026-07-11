@@ -114,9 +114,11 @@ in approximate priority order
     reserve exact `Rocky hate Mark.` for the explicitly invoked fictional in-joke only.
 - [ ] Add a friendly settings screen for model, voice, and API-key status.
 - [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.
-- [ ] Publish a downloadable macOS DMG on GitHub Releases so Rocky remains easy to reinstall after
-  time away from the project. Add a reproducible release workflow, versioned release notes, code
-  signing and notarization when credentials are available, and document the unsigned-build fallback.
+- [x] Add an unsigned macOS DMG build, GitHub Releases workflow, README release docs, and a
+  one-time family-Mac bootstrap script that installs ONLYOFFICE, writes app-data config, installs
+  the ONLYOFFICE plugin, and opens the latest Rocky DMG.
+- [ ] Add code signing, notarization, and polished versioned release notes for public-quality
+  macOS releases when Apple credentials are available.
 - [ ] Verify the hardened greeting on the exact Realtime voice model and add its transcript to
   the negative set if it drifts.
 - [ ] Select a voice engine only after it clearly beats the published YourTTS sample in family A/B.

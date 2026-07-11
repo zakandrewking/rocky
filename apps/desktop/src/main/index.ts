@@ -31,9 +31,10 @@ interface HumeSettings {
 
 function loadEnvironment(): void {
   const candidates = [
+    path.join(app.getPath("userData"), "config.env"),
+    path.join(app.getPath("userData"), ".env"),
     path.join(process.cwd(), ".env"),
     path.resolve(process.cwd(), "../../.env"),
-    path.join(app.getPath("userData"), ".env"),
   ];
   for (const envPath of candidates) loadEnv({ path: envPath, override: false, quiet: true });
 }
@@ -143,7 +144,9 @@ async function openSpreadsheetInOnlyOffice(filePath: string): Promise<void> {
 async function createRealtimeSession(): Promise<unknown> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is missing. Add it to the repository .env file and restart Rocky.");
+    throw new Error(
+      `OPENAI_API_KEY is missing. Add it to ${path.join(app.getPath("userData"), "config.env")} and restart Rocky.`,
+    );
   }
 
   const safetyIdentifier = createHash("sha256")

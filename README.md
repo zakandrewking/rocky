@@ -57,7 +57,35 @@ ROCKY_VOICE=cedar
 ```
 
 The standard API key stays in Electron's main process. The renderer receives only a short-lived
-Realtime client secret.
+Realtime client secret. In development, Rocky reads the repository `.env`. In an installed app,
+Rocky reads `~/Library/Application Support/Rocky/config.env`; do not put API keys in the app bundle,
+Git commits, or GitHub Releases.
+
+## Family Mac install
+
+For another Mac, use the bootstrap script after a DMG has been published on GitHub Releases:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zakandrewking/rocky/main/scripts/install-rocky-macos.sh | bash
+```
+
+The script:
+
+- creates `~/Library/Application Support/Rocky/config.env` and prompts once for `OPENAI_API_KEY`;
+- installs or checks ONLYOFFICE Desktop Editors via Homebrew when Homebrew is available;
+- installs Rocky's hidden ONLYOFFICE plugin for live visible-sheet updates;
+- downloads and opens the latest Rocky DMG from GitHub Releases.
+
+Optional Hume settings can be supplied before running the script:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zakandrewking/rocky/main/scripts/install-rocky-macos.sh \
+  | HUME_API_KEY=... HUME_VOICE_ID=... bash
+```
+
+Rocky does not bundle ONLYOFFICE. Keeping ONLYOFFICE separate avoids a large app bundle and lets the
+editor update independently. If Homebrew is not installed on the family Mac, install Homebrew from
+<https://brew.sh> or install ONLYOFFICE Desktop Editors manually, then rerun the Rocky installer.
 
 ## Development
 
@@ -73,11 +101,32 @@ pnpm voice:hume:save -- 3 # save the selected candidate as a private Hume accoun
 pnpm onlyoffice:install-plugin # install the live active-sheet bridge for the current macOS user
 pnpm voice:check # verify optional ignored local voice-clone assets
 pnpm voice:server # run the experimental loopback-only YourTTS worker
-pnpm dist:mac  # create an unpacked macOS application
+pnpm dist:mac  # create unsigned macOS DMG, zip, and unpacked app artifacts
 ```
 
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.
+
+### macOS releases
+
+Local unsigned release build:
+
+```bash
+pnpm dist:mac
+```
+
+Artifacts are written under `apps/desktop/release/`, including `Rocky-<version>-<arch>.dmg`.
+Unsigned builds may require right-click Open or Gatekeeper approval on another Mac.
+
+GitHub Releases are built by `.github/workflows/release-macos.yml` when a `v*` tag is pushed:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow runs `pnpm check`, builds the DMG/zip on macOS, and attaches them to a prerelease.
+Code signing and notarization are still future work.
 
 `pnpm alien:demo` writes `local-data/voice-clone/eridian-demo.wav`. Add words after `--` to audition
 a custom line, for example `pnpm alien:demo -- "Rocky friend. Amaze!"`. This uses the same chord
