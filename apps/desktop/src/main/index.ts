@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { config as loadEnv } from "dotenv";
 import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron";
 
-import { ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL } from "./prompt";
+import { createRealtimeSessionConfig } from "./realtimeSession";
 import { writeSpreadsheet } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
 import type { TranscriptEntry, TranscriptRole } from "../shared/types";
@@ -125,25 +125,10 @@ async function createRealtimeSession(): Promise<unknown> {
       "OpenAI-Safety-Identifier": safetyIdentifier,
     },
     body: JSON.stringify({
-      session: {
-        type: "realtime",
-        model: process.env.ROCKY_REALTIME_MODEL ?? MODEL,
-        instructions: ROCKY_INSTRUCTIONS,
-        audio: {
-          input: {
-            transcription: { model: "gpt-realtime-whisper" },
-            turn_detection: {
-              type: "semantic_vad",
-              eagerness: "low",
-              create_response: true,
-              interrupt_response: true,
-            },
-          },
-          output: { voice: process.env.ROCKY_VOICE ?? VOICE },
-        },
-        tools: [SPREADSHEET_TOOL],
-        tool_choice: "auto",
-      },
+      session: createRealtimeSessionConfig(
+        process.env.ROCKY_REALTIME_MODEL ?? MODEL,
+        process.env.ROCKY_VOICE ?? VOICE,
+      ),
     }),
   });
 

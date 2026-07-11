@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { RockyConfig, SpreadsheetSpec } from "../../shared/types";
 import { evaluateRockyStyle, ROCKY_GREETING_CASE } from "../../shared/rockyStyle";
+import { START_GREETING_EVENT } from "../../shared/realtimeEvents";
 
 type Phase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
 
@@ -214,7 +215,7 @@ export function App(): React.JSX.Element {
       };
       channel.onopen = () => {
         setPhase("listening");
-        channel.send(JSON.stringify({ type: "response.create" }));
+        channel.send(JSON.stringify(START_GREETING_EVENT));
       };
 
       const offer = await peer.createOffer();
