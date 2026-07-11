@@ -93,7 +93,7 @@ export interface RockyApi {
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<void>;
   openSpreadsheet: (filePath: string) => Promise<void>;
   revealSpreadsheet: (filePath: string) => Promise<void>;
-  speakWithHume: (sessionId: string, text: string) => Promise<void>;
+  speakWithHume: (sessionId: string, text: string, flush?: boolean) => Promise<void>;
   cancelHumeSpeech: (sessionId: string) => Promise<void>;
   onHumeAudio: (listener: (sessionId: string, event: HumeAudioEvent) => void) => () => void;
 }

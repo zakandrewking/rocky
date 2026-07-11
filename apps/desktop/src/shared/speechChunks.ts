@@ -5,18 +5,26 @@ export function splitSpeechChunks(
 ): { complete: string[]; remainder: string } {
   let remainder = `${buffer}${delta}`;
   const complete: string[] = [];
-  const sentenceBoundary = /[.!?](?:["')\]]+)?\s+/;
+  const sentenceBoundary = /[.!?](?:["')\]]+)?(?:\s+|$)/g;
+  const minChunkLength = 180;
+  const maxChunkLength = 340;
 
   while (remainder) {
-    const match = sentenceBoundary.exec(remainder);
-    if (match?.index !== undefined) {
+    sentenceBoundary.lastIndex = 0;
+    let sentenceEnd = -1;
+    for (let match = sentenceBoundary.exec(remainder); match; match = sentenceBoundary.exec(remainder)) {
       const end = match.index + match[0].length;
-      complete.push(remainder.slice(0, end).trim());
-      remainder = remainder.slice(end);
+      if (end > maxChunkLength) break;
+      sentenceEnd = end;
+      if (end >= minChunkLength) break;
+    }
+    if (sentenceEnd >= minChunkLength || (flush && sentenceEnd > 0)) {
+      complete.push(remainder.slice(0, sentenceEnd).trim());
+      remainder = remainder.slice(sentenceEnd).trimStart();
       continue;
     }
-    if (remainder.length >= 120) {
-      const breakAt = remainder.lastIndexOf(" ", 100);
+    if (remainder.length >= maxChunkLength) {
+      const breakAt = remainder.lastIndexOf(" ", maxChunkLength);
       if (breakAt > 20) {
         complete.push(remainder.slice(0, breakAt).trim());
         remainder = remainder.slice(breakAt + 1);

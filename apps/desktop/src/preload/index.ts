@@ -16,7 +16,12 @@ const rockyApi: RockyApi = {
     ipcRenderer.invoke("rocky:update-active-spreadsheet", spec, sessionId),
   openSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:open-spreadsheet", filePath),
   revealSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:reveal-spreadsheet", filePath),
-  speakWithHume: (sessionId: string, text: string) => ipcRenderer.invoke("rocky:hume-speak", sessionId, text),
+  speakWithHume: (sessionId: string, text: string, flush?: boolean) => ipcRenderer.invoke(
+    "rocky:hume-speak",
+    sessionId,
+    text,
+    flush,
+  ),
   cancelHumeSpeech: (sessionId: string) => ipcRenderer.invoke("rocky:hume-cancel", sessionId),
   onHumeAudio: (listener: (sessionId: string, event: HumeAudioEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, sessionId: string, event: HumeAudioEvent): void => {

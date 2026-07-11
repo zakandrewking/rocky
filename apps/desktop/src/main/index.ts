@@ -225,7 +225,7 @@ function registerIpc(): void {
   ipcMain.handle("rocky:reveal-spreadsheet", (_event, filePath: string) => {
     shell.showItemInFolder(filePath);
   });
-  ipcMain.handle("rocky:hume-speak", async (event, sessionId: string, text: string) => {
+  ipcMain.handle("rocky:hume-speak", async (event, sessionId: string, text: string, flush = true) => {
     transcriptPath(sessionId);
     const settings = await readHumeSettings();
     if (!settings) throw new Error("Hume speech is not configured.");
@@ -239,7 +239,7 @@ function registerIpc(): void {
       active = { ownerId: sender.id, speech };
       humeSpeechSessions.set(sessionId, active);
     }
-    await active.speech.speak(text);
+    await active.speech.speak(text, flush);
   });
   ipcMain.handle("rocky:hume-cancel", (event, sessionId: string) => {
     transcriptPath(sessionId);

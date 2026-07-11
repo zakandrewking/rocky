@@ -70,6 +70,8 @@ in approximate priority order
   - [x] Let concise alien chords begin immediately and rely on natural Hume generation latency for
     their head start; compress chord timing so the human translation finishes later. Keep an optional
     bounded extra English-start delay, defaulting to zero, for family tuning and future settings UI.
+  - [x] Reduce Hume flush boundaries by buffering short sentence chunks into larger utterances and
+    sending an explicit final flush at the end of Rocky's turn to reduce accent/prosody drift.
   - [ ] On barge-in, cancel the active OpenAI response, abort Hume generation, clear queued PCM and
     Eridian chords immediately, and prevent Rocky's output from feeding back into the microphone.
   - [ ] Fall back cleanly to the working OpenAI voice if Hume is unavailable, rate-limited, or

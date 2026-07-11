@@ -179,7 +179,7 @@ export function App(): React.JSX.Element {
     const split = splitSpeechChunks(humeTextBufferRef.current, delta, flush);
     humeTextBufferRef.current = split.remainder;
     for (const chunk of split.complete) {
-      void window.rocky.speakWithHume(sessionId, chunk).catch((error) => {
+      void window.rocky.speakWithHume(sessionId, chunk, flush && !split.remainder).catch((error) => {
         logTranscript("system", `Hume speech request failed: ${friendlyError(error)}`);
       });
     }

@@ -19,7 +19,7 @@ export class HumeSpeech {
     private readonly emit: (event: HumeAudioEvent) => void,
   ) {}
 
-  async speak(text: string): Promise<void> {
+  async speak(text: string, flush = true): Promise<void> {
     const clean = text.trim();
     if (!clean) return;
     this.cancelled = false;
@@ -28,7 +28,7 @@ export class HumeSpeech {
     socket.send(JSON.stringify({
       text: clean,
       voice: { id: this.voiceId },
-      flush: true,
+      flush,
     }));
   }
 
