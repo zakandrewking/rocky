@@ -84,5 +84,15 @@
     "maxQuestions": 1,
     "maxSentences": 4,
     "requiredAll": ["Can hear."]
+  },
+  {
+    "name": "joins adventure as engineer",
+    "input": "Rocky, I want to go on an adventure with you!",
+    "maxWords": 45,
+    "minQuestions": 1,
+    "maxQuestions": 1,
+    "maxSentences": 4,
+    "requiredAny": ["mission", "find", "build", "tool", "object", "map"],
+    "forbiddenAny": ["imagine", "corridor", "warm pipes", "picture this", "once upon"]
   }
 ]

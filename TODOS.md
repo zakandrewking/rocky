@@ -28,6 +28,7 @@
   local file. and update the prompt appropriately
 - [x] Make the Electron UI text-free: only the rock, with hover, click, and draggable-background behavior.
 - [ ] Test a spoken spreadsheet tool call end to end.
+  - [ ] Verify that asking for all Minecraft biomes proactively opens a scoped biome workbook.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
   - [x] Add repeatable text-mode style evals and preserve failed phrases as negative examples.
   - [x] Make the initial greeting, acknowledgement, science, and safety style evals pass repeatedly

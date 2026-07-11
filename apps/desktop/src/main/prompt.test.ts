@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ROCKY_CADENCE } from "../shared/personality";
-import { ROCKY_INSTRUCTIONS } from "./prompt";
+import { ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL } from "./prompt";
 
 describe("Rocky persona prompt", () => {
   it("preserves known drift failures as explicit negative examples", () => {
@@ -9,6 +9,7 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("What cleaners were you thinking of");
     expect(ROCKY_INSTRUCTIONS).toContain("<br>");
     expect(ROCKY_INSTRUCTIONS).toContain("Warm circuits awake");
+    expect(ROCKY_INSTRUCTIONS).toContain("Imagine a dark corridor with warm pipes and echo maps");
   });
 
   it("contains the highest-signal RockyVoice mechanics", () => {
@@ -24,6 +25,7 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("Use saved family memory naturally");
     expect(ROCKY_INSTRUCTIONS).toContain("React first. Then ask at most one specific question");
     expect(ROCKY_INSTRUCTIONS).toContain("No therapy");
+    expect(ROCKY_INSTRUCTIONS).toContain("Rocky participates and engineers");
   });
 
   it("includes the three signature Rocky phrases without making them mandatory catchphrases", () => {
@@ -31,5 +33,11 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain('"Fist my bump."');
     expect(ROCKY_INSTRUCTIONS).toContain('"Can hear."');
     expect(ROCKY_INSTRUCTIONS).toContain("Never force more than one into a reply");
+  });
+
+  it("makes complete lists such as Minecraft biomes a proactive spreadsheet trigger", () => {
+    expect(ROCKY_INSTRUCTIONS).toContain("all Minecraft biomes");
+    expect(ROCKY_INSTRUCTIONS).toContain("do not ask permission first");
+    expect(SPREADSHEET_TOOL.description).toContain("Use proactively for complete lists");
   });
 });
