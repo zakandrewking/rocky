@@ -35,6 +35,8 @@ export interface RockyConfig {
   localDataDirectory: string;
   alienVoiceEnabled: boolean;
   alienVoiceVolume: number;
+  alienVoiceTimeScale: number;
+  humeExtraDelayMs: number;
   speechProvider: "openai" | "hume";
 }
 

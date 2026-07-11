@@ -12,11 +12,19 @@ export class HumePcmAudio {
   private readonly context = new AudioContext();
   private readonly sources = new Set<AudioBufferSourceNode>();
   private nextStart = 0;
+  private delayNextChunk = false;
 
-  constructor(private readonly onSpeaking: (speaking: boolean) => void) {}
+  constructor(
+    private readonly onSpeaking: (speaking: boolean) => void,
+    private readonly initialDelayMs = 0,
+  ) {}
 
   async resume(): Promise<void> {
     await this.context.resume();
+  }
+
+  beginResponse(): void {
+    this.delayNextChunk = true;
   }
 
   push(base64: string, sampleRate: number): void {
@@ -27,7 +35,9 @@ export class HumePcmAudio {
     const source = this.context.createBufferSource();
     source.buffer = buffer;
     source.connect(this.context.destination);
-    const start = Math.max(this.context.currentTime + 0.012, this.nextStart);
+    const extraDelay = this.delayNextChunk ? this.initialDelayMs / 1_000 : 0;
+    this.delayNextChunk = false;
+    const start = Math.max(this.context.currentTime + 0.012 + extraDelay, this.nextStart);
     this.nextStart = start + buffer.duration;
     this.sources.add(source);
     this.onSpeaking(true);
@@ -48,6 +58,7 @@ export class HumePcmAudio {
     }
     this.sources.clear();
     this.nextStart = this.context.currentTime;
+    this.delayNextChunk = false;
     this.onSpeaking(false);
   }
 

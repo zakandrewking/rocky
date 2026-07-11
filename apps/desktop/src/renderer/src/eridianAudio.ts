@@ -6,7 +6,10 @@ export class EridianAudio {
   private nextStart = 0;
   private transcriptBuffer = "";
 
-  constructor(private readonly volume: number) {}
+  constructor(
+    private readonly volume: number,
+    private readonly timeScale = 1,
+  ) {}
 
   async resume(): Promise<void> {
     await this.context.resume();
@@ -46,11 +49,12 @@ export class EridianAudio {
     let start = Math.max(this.context.currentTime + 0.015, this.nextStart);
     for (const token of tokens) {
       for (const chord of eridianChordsForToken(token)) {
-        const end = start + chord.durationSeconds;
+        const duration = Math.max(0.045, chord.durationSeconds * this.timeScale);
+        const end = start + duration;
         const gain = this.context.createGain();
         const peak = Math.max(0, Math.min(0.18, this.volume * (chord.emphasis ? 1.35 : 1)));
         gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), start + 0.018);
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), start + Math.min(0.018, duration * 0.3));
         gain.gain.exponentialRampToValueAtTime(0.0001, end);
         gain.connect(this.context.destination);
 
@@ -65,7 +69,7 @@ export class EridianAudio {
           this.activeOscillators.add(oscillator);
           oscillator.addEventListener("ended", () => this.activeOscillators.delete(oscillator), { once: true });
         }
-        start = end + 0.018;
+        start = end + 0.018 * this.timeScale;
       }
     }
     this.nextStart = start;

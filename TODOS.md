@@ -67,6 +67,9 @@ in approximate priority order
     microphone input, semantic VAD, conversation state, memory, and spreadsheet tool calls.
   - [ ] Stream sentence-aware text chunks to Hume and schedule returned PCM without gaps, while
     keeping orb listening/thinking/speaking states synchronized to real playback.
+  - [x] Let concise alien chords begin immediately and rely on natural Hume generation latency for
+    their head start; compress chord timing so the human translation finishes later. Keep an optional
+    bounded extra English-start delay, defaulting to zero, for family tuning and future settings UI.
   - [ ] On barge-in, cancel the active OpenAI response, abort Hume generation, clear queued PCM and
     Eridian chords immediately, and prevent Rocky's output from feeding back into the microphone.
   - [ ] Fall back cleanly to the working OpenAI voice if Hume is unavailable, rate-limited, or

@@ -261,6 +261,7 @@ export function App(): React.JSX.Element {
           break;
         case "response.output_text.delta":
           if (event.delta) {
+            if (!humeResponseTextRef.current) humeAudioRef.current?.beginResponse();
             humeResponseTextRef.current += event.delta;
             eridianAudioRef.current?.pushTranscriptDelta(event.delta);
             sendHumeChunks(event.delta);
@@ -330,11 +331,11 @@ export function App(): React.JSX.Element {
       if (config.speechProvider === "hume") {
         humeAudioRef.current ??= new HumePcmAudio((speaking) => {
           setPhase(speaking ? "speaking" : "listening");
-        });
+        }, config.humeExtraDelayMs);
         await humeAudioRef.current.resume();
       }
       if (config.alienVoiceEnabled) {
-        eridianAudioRef.current ??= new EridianAudio(config.alienVoiceVolume);
+        eridianAudioRef.current ??= new EridianAudio(config.alienVoiceVolume, config.alienVoiceTimeScale);
         await eridianAudioRef.current.resume();
       }
       const transcriptSession = await window.rocky.startTranscript();

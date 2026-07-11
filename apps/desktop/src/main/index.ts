@@ -183,6 +183,8 @@ function registerIpc(): void {
     localDataDirectory: localDataDirectory(),
     alienVoiceEnabled: process.env.ROCKY_ALIEN_VOICE !== "0",
     alienVoiceVolume: Math.max(0, Math.min(0.18, Number(process.env.ROCKY_ALIEN_VOICE_VOLUME) || 0.045)),
+    alienVoiceTimeScale: Math.max(0.45, Math.min(1, Number(process.env.ROCKY_ALIEN_VOICE_TIME_SCALE) || 0.68)),
+    humeExtraDelayMs: Math.max(0, Math.min(1_000, Number(process.env.ROCKY_HUME_EXTRA_DELAY_MS) || 0)),
     speechProvider: await readHumeSettings() ? "hume" : "openai",
   }));
   ipcMain.handle("rocky:create-realtime-session", createRealtimeSession);
