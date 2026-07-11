@@ -34,6 +34,7 @@ describe("Realtime session configuration", () => {
       },
     });
     expect(config.tools.map((tool) => tool.name)).toContain("create_spreadsheet");
+    expect(config.tools.map((tool) => tool.name)).toContain("update_active_spreadsheet");
   });
 
   it("offers local memory as a callable tool", () => {

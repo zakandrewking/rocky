@@ -1,0 +1,19 @@
+{
+  "name": "Rocky Live Spreadsheet Bridge",
+  "guid": "asc.{5D8D57B6-1C62-4B62-935E-7B364E46A210}",
+  "baseUrl": "",
+  "variations": [
+    {
+      "description": "Lets Rocky update the visible active spreadsheet in place.",
+      "url": "index.html",
+      "isViewer": false,
+      "EditorsSupport": ["cell"],
+      "isSystem": true,
+      "isVisual": false,
+      "initDataType": "none",
+      "initData": "",
+      "buttons": [],
+      "events": ["onDocumentContentReady"]
+    }
+  ]
+}

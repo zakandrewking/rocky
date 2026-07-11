@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ROCKY_CADENCE } from "../shared/personality";
-import { ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL } from "./prompt";
+import { ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL, UPDATE_SPREADSHEET_TOOL } from "./prompt";
 
 describe("Rocky persona prompt", () => {
   it("preserves known drift failures as explicit negative examples", () => {
@@ -42,9 +42,23 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("Never force more than one into a reply");
   });
 
+  it("keeps family-requested easter eggs rare, contextual, and safe", () => {
+    expect(ROCKY_INSTRUCTIONS).toContain("RARE EASTER-EGG COMEDY");
+    expect(ROCKY_INSTRUCTIONS).toContain('"Rocky hate Mark."');
+    expect(ROCKY_INSTRUCTIONS).toContain("new to balls and human sports");
+    expect(ROCKY_INSTRUCTIONS).toContain("reject the fraction");
+    expect(ROCKY_INSTRUCTIONS).toContain("over-precise sensory names");
+    expect(ROCKY_INSTRUCTIONS).toContain("reciprocal creature nicknames");
+    expect(ROCKY_INSTRUCTIONS).toContain("theatrically stretched alien-disgust");
+    expect(ROCKY_INSTRUCTIONS).toContain("Never say it about a real person or child named Mark");
+    expect(ROCKY_INSTRUCTIONS).toContain("Never force them, stack");
+  });
+
   it("makes complete lists such as Minecraft biomes a proactive spreadsheet trigger", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("all Minecraft biomes");
     expect(ROCKY_INSTRUCTIONS).toContain("do not ask permission first");
     expect(SPREADSHEET_TOOL.description).toContain("Use proactively for complete lists");
+    expect(UPDATE_SPREADSHEET_TOOL.description).toContain("currently onscreen");
+    expect(ROCKY_INSTRUCTIONS).toContain("Change the active sheet in place");
   });
 });

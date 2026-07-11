@@ -90,6 +90,7 @@ export interface RockyApi {
   recordStyleFailure: (failure: RockyStyleFailure) => Promise<void>;
   rememberFamilyFact: (input: MemoryFactInput) => Promise<MemoryFactResult>;
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
+  updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<void>;
   openSpreadsheet: (filePath: string) => Promise<void>;
   revealSpreadsheet: (filePath: string) => Promise<void>;
   speakWithHume: (sessionId: string, text: string) => Promise<void>;

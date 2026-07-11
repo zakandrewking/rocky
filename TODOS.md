@@ -76,16 +76,37 @@ in approximate priority order
     misconfigured; record a useful ignored diagnostic without speaking implementation details.
   - [ ] Measure time-to-first-audio and full turn latency in ignored session diagnostics, then run
     end-to-end family tests for greeting, interruption, memory, and spreadsheet creation/update.
+- [x] Implement a live ONLYOFFICE active-sheet bridge so Rocky can update the visible workbook in
+  place instead of creating a new revision for every follow-up edit.
+  - [x] Add an authenticated loopback bridge in Electron main, with local token storage under
+    ignored `local-data/`.
+  - [x] Add a hidden ONLYOFFICE Desktop Editors plugin that polls Rocky and replaces the active
+    sheet with the complete updated table.
+  - [x] Add install/status scripts and verify the plugin connects when a workbook is open in
+    ONLYOFFICE Spreadsheet Editor.
 - [ ] make sure our spreadsheet system works with tools and command line capabilities like this:
   /var/folders/6w/1gtm6b0n6s16j6p_fvlqbrfm0000gn/T/claude-hostloop-plugins/ccb68a6b8377b360/skills/xlsx/SKILL.md
 - [ ] Test a spoken spreadsheet tool call end to end.
+- [ ] Test a spoken visible-spreadsheet update end to end.
 - [ ] Verify that asking for all Minecraft biomes proactively opens a scoped biome workbook.
 - [ ] Make Rocky naturally learn who is speaking: when the current speaker has not introduced
   themselves, ask once per session what first name or nickname to use, remember the volunteered
   answer, and associate later safe facts with that person without requesting private information.
 - [ ] Improve local memory identity correction and merging so a speech-to-text misspelling such as
   `Zac` can be corrected to `Zak` without leaving duplicate people or orphaning earlier facts.
+- [ ] Add asynchronous research handoffs for questions without obvious or stable answers. Rocky's
+  low-latency conversation should dispatch a slower web-search-enabled reasoning agent, continue
+  talking without blocking, and let the research agent pop naturally back into the live conversation
+  when ready, similar to GPT-Live offloading long-running work to GPT-5.5.
+  - [ ] Preserve the originating question and conversation context, expose clear pending/completed/
+    failed state, support cancellation, and prevent stale results from interrupting a newer topic.
+  - [ ] Return a concise spoken answer with source provenance saved in the local transcript; apply
+    kid-safe browsing rules and never let untrusted web content directly control local tools.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
+  - [x] Add rare, context-triggered family easter eggs for oversized encouragement, literal joke
+    reveals, ball-sport innocence, whole-good wordplay, affection for Earth and friendship, sensory
+    planet names, reciprocal creature nicknames, messy-room reactions, and alien disgust at eating;
+    reserve exact `Rocky hate Mark.` for the explicitly invoked fictional in-joke only.
 - [ ] Add a friendly settings screen for model, voice, and API-key status.
 - [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.
 - [ ] Publish a downloadable macOS DMG on GitHub Releases so Rocky remains easy to reinstall after

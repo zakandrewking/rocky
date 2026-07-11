@@ -227,6 +227,35 @@ export function App(): React.JSX.Element {
     [logTranscript, sendEvent],
   );
 
+  const handleActiveSpreadsheetTool = useCallback(
+    async (callId: string, argumentText: string) => {
+      setPhase("thinking");
+      try {
+        const spec = JSON.parse(argumentText) as SpreadsheetSpec;
+        await window.rocky.updateActiveSpreadsheet(spec, sessionIdRef.current ?? undefined);
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: true, message: "Visible active spreadsheet updated in place." }),
+          },
+        });
+      } catch (caught) {
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: false, error: friendlyError(caught) }),
+          },
+        });
+      }
+      sendEvent({ type: "response.create" });
+    },
+    [sendEvent],
+  );
+
   const handleRealtimeEvent = useCallback(
     (event: RealtimeEvent) => {
       switch (event.type) {
@@ -283,6 +312,9 @@ export function App(): React.JSX.Element {
             if (item.type === "function_call" && item.name === "remember_family_fact" && item.call_id) {
               void handleMemoryTool(item.call_id, item.arguments ?? "{}");
             }
+            if (item.type === "function_call" && item.name === "update_active_spreadsheet" && item.call_id) {
+              void handleActiveSpreadsheetTool(item.call_id, item.arguments ?? "{}");
+            }
           }
           break;
         case "error":
@@ -290,7 +322,7 @@ export function App(): React.JSX.Element {
           break;
       }
     },
-    [handleMemoryTool, handleSpreadsheetTool, logTranscript, recordRockyUtterance, sendHumeChunks],
+    [handleActiveSpreadsheetTool, handleMemoryTool, handleSpreadsheetTool, logTranscript, recordRockyUtterance, sendHumeChunks],
   );
 
   const disconnect = useCallback(() => {

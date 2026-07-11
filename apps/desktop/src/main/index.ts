@@ -11,8 +11,9 @@ import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron"
 
 import { createRealtimeSessionConfig } from "./realtimeSession";
 import { HumeSpeech } from "./humeSpeech";
+import { OnlyOfficeBridge } from "./onlyOfficeBridge";
 import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./memory";
-import { writeSpreadsheet } from "./spreadsheet";
+import { normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
 import type { MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
 
@@ -21,6 +22,7 @@ const VOICE = process.env.ROCKY_VOICE ?? "cedar";
 const execFileAsync = promisify(execFile);
 const ONLYOFFICE_APP = "/Applications/ONLYOFFICE.app";
 const humeSpeechSessions = new Map<string, { ownerId: number; speech: HumeSpeech }>();
+let onlyOfficeBridge: OnlyOfficeBridge | null = null;
 
 interface HumeSettings {
   apiKey: string;
@@ -205,6 +207,18 @@ function registerIpc(): void {
     }
     return result;
   });
+  ipcMain.handle("rocky:update-active-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
+    if (!onlyOfficeBridge) throw new Error("ONLYOFFICE live-update bridge is not running.");
+    const normalized = normalizeSpreadsheetSpec(spec);
+    await onlyOfficeBridge.replaceActiveSheet(normalized);
+    if (sessionId) {
+      await appendTranscript({
+        sessionId,
+        role: "tool",
+        text: `Updated visible active spreadsheet in place: ${normalized.sheets[0]?.name ?? normalized.title}`,
+      });
+    }
+  });
   ipcMain.handle("rocky:open-spreadsheet", async (_event, filePath: string) => {
     await openSpreadsheetInOnlyOffice(filePath);
   });
@@ -263,8 +277,12 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   loadEnvironment();
+  onlyOfficeBridge = new OnlyOfficeBridge(path.join(localDataDirectory(), "onlyoffice-bridge.json"));
+  await onlyOfficeBridge.start().catch(() => {
+    onlyOfficeBridge = null;
+  });
   registerIpc();
   createWindow();
   app.on("activate", () => {
@@ -275,3 +293,5 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+app.on("before-quit", () => onlyOfficeBridge?.stop());

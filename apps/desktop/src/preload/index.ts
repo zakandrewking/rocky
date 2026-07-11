@@ -12,6 +12,8 @@ const rockyApi: RockyApi = {
   rememberFamilyFact: (input: MemoryFactInput) => ipcRenderer.invoke("rocky:remember-family-fact", input),
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) =>
     ipcRenderer.invoke("rocky:create-spreadsheet", spec, sessionId),
+  updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) =>
+    ipcRenderer.invoke("rocky:update-active-spreadsheet", spec, sessionId),
   openSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:open-spreadsheet", filePath),
   revealSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:reveal-spreadsheet", filePath),
   speakWithHume: (sessionId: string, text: string) => ipcRenderer.invoke("rocky:hume-speak", sessionId, text),

@@ -1,4 +1,4 @@
-import { MEMORY_TOOL, ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL } from "./prompt";
+import { MEMORY_TOOL, ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL, UPDATE_SPREADSHEET_TOOL } from "./prompt";
 
 export function createRealtimeSessionConfig(
   model: string,
@@ -26,7 +26,7 @@ export function createRealtimeSessionConfig(
       },
       output: { voice },
     },
-    tools: [SPREADSHEET_TOOL, MEMORY_TOOL],
+    tools: [SPREADSHEET_TOOL, UPDATE_SPREADSHEET_TOOL, MEMORY_TOOL],
     tool_choice: "auto",
   };
 }

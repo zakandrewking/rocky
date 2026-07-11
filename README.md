@@ -36,6 +36,9 @@ During development, transcripts and workbooks are saved under the repository's i
 
 Workbooks automatically open in [ONLYOFFICE Desktop Editors](https://github.com/ONLYOFFICE/DesktopEditors)
 and its window is brought to the foreground. `local-data/` is intentionally excluded from Git.
+Run `pnpm onlyoffice:install-plugin` once, then restart ONLYOFFICE, to let Rocky update the visible
+active sheet in place. The hidden plugin polls an authenticated loopback-only bridge; its private token
+stays under ignored local data and the current macOS user's ONLYOFFICE plugin directory.
 
 Rocky updates memory through a narrowly scoped local tool. The app refuses memory facts containing
 common sensitive-data categories, and the persona prompt tells Rocky not to request or retain
@@ -67,6 +70,7 @@ pnpm text:rocky # interactive text-only personality/cadence lab
 pnpm alien:demo # render an ignored WAV using the same Eridian chords as the live app
 pnpm voice:hume:audition # generate three original Hume voice-design candidates (requires local key)
 pnpm voice:hume:save -- 3 # save the selected candidate as a private Hume account voice
+pnpm onlyoffice:install-plugin # install the live active-sheet bridge for the current macOS user
 pnpm voice:check # verify optional ignored local voice-clone assets
 pnpm voice:server # run the experimental loopback-only YourTTS worker
 pnpm dist:mac  # create an unpacked macOS application
