@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { MemoryFactInput, RockyConfig, SpreadsheetSpec } from "../../shared/types";
+import type { MemoryFactInput, SpreadsheetSpec } from "../../shared/types";
 import {
   evaluateRockyStyle,
   ROCKY_DEFAULT_REPLY_CASE,
@@ -24,24 +24,12 @@ interface RealtimeEvent {
   error?: { message?: string };
 }
 
-const phaseCopy: Record<Phase, string> = {
-  idle: "Ready for first contact",
-  connecting: "Opening a space channel…",
-  listening: "Listening",
-  thinking: "Thinking in five dimensions…",
-  speaking: "Rocky is talking",
-  error: "Signal needs repair",
-};
-
 function friendlyError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 export function App(): React.JSX.Element {
-  const [config, setConfig] = useState<RockyConfig | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
-  const [error, setError] = useState<string | null>(null);
-  const [lastOpened, setLastOpened] = useState<string | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -49,7 +37,6 @@ export function App(): React.JSX.Element {
   const rockyUtteranceCountRef = useRef(0);
 
   useEffect(() => {
-    window.rocky.getConfig().then(setConfig).catch((caught) => setError(friendlyError(caught)));
     return () => {
       channelRef.current?.close();
       peerRef.current?.close();
@@ -75,7 +62,6 @@ export function App(): React.JSX.Element {
       try {
         const spec = JSON.parse(argumentText) as SpreadsheetSpec;
         const result = await window.rocky.createSpreadsheet(spec, sessionIdRef.current ?? undefined);
-        setLastOpened(result.filename);
         sendEvent({
           type: "conversation.item.create",
           item: {
@@ -188,7 +174,6 @@ export function App(): React.JSX.Element {
           }
           break;
         case "error":
-          setError(event.error?.message ?? "The Realtime API reported an unknown error.");
           setPhase("error");
           break;
       }
@@ -215,7 +200,6 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    setError(null);
     setPhase("connecting");
     try {
       const transcriptSession = await window.rocky.startTranscript();
@@ -231,7 +215,6 @@ export function App(): React.JSX.Element {
       };
       peer.onconnectionstatechange = () => {
         if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
-          setError("The voice connection dropped. Tap the orb to reconnect.");
           disconnect();
         }
       };
@@ -278,7 +261,6 @@ export function App(): React.JSX.Element {
     } catch (caught) {
       logTranscript("system", `Connection failed: ${friendlyError(caught)}`);
       disconnect();
-      setError(friendlyError(caught));
       setPhase("error");
     }
   }, [disconnect, handleRealtimeEvent, logTranscript]);
@@ -306,17 +288,6 @@ export function App(): React.JSX.Element {
             <span className="wave wave-e" />
           </span>
         </button>
-        <h1>{phaseCopy[phase]}</h1>
-        <p>{isConnected ? "Tap Rocky to say goodbye" : "Tap Rocky and start talking"}</p>
-        <small>
-          {!config
-            ? "Checking ship systems…"
-            : config.hasApiKey
-              ? "AI voice companion · microphone active only while connected"
-              : "API key missing from .env"}
-        </small>
-        {lastOpened ? <div className="file-signal">Spreadsheet opened: {lastOpened}</div> : null}
-        {error ? <div className="error-card">{error}</div> : null}
       </section>
     </main>
   );

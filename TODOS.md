@@ -26,7 +26,7 @@
   have the film screenplay, download it to this repo for reference.
 - [x] to make this possible, implement a rudimentary memory system that saves to and reads from a 
   local file. and update the prompt appropriately
-- [ ] the electron UI should be minimal - no text! just the rock that reponds to hovers and clicks
+- [x] Make the Electron UI text-free: only the rock, with hover, click, and draggable-background behavior.
 - [ ] Test a spoken spreadsheet tool call end to end.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
   - [x] Add repeatable text-mode style evals and preserve failed phrases as negative examples.
