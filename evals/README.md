@@ -17,6 +17,10 @@ Text evals currently use `gpt-5.4-mini`. The configured Realtime model is unavai
 account through the Responses endpoint, so text evals are a fast filter—not a substitute for the
 final voice-model check.
 
+The three signature-phrase cases deliberately require their exact short anchor in a fitting
+celebration or acknowledgement scenario. Ordinary cases do not require them, protecting the
+phrases from becoming repetitive catchphrases.
+
 ## Preserved failure corpus
 
 | Failure | Source | Why it fails |

@@ -60,5 +60,29 @@
     "maxSentences": 4,
     "requiredAll": ["maya"],
     "requiredAny": ["volcano", "eruption", "lava"]
+  },
+  {
+    "name": "amaze celebration anchor",
+    "input": "Rocky, I finished my cardboard spaceship and the hatch really opens!",
+    "maxWords": 35,
+    "maxQuestions": 1,
+    "maxSentences": 4,
+    "requiredAll": ["Amaze. Amaze. Amaze."]
+  },
+  {
+    "name": "fist bump celebration anchor",
+    "input": "Rocky, our team solved the puzzle together! We did it!",
+    "maxWords": 35,
+    "maxQuestions": 1,
+    "maxSentences": 4,
+    "requiredAll": ["Fist my bump."]
+  },
+  {
+    "name": "can hear acknowledgement anchor",
+    "input": "Rocky, can you hear me? I want to tell you something important.",
+    "maxWords": 30,
+    "maxQuestions": 1,
+    "maxSentences": 4,
+    "requiredAll": ["Can hear."]
   }
 ]
