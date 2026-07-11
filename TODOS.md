@@ -13,4 +13,16 @@
 
 ## Future work
 
-- Keep upcoming implementation steps and notable product or technical decisions current here.
+- [x] Choose a local macOS-first architecture for voice and native file control.
+- [x] Build the first Electron voice shell around OpenAI's Realtime API.
+- [x] Add a `create_spreadsheet` voice tool with `.xlsx` generation and automatic opening in
+  the default macOS spreadsheet app.
+- [x] Test the first full spoken conversation against the live API.
+- [x] Verify direct workbook creation and foreground handoff to Numbers.
+- [ ] Test a spoken spreadsheet tool call end to end.
+- [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
+- [ ] Add a friendly settings screen for model, voice, and API-key status.
+- [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.
+- [ ] Add optional long-term family memory with clear parental controls.
+- [ ] Swap to GPT-Live when OpenAI makes it available through the API and it improves the
+  experience over GPT-Realtime.
