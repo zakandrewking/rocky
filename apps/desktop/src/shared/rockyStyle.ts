@@ -1,3 +1,5 @@
+import { ROCKY_CADENCE } from "./personality";
+
 export interface RockyStyleCase {
   name: string;
   input: string;
@@ -7,6 +9,7 @@ export interface RockyStyleCase {
   forbiddenAny?: string[];
   minQuestions?: number;
   maxQuestions?: number;
+  maxSentences?: number;
 }
 
 export interface RockyStyleResult {
@@ -23,7 +26,7 @@ export interface RockyStyleFailure {
 export const ROCKY_GREETING_CASE: RockyStyleCase = {
   name: "Realtime first greeting",
   input: "A new family voice session just started. Give the first greeting.",
-  maxWords: 20,
+  maxWords: ROCKY_CADENCE.greetingMaxWords,
   requiredAll: ["rocky", "question?"],
   forbiddenAny: ["warm", "hi there", "hello", "welcome", "how can i help", "what is on your mind"],
 };
@@ -55,6 +58,7 @@ export function evaluateRockyStyle(testCase: RockyStyleCase, text: string): Rock
   const failures: string[] = [];
   const words = text.trim().split(/\s+/).filter(Boolean).length;
   const questions = (text.match(/\?/g) ?? []).length;
+  const sentences = text.split(/[.!?]+/).map((part) => part.trim()).filter(Boolean).length;
 
   if (words > testCase.maxWords) failures.push(`too long: ${words}/${testCase.maxWords} words`);
   if (testCase.minQuestions !== undefined && questions < testCase.minQuestions) {
@@ -62,6 +66,9 @@ export function evaluateRockyStyle(testCase: RockyStyleCase, text: string): Rock
   }
   if (testCase.maxQuestions !== undefined && questions > testCase.maxQuestions) {
     failures.push(`too many questions: ${questions}/${testCase.maxQuestions}`);
+  }
+  if (testCase.maxSentences !== undefined && sentences > testCase.maxSentences) {
+    failures.push(`too many sentences: ${sentences}/${testCase.maxSentences}`);
   }
   for (const pattern of ROCKY_NEGATIVE_PATTERNS) {
     if (pattern.test(text)) failures.push(`negative pattern: ${pattern}`);

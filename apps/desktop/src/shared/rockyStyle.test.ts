@@ -70,4 +70,12 @@ describe("Rocky style evaluator", () => {
     );
     expect(result.failures).toContain("too many questions: 3/1");
   });
+
+  it("rejects too many short sentences when cadence becomes choppy", () => {
+    const result = evaluateRockyStyle(
+      { name: "cadence", input: "", maxWords: 40, maxSentences: 4 },
+      "One. Two. Three. Four. Five.",
+    );
+    expect(result.failures).toContain("too many sentences: 5/4");
+  });
 });

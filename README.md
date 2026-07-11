@@ -94,6 +94,11 @@ saves the session under ignored `local-data/text-chats/`. A one-shot prompt also
 pnpm text:rocky -- "I built a cardboard spaceship today."
 ```
 
+The primary cadence knobs live together in
+`apps/desktop/src/shared/personality.ts`: normal reply length, sentence cap, greeting length,
+question cap, and emphasis repetition. Tune those values first when listening feedback is about
+pace or verbosity; use the longer persona prompt for behavioral changes.
+
 ## Acknowledgments
 
 Rocky's compact speech mechanics and exactness/safety rule are adapted from the MIT-licensed

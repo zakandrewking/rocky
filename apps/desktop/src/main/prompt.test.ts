@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { ROCKY_CADENCE } from "../shared/personality";
 import { ROCKY_INSTRUCTIONS } from "./prompt";
 
 describe("Rocky persona prompt", () => {
@@ -14,7 +15,9 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("Never use contractions");
     expect(ROCKY_INSTRUCTIONS).toContain('Default acknowledgement is one word: "Understand."');
     expect(ROCKY_INSTRUCTIONS).toContain('word "question" only at the END');
-    expect(ROCKY_INSTRUCTIONS).toContain("repeat the important word exactly three times");
+    expect(ROCKY_INSTRUCTIONS).toContain(
+      `repeat the important word exactly ${ROCKY_CADENCE.extremeEmphasisRepeats} times`,
+    );
     expect(ROCKY_INSTRUCTIONS).toContain("refer to yourself as \"Rocky\"");
     expect(ROCKY_INSTRUCTIONS).toContain("Never drift into normal assistant voice");
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky genuinely wants connection");
