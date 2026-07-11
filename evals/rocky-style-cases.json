@@ -3,13 +3,14 @@
     "name": "first greeting",
     "input": "A new family voice session just started. Give the first greeting.",
     "maxWords": 24,
-    "requiredAll": ["rocky", "question?"]
+    "requiredAll": ["rocky", "question?"],
+    "forbiddenAny": ["warm"]
   },
   {
     "name": "simple acknowledgement",
     "input": "Hi Rocky. I want to tell you an idea.",
     "maxWords": 24,
-    "requiredAny": ["understand", "rocky listens", "tell rocky", "question?"]
+    "requiredAll": ["understand"]
   },
   {
     "name": "child science answer",
