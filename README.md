@@ -65,6 +65,7 @@ pnpm eval:rocky # run text-mode Rocky persona evals before voice testing
 pnpm review:rocky # review all saved Rocky utterances against the current style contract
 pnpm text:rocky # interactive text-only personality/cadence lab
 pnpm alien:demo # render an ignored WAV using the same Eridian chords as the live app
+pnpm voice:hume:audition # generate three original Hume voice-design candidates (requires local key)
 pnpm voice:check # verify optional ignored local voice-clone assets
 pnpm voice:server # run the experimental loopback-only YourTTS worker
 pnpm dist:mac  # create an unpacked macOS application
@@ -76,6 +77,12 @@ real Excel workbooks with formatted headers, filters, frozen rows, and useful co
 `pnpm alien:demo` writes `local-data/voice-clone/eridian-demo.wav`. Add words after `--` to audition
 a custom line, for example `pnpm alien:demo -- "Rocky friend. Amaze!"`. This uses the same chord
 mapping and timing as the live browser audio layer and does not make an API call.
+
+For a higher-quality custom voice, add `HUME_API_KEY` only to the ignored `.env`, then run
+`pnpm voice:hume:audition`. It creates three original-character voice designs under the ignored
+`local-data/voice-clone/hume/` directory. The command deliberately describes a new adult alien
+engineer voice instead of requesting an actor impersonation. Override `HUME_VOICE_DESCRIPTION`
+locally to iterate; no key, private voice ID, candidate audio, or generation manifest is committed.
 
 ### Persona prompt iteration
 

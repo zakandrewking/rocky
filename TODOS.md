@@ -62,6 +62,14 @@
   - [ ] Evaluate Hume custom voice cloning from the Rocky seed/reference audio. Verify the current
     creation workflow, account-private voice-ID behavior, API availability, latency, pricing, and
     personal-use terms; never commit the Hume API key or voice ID. A/B it against Piper candidates.
+    - [x] Confirm Octave 2 supports private saved voices, incremental WebSocket text input, streaming
+      output, and advertised model latency near 100 ms before network transit.
+    - [x] Add a no-secret, ignored-output audition command that generates three original adult alien
+      voice designs. Prefer this consent-safe design route unless suitable rights for cloning exist.
+    - [ ] Add a local Hume API key and family-rank the three candidates; save only the winner as a
+      private account voice and keep its ID in `.env`.
+    - [ ] Implement Hume Octave 2 bidirectional streaming behind a provider boundary, with buffered
+      incremental text, immediate barge-in cancellation, and the Eridian chord layer mixed locally.
   - [ ] A/B the public Piper `en_US-lessac-low` and `en_US-joe-medium` ONNX voices with identical
     Rocky lines; tune speech rate and Piper variation controls, and verify each model card/license.
   - [ ] Keep searching the internet for stronger public Piper ONNX candidates. Prefer candidates
@@ -83,6 +91,9 @@
   - [ ] Compare YourTTS against the supplied RVC model only if artifacts and latency justify it.
 - [ ] Add a friendly settings screen for model, voice, and API-key status.
 - [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.
+- [ ] Publish a downloadable macOS DMG on GitHub Releases so Rocky remains easy to reinstall after
+  time away from the project. Add a reproducible release workflow, versioned release notes, code
+  signing and notarization when credentials are available, and document the unsigned-build fallback.
 - [ ] Add optional long-term family memory with clear parental controls.
 - [ ] Swap to GPT-Live when OpenAI makes it available through the API and it improves the
   experience over GPT-Realtime.
