@@ -66,6 +66,7 @@ pnpm review:rocky # review all saved Rocky utterances against the current style 
 pnpm text:rocky # interactive text-only personality/cadence lab
 pnpm alien:demo # render an ignored WAV using the same Eridian chords as the live app
 pnpm voice:hume:audition # generate three original Hume voice-design candidates (requires local key)
+pnpm voice:hume:save -- 3 # save the selected candidate as a private Hume account voice
 pnpm voice:check # verify optional ignored local voice-clone assets
 pnpm voice:server # run the experimental loopback-only YourTTS worker
 pnpm dist:mac  # create an unpacked macOS application
@@ -83,6 +84,8 @@ For a higher-quality custom voice, add `HUME_API_KEY` only to the ignored `.env`
 `local-data/voice-clone/hume/` directory. The command deliberately describes a new adult alien
 engineer voice instead of requesting an actor impersonation. Override `HUME_VOICE_DESCRIPTION`
 locally to iterate; no key, private voice ID, candidate audio, or generation manifest is committed.
+After ranking the candidates, `pnpm voice:hume:save -- 3` saves the selected generation to the Hume
+account and records its private metadata only in ignored `local-data/voice-clone/hume/saved-voice.json`.
 
 ### Persona prompt iteration
 
