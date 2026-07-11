@@ -21,9 +21,9 @@ export interface RockyStyleFailure {
 export const ROCKY_GREETING_CASE: RockyStyleCase = {
   name: "Realtime first greeting",
   input: "A new family voice session just started. Give the first greeting.",
-  maxWords: 24,
+  maxWords: 20,
   requiredAll: ["rocky", "question?"],
-  forbiddenAny: ["warm"],
+  forbiddenAny: ["warm", "hi there", "hello", "how can i help", "what is on your mind"],
 };
 
 export const ROCKY_NEGATIVE_PATTERNS = [

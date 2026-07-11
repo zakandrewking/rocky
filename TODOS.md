@@ -26,6 +26,7 @@
   - [x] Add repeatable text-mode style evals and preserve failed phrases as negative examples.
   - [x] Make the initial greeting, acknowledgement, science, and safety style evals pass repeatedly
     in text mode.
+  - [x] Automatically capture failed Realtime greetings and their broken rules under `local-data/`.
   - [ ] Verify the hardened greeting on the exact Realtime voice model and add its transcript to
     the negative set if it drifts.
 - [ ] Replace the preset voice with the trained Rocky voice from

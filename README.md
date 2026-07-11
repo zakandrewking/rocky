@@ -61,6 +61,23 @@ pnpm dist:mac  # create an unpacked macOS application
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.
 
+### Persona prompt iteration
+
+Run the full text-mode style suite before spending time listening to voice sessions:
+
+```bash
+pnpm eval:rocky
+ROCKY_EVAL_RUNS=5 pnpm eval:rocky -- "first greeting"
+```
+
+Committed cases live in `evals/rocky-style-cases.json`. Known bad outputs are preserved in the
+prompt and unit tests so regressions remain visible. Generated eval reports stay local under
+`local-data/evals/`.
+
+The app also scores the first actual Realtime greeting. A failure is recorded in the conversation
+transcript and appended to ignored `local-data/evals/realtime-failures.md` for the next prompt
+iteration.
+
 ## Acknowledgments
 
 Rocky's compact speech mechanics and exactness/safety rule are adapted from the MIT-licensed
