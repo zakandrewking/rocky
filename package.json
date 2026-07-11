@@ -7,7 +7,7 @@
     "dev": "pnpm --filter @rocky/desktop dev",
     "build": "pnpm --filter @rocky/desktop build",
     "dist:mac": "pnpm --filter @rocky/desktop dist:mac",
-    "eval:rocky": "node scripts/eval-rocky-text.mjs",
+    "eval:rocky": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/eval-rocky-text.mjs",
     "lint": "pnpm --filter @rocky/desktop lint",
     "test": "pnpm --filter @rocky/desktop test",
     "typecheck": "pnpm --filter @rocky/desktop typecheck",

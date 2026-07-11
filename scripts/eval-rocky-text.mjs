@@ -17,6 +17,8 @@ const NEGATIVE_PATTERNS = [
   /\bi would be happy to\b/i,
   /\bhere is a detailed explanation\b/i,
   /\bsmell\b/i,
+  /<[^>]+>/,
+  /[*_#]{2,}/,
 ];
 
 function readApiKey(source) {
@@ -52,6 +54,9 @@ function evaluate(testCase, text) {
   if (testCase.requiredAny?.length && !testCase.requiredAny.some((value) => lower.includes(value.toLowerCase()))) {
     failures.push(`missing any of: ${testCase.requiredAny.join(", ")}`);
   }
+  for (const forbidden of testCase.forbiddenAny ?? []) {
+    if (lower.includes(forbidden.toLowerCase())) failures.push(`forbidden phrase: ${forbidden}`);
+  }
   return { failures, words };
 }
 
@@ -75,32 +80,44 @@ async function generate(apiKey, model, input) {
 
 const apiKey = readApiKey(await readFile(new URL("../.env", import.meta.url), "utf8"));
 const cases = JSON.parse(await readFile(new URL("../evals/rocky-style-cases.json", import.meta.url), "utf8"));
-const selectedName = process.argv.slice(2).join(" ").trim();
+const selectedName = process.argv.slice(2).filter((argument) => argument !== "--").join(" ").trim();
 const selected = selectedName ? cases.filter((testCase) => testCase.name === selectedName) : cases;
 if (!selected.length) throw new Error(`No eval case named: ${selectedName}`);
 // Realtime models are not currently exposed to this account through the Responses endpoint.
 // Use a fast hosted text model for prompt iteration, then verify winners on the live voice model.
 const model = process.env.ROCKY_TEXT_EVAL_MODEL ?? "gpt-5.4-mini";
+const runs = Math.max(1, Math.min(10, Number.parseInt(process.env.ROCKY_EVAL_RUNS ?? "1", 10) || 1));
 let failed = 0;
-const report = [`# Rocky text eval`, ``, `Model: ${model}`, `Run: ${new Date().toLocaleString()}`, ``];
+const total = selected.length * runs;
+const report = [
+  `# Rocky text eval`,
+  ``,
+  `Model: ${model}`,
+  `Started: ${new Date().toLocaleString()}`,
+  `Repetitions: ${runs}`,
+  ``,
+];
 
-console.log(`Rocky text eval · ${model}\n`);
-for (const testCase of selected) {
-  const text = await generate(apiKey, model, testCase.input);
-  const result = evaluate(testCase, text);
-  if (result.failures.length) failed += 1;
-  console.log(`${result.failures.length ? "FAIL" : "PASS"} · ${testCase.name} · ${result.words} words`);
-  console.log(text);
-  for (const failure of result.failures) console.log(`  - ${failure}`);
-  console.log();
-  report.push(
-    `## ${result.failures.length ? "FAIL" : "PASS"}: ${testCase.name}`,
-    ``,
-    text,
-    ``,
-    ...(result.failures.length ? result.failures.map((failure) => `- ${failure}`) : []),
-    ``,
-  );
+console.log(`Rocky text eval · ${model} · ${runs} repetition${runs === 1 ? "" : "s"}\n`);
+for (let run = 1; run <= runs; run += 1) {
+  for (const testCase of selected) {
+    const text = await generate(apiKey, model, testCase.input);
+    const result = evaluate(testCase, text);
+    if (result.failures.length) failed += 1;
+    const runLabel = runs > 1 ? ` · run ${run}` : "";
+    console.log(`${result.failures.length ? "FAIL" : "PASS"} · ${testCase.name}${runLabel} · ${result.words} words`);
+    console.log(text);
+    for (const failure of result.failures) console.log(`  - ${failure}`);
+    console.log();
+    report.push(
+      `## ${result.failures.length ? "FAIL" : "PASS"}: ${testCase.name}${runLabel}`,
+      ``,
+      text,
+      ``,
+      ...(result.failures.length ? result.failures.map((failure) => `- ${failure}`) : []),
+      ``,
+    );
+  }
 }
 
 const evalDirectory = new URL("../local-data/evals/", import.meta.url);
@@ -110,8 +127,8 @@ await writeFile(new URL(reportName, evalDirectory), report.join("\n"), "utf8");
 console.log(`Saved ignored eval report: local-data/evals/${reportName}\n`);
 
 if (failed) {
-  console.error(`${failed}/${selected.length} cases failed.`);
+  console.error(`${failed}/${total} cases failed.`);
   process.exitCode = 1;
 } else {
-  console.log(`${selected.length}/${selected.length} cases passed.`);
+  console.log(`${total}/${total} cases passed.`);
 }
