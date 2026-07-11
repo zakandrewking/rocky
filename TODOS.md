@@ -80,6 +80,11 @@ in approximate priority order
   /var/folders/6w/1gtm6b0n6s16j6p_fvlqbrfm0000gn/T/claude-hostloop-plugins/ccb68a6b8377b360/skills/xlsx/SKILL.md
 - [ ] Test a spoken spreadsheet tool call end to end.
 - [ ] Verify that asking for all Minecraft biomes proactively opens a scoped biome workbook.
+- [ ] Make Rocky naturally learn who is speaking: when the current speaker has not introduced
+  themselves, ask once per session what first name or nickname to use, remember the volunteered
+  answer, and associate later safe facts with that person without requesting private information.
+- [ ] Improve local memory identity correction and merging so a speech-to-text misspelling such as
+  `Zac` can be corrected to `Zak` without leaving duplicate people or orphaning earlier facts.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
 - [ ] Add a friendly settings screen for model, voice, and API-key status.
 - [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.

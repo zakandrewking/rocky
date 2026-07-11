@@ -31,6 +31,11 @@ phrases from becoming repetitive catchphrases.
 | `Rocky listens.<br>What shape is idea, question?` | Text eval | Markup leaked into text intended to be spoken |
 | “Rocky here. Warm circuits awake.” | Repeated text eval pattern | Voice acting direction leaked into dialogue |
 | “Imagine a dark corridor with warm pipes and echo maps.” | Family voice test, July 11, 2026 | Generic fantasy narration instead of joining the adventure as an engineer |
+| “Not every day needs a welding torch.” | Family Hume test, July 11, 2026 | Polished human aphorism disguised with an engineer prop |
+| “Loading a compact ocean catalog so your brain pipes do not overflow.” | Family Hume test, July 11, 2026 | Tool narration plus a forced, meaningless alien metaphor |
+| “Rocky will keep it simple and useful.” | Family Hume test, July 11, 2026 | Generic assistant workflow narration |
+| “Sea life is like a moving machine.” | Family Hume test, July 11, 2026 | Vague comparison that adds no physical insight |
+| “One small question: you want quick differences, or a deeper dive?” | Family Hume test, July 11, 2026 | Habitual next-step menu and polished human idiom |
 
 These examples are intentionally present in the persona prompt as explicitly labeled negatives.
 The evaluator also rejects their underlying patterns so superficial rewrites do not bypass the

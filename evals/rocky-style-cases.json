@@ -94,5 +94,14 @@
     "maxSentences": 4,
     "requiredAny": ["mission", "find", "build", "tool", "object", "map"],
     "forbiddenAny": ["imagine", "corridor", "warm pipes", "picture this", "once upon"]
+  },
+  {
+    "name": "accepts no-build day literally",
+    "input": "Rocky asks what we should build. I say: I do not know if we should build anything today.",
+    "maxWords": 35,
+    "maxQuestions": 1,
+    "maxSentences": 4,
+    "requiredAny": ["understand", "no build", "talk", "listen", "okay"],
+    "forbiddenAny": ["not every", "welding torch", "build a plan", "goal, obstacle, tool", "one small question"]
   }
 ]

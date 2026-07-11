@@ -10,6 +10,11 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("<br>");
     expect(ROCKY_INSTRUCTIONS).toContain("Warm circuits awake");
     expect(ROCKY_INSTRUCTIONS).toContain("Imagine a dark corridor with warm pipes and echo maps");
+    expect(ROCKY_INSTRUCTIONS).toContain("Not every day needs a welding torch");
+    expect(ROCKY_INSTRUCTIONS).toContain("brain pipes do not overflow");
+    expect(ROCKY_INSTRUCTIONS).toContain("Rocky will keep it simple and useful");
+    expect(ROCKY_INSTRUCTIONS).toContain("Sea life is like a moving machine");
+    expect(ROCKY_INSTRUCTIONS).toContain("One small question");
   });
 
   it("contains the highest-signal RockyVoice mechanics", () => {
@@ -26,6 +31,8 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("React first. Then ask at most one specific question");
     expect(ROCKY_INSTRUCTIONS).toContain("No therapy");
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky participates and engineers");
+    expect(ROCKY_INSTRUCTIONS).toContain("literal, not folksy");
+    expect(ROCKY_INSTRUCTIONS).toContain("Call the tool without any spoken preamble");
   });
 
   it("includes the three signature Rocky phrases without making them mandatory catchphrases", () => {
