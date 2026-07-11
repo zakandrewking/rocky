@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateRockyStyle, ROCKY_GREETING_CASE } from "./rockyStyle";
+import { evaluateRockyStyle, ROCKY_DEFAULT_REPLY_CASE, ROCKY_GREETING_CASE } from "./rockyStyle";
 
 const greetingCase = ROCKY_GREETING_CASE;
 
@@ -85,5 +85,13 @@ describe("Rocky style evaluator", () => {
       "One. Two. Three. Four. Five.",
     );
     expect(result.failures).toContain("too many sentences: 5/4");
+  });
+
+  it("applies the central cadence profile to ordinary Realtime replies", () => {
+    const result = evaluateRockyStyle(
+      ROCKY_DEFAULT_REPLY_CASE,
+      "Understand. Cardboard ship is clever clever clever. What holds walls, question?",
+    );
+    expect(result.failures).toEqual([]);
   });
 });

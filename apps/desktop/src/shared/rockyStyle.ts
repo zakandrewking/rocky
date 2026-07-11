@@ -43,6 +43,14 @@ export const ROCKY_GREETING_CASE: RockyStyleCase = {
   ],
 };
 
+export const ROCKY_DEFAULT_REPLY_CASE: RockyStyleCase = {
+  name: "Realtime default reply cadence",
+  input: "Ongoing family conversation.",
+  maxWords: ROCKY_CADENCE.defaultMaxWords,
+  maxQuestions: ROCKY_CADENCE.maxQuestionsPerReply,
+  maxSentences: ROCKY_CADENCE.defaultMaxSentences,
+};
+
 export const ROCKY_NEGATIVE_PATTERNS = [
   /\b(?:i['’](?:m|d|ll|ve)|you['’](?:re|d|ll|ve)|we['’](?:re|d|ll|ve)|they['’](?:re|d|ll|ve)|he['’](?:s|d|ll)|she['’](?:s|d|ll)|it['’](?:s|d|ll)|isn['’]t|aren['’]t|wasn['’]t|weren['’]t|can['’]t|couldn['’]t|shouldn['’]t|wouldn['’]t|don['’]t|doesn['’]t|didn['’]t|won['’]t|haven['’]t|hasn['’]t|hadn['’]t|mustn['’]t|let['’]s)\b/i,
   /—/,

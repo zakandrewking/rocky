@@ -82,9 +82,11 @@ Committed cases live in `evals/rocky-style-cases.json`. Known bad outputs are pr
 prompt and unit tests so regressions remain visible. Generated eval reports stay local under
 `local-data/evals/`.
 
-The app also scores the first actual Realtime greeting. A failure is recorded in the conversation
-transcript and appended to ignored `local-data/evals/realtime-failures.md` for the next prompt
-iteration.
+The app scores the first actual Realtime greeting and every subsequent spoken reply. A failure is
+recorded in the conversation transcript and appended to ignored
+`local-data/evals/realtime-failures.md` for the next prompt iteration. The general reply check is
+deliberately strict; a requested detailed or safety-critical answer may be worth keeping even if it
+raises a length warning.
 
 For hands-on personality iteration without voice variables, run `pnpm text:rocky`. It uses the
 same production prompt and local family memory, maintains conversation context until `/quit`, and

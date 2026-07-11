@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { MemoryFactInput, RockyConfig, SpreadsheetSpec } from "../../shared/types";
-import { evaluateRockyStyle, ROCKY_GREETING_CASE } from "../../shared/rockyStyle";
+import {
+  evaluateRockyStyle,
+  ROCKY_DEFAULT_REPLY_CASE,
+  ROCKY_GREETING_CASE,
+} from "../../shared/rockyStyle";
 import { START_GREETING_EVENT } from "../../shared/realtimeEvents";
 
 type Phase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
@@ -158,16 +162,17 @@ export function App(): React.JSX.Element {
         case "response.output_audio_transcript.done":
           if (event.transcript) {
             logTranscript("rocky", event.transcript);
-            if (rockyUtteranceCountRef.current === 0) {
-              const result = evaluateRockyStyle(ROCKY_GREETING_CASE, event.transcript);
-              if (result.failures.length) {
-                logTranscript("system", `Greeting style eval failed: ${result.failures.join("; ")}`);
-                void window.rocky.recordStyleFailure({
-                  caseName: ROCKY_GREETING_CASE.name,
-                  text: event.transcript,
-                  failures: result.failures,
-                }).catch(() => undefined);
-              }
+            const styleCase = rockyUtteranceCountRef.current === 0
+              ? ROCKY_GREETING_CASE
+              : ROCKY_DEFAULT_REPLY_CASE;
+            const result = evaluateRockyStyle(styleCase, event.transcript);
+            if (result.failures.length) {
+              logTranscript("system", `${styleCase.name} failed: ${result.failures.join("; ")}`);
+              void window.rocky.recordStyleFailure({
+                caseName: styleCase.name,
+                text: event.transcript,
+                failures: result.failures,
+              }).catch(() => undefined);
             }
             rockyUtteranceCountRef.current += 1;
           }

@@ -33,6 +33,7 @@
   - [x] Make the initial greeting, acknowledgement, science, and safety style evals pass repeatedly
     in text mode.
   - [x] Automatically capture failed Realtime greetings and their broken rules under `local-data/`.
+  - [x] Audit every Realtime reply against the default cadence profile during family testing.
   - [x] Add personality evals for specific curiosity, direct emotional connection, cadence, and
     natural recall of one relevant memory.
   - [x] Add an interactive text-only conversation lab using the production prompt and memory.
