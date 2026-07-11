@@ -28,8 +28,9 @@
   Locate the model/artifacts, confirm their license and permitted use, and determine the lowest-latency
   way to combine them with the conversational model. Do not constrain the architecture to OpenAI
   Realtime: evaluate Deepgram and other realtime STT, conversational-model, and TTS providers or
-  local models, choosing the stack with the best naturalness, interruption handling, latency, and
-  tool use for Rocky.
+  local STT/TTS engines, choosing the stack with the best naturalness, interruption handling,
+  latency, and tool use for Rocky. Local speech-to-text and text-to-speech are acceptable; keep the
+  conversational/reasoning model hosted for now because local AI models are expected to be too slow.
 - [ ] Add a friendly settings screen for model, voice, and API-key status.
 - [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.
 - [ ] Add optional long-term family memory with clear parental controls.
