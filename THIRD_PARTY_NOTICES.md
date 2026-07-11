@@ -32,3 +32,13 @@ Rocky launches the separately installed
 and edit generated `.xlsx` files. ONLYOFFICE Desktop Editors is distributed separately under the
 GNU Affero General Public License v3.0. Rocky does not redistribute or modify ONLYOFFICE binaries.
 
+## Pedram Amini's Rocky voice-clone project
+
+The optional local voice experiment is informed by
+[Pedram Amini's write-up](https://pedsidian.pedramamini.com/Claude/Blog/2026-03-28-rocky-voice-clone)
+and [`rocky_say` gist](https://gist.github.com/pedramamini/fa5f6ef99dae79add220188419230642).
+The project describes its script and voice assets as personal, non-commercial use only, identifies
+XTTS v2's Coqui Public Model License restrictions, and notes that the film voice design remains the
+film production company's intellectual property. Rocky does not commit or redistribute the source
+film audio, extracted reference audio, model weights, or generated samples. Any local copies live
+only under ignored `local-data/voice-clone/`.

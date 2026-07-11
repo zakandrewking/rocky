@@ -10,8 +10,11 @@
     "eval:rocky": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/eval-rocky-text.mjs",
     "review:rocky": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/review-rocky-transcripts.mjs",
     "text:rocky": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/rocky-text-chat.mjs",
+    "voice:check": "local-data/voice-clone/venv/bin/python services/voice-clone/server.py --check",
+    "voice:server": "local-data/voice-clone/venv/bin/python services/voice-clone/server.py",
+    "voice:test": "python3 -m unittest discover -s services/voice-clone -p 'test_*.py'",
     "lint": "pnpm --filter @rocky/desktop lint",
-    "scripts:check": "node --check scripts/eval-rocky-text.mjs && node --check scripts/review-rocky-transcripts.mjs && node --check scripts/rocky-text-chat.mjs",
+    "scripts:check": "node --check scripts/eval-rocky-text.mjs && node --check scripts/review-rocky-transcripts.mjs && node --check scripts/rocky-text-chat.mjs && python3 -m py_compile services/voice-clone/server.py services/voice-clone/test_server.py && pnpm voice:test",
     "test": "pnpm --filter @rocky/desktop test",
     "typecheck": "pnpm --filter @rocky/desktop typecheck",
     "check": "pnpm lint && pnpm scripts:check && pnpm typecheck && pnpm test && pnpm build"

@@ -1,0 +1,5 @@
+coqui-tts==0.25.3
+click==8.4.2
+transformers==4.44.0
+torch==2.5.1
+torchaudio==2.5.1

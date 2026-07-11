@@ -8,3 +8,5 @@ out/
 release/
 coverage/
 *.log
+__pycache__/
+*.py[cod]

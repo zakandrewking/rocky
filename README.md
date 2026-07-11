@@ -64,6 +64,8 @@ pnpm check     # lint, strict typecheck, tests, and production build
 pnpm eval:rocky # run text-mode Rocky persona evals before voice testing
 pnpm review:rocky # review all saved Rocky utterances against the current style contract
 pnpm text:rocky # interactive text-only personality/cadence lab
+pnpm voice:check # verify optional ignored local voice-clone assets
+pnpm voice:server # run the experimental loopback-only YourTTS worker
 pnpm dist:mac  # create an unpacked macOS application
 ```
 
@@ -106,6 +108,14 @@ The primary cadence knobs live together in
 `apps/desktop/src/shared/personality.ts`: normal reply length, sentence cap, greeting length,
 question cap, and emphasis repetition. Tune those values first when listening feedback is about
 pace or verbosity; use the longer persona prompt for behavioral changes.
+
+### Experimental cloned voice
+
+An optional personal-use YourTTS worker lives under `services/voice-clone`. Voice reference audio,
+model weights, Python environments, and generated samples remain ignored under
+`local-data/voice-clone/` and are never bundled or committed. See
+[`services/voice-clone/README.md`](services/voice-clone/README.md) for licensing constraints,
+setup, benchmark results, and local commands.
 
 ## Acknowledgments
 
