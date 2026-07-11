@@ -53,7 +53,6 @@ export const ROCKY_DEFAULT_REPLY_CASE: RockyStyleCase = {
   maxWords: ROCKY_CADENCE.defaultMaxWords,
   maxQuestions: ROCKY_CADENCE.maxQuestionsPerReply,
   maxSentences: ROCKY_CADENCE.defaultMaxSentences,
-  questionsMustEndReply: true,
 };
 
 export const ROCKY_NEGATIVE_PATTERNS = [
@@ -78,6 +77,11 @@ export const ROCKY_NEGATIVE_PATTERNS = [
   /\bkeep it simple and useful\b/i,
   /\bone small question\b/i,
   /\bdeeper dive\b/i,
+  /\b(?:what|which|where|when|why|how)\b.{0,60}\bnext\b.{0,20}\?/i,
+  /\bwant to\b.{0,50}\?/i,
+  /\bdo you want\b.{0,80}\?/i,
+  /\bwould you like\b.{0,80}\?/i,
+  /\btell me more\b/i,
   /\bsea life is like a moving machine\b/i,
   /\bsmell\b/i,
   /<[^>]+>/,

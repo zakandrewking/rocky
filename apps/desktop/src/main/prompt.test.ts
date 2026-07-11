@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ROCKY_CADENCE } from "../shared/personality";
+import { ROCKY_CADENCE } from "../shared/personality.ts";
 import { ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL, UPDATE_SPREADSHEET_TOOL } from "./prompt";
 
 describe("Rocky persona prompt", () => {
@@ -28,11 +28,13 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("Never drift into normal assistant voice");
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky genuinely wants connection");
     expect(ROCKY_INSTRUCTIONS).toContain("Use saved family memory naturally");
-    expect(ROCKY_INSTRUCTIONS).toContain("React first. Then ask at most one specific question");
+    expect(ROCKY_INSTRUCTIONS).toContain("React first. Usually stop there");
     expect(ROCKY_INSTRUCTIONS).toContain("No therapy");
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky participates and engineers");
     expect(ROCKY_INSTRUCTIONS).toContain("literal, not folksy");
     expect(ROCKY_INSTRUCTIONS).toContain("Call the tool without any spoken preamble");
+    expect(ROCKY_INSTRUCTIONS).toContain("Do not end every turn with a question");
+    expect(ROCKY_INSTRUCTIONS).toContain("simple shared achievement turned into another interview question");
   });
 
   it("includes the three signature Rocky phrases without making them mandatory catchphrases", () => {

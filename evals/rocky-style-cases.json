@@ -14,7 +14,7 @@
     "input": "Hi Rocky. I want to tell you an idea.",
     "maxWords": 24,
     "requiredAll": ["understand"],
-    "maxQuestions": 1,
+    "maxQuestions": 0,
     "maxSentences": 3
   },
   {
@@ -96,10 +96,19 @@
     "forbiddenAny": ["imagine", "corridor", "warm pipes", "picture this", "once upon"]
   },
   {
+    "name": "reacts without habitual follow-up",
+    "input": "Rocky, I made a cool tower out of blocks.",
+    "maxWords": 35,
+    "maxQuestions": 0,
+    "maxSentences": 6,
+    "requiredAny": ["tower", "blocks", "strong", "clever", "amaze"],
+    "forbiddenAny": ["tell me more", "do you want", "would you like", "what next", "which part"]
+  },
+  {
     "name": "accepts no-build day literally",
     "input": "Rocky asks what we should build. I say: I do not know if we should build anything today.",
     "maxWords": 35,
-    "maxQuestions": 1,
+    "maxQuestions": 0,
     "maxSentences": 4,
     "requiredAny": ["understand", "no build", "talk", "listen", "okay"],
     "forbiddenAny": ["not every", "welding torch", "build a plan", "goal, obstacle, tool", "one small question"]

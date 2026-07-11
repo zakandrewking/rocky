@@ -92,18 +92,34 @@ describe("Rocky style evaluator", () => {
     expect(result.failures).toContain("too short: 3/4 words");
   });
 
-  it("keeps Rocky's one question at the end of the reply", () => {
+  it("allows ordinary replies to end without a question", () => {
     const result = evaluateRockyStyle(
       ROCKY_DEFAULT_REPLY_CASE,
+      "Understand. Cardboard ship is clever clever clever. Walls need strong corners.",
+    );
+    expect(result.failures).toEqual([]);
+  });
+
+  it("keeps Rocky's optional question at the end when he asks one", () => {
+    const result = evaluateRockyStyle(
+      { ...ROCKY_DEFAULT_REPLY_CASE, questionsMustEndReply: true },
       "What powers ship, question? Rocky has three ideas.",
     );
     expect(result.failures).toContain("question must end reply");
   });
 
+  it("rejects assistant-style follow-up questions by habit", () => {
+    const result = evaluateRockyStyle(
+      ROCKY_DEFAULT_REPLY_CASE,
+      "Understand. Cardboard ship is clever clever clever. Do you want to add engines next?",
+    );
+    expect(result.failures.some((failure) => failure.startsWith("negative pattern"))).toBe(true);
+  });
+
   it("applies the central cadence profile to ordinary Realtime replies", () => {
     const result = evaluateRockyStyle(
       ROCKY_DEFAULT_REPLY_CASE,
-      "Understand. Cardboard ship is clever clever clever. What holds walls, question?",
+      "Understand. Cardboard ship is clever clever clever. Walls need strong corners.",
     );
     expect(result.failures).toEqual([]);
   });
