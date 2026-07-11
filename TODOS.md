@@ -19,6 +19,8 @@
   the default macOS spreadsheet app.
 - [x] Test the first full spoken conversation against the live API.
 - [x] Verify direct workbook creation and foreground handoff to Numbers.
+- [x] Keep ignored local transcript and spreadsheet history in `local-data/`.
+- [x] Standardize spreadsheet viewing and editing on open-source ONLYOFFICE Desktop Editors.
 - [ ] Test a spoken spreadsheet tool call end to end.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
 - [ ] Add a friendly settings screen for model, voice, and API-key status.

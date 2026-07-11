@@ -1,15 +1,22 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { config as loadEnv } from "dotenv";
 import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron";
 
 import { ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL } from "./prompt";
 import { writeSpreadsheet } from "./spreadsheet";
+import type { TranscriptEntry, TranscriptRole } from "../shared/types";
 
 const MODEL = process.env.ROCKY_REALTIME_MODEL ?? "gpt-realtime-2.1";
 const VOICE = process.env.ROCKY_VOICE ?? "cedar";
+const execFileAsync = promisify(execFile);
+const ONLYOFFICE_APP = "/Applications/ONLYOFFICE.app";
 
 function loadEnvironment(): void {
   const candidates = [
@@ -20,8 +27,72 @@ function loadEnvironment(): void {
   for (const envPath of candidates) loadEnv({ path: envPath, override: false, quiet: true });
 }
 
+function localDataDirectory(): string {
+  if (!app.isPackaged) {
+    const candidates = [process.cwd(), path.resolve(process.cwd(), "../..")];
+    const workspace = candidates.find((candidate) => existsSync(path.join(candidate, "pnpm-workspace.yaml")));
+    if (workspace) return path.join(workspace, "local-data");
+  }
+  return path.join(app.getPath("userData"), "local-data");
+}
+
 function spreadsheetDirectory(): string {
-  return path.join(app.getPath("documents"), "Rocky Spreadsheets");
+  return path.join(localDataDirectory(), "spreadsheets");
+}
+
+function transcriptDirectory(): string {
+  return path.join(localDataDirectory(), "transcripts");
+}
+
+function transcriptPath(sessionId: string): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(sessionId)) throw new Error("Invalid transcript session identifier.");
+  return path.join(transcriptDirectory(), `${sessionId}.md`);
+}
+
+async function startTranscript(): Promise<{ sessionId: string; path: string }> {
+  const date = new Date();
+  const timestamp = date.toISOString().replace(/[:.]/g, "-");
+  const sessionId = `${timestamp}-${randomUUID().slice(0, 8)}`;
+  const filePath = transcriptPath(sessionId);
+  await mkdir(transcriptDirectory(), { recursive: true });
+  await writeFile(
+    filePath,
+    `# Rocky conversation\n\nStarted: ${date.toLocaleString()}\n\n`,
+    "utf8",
+  );
+  return { sessionId, path: filePath };
+}
+
+async function appendTranscript(entry: TranscriptEntry): Promise<void> {
+  const labels: Record<TranscriptRole, string> = {
+    user: "You",
+    rocky: "Rocky",
+    tool: "Rocky tool",
+    system: "System",
+  };
+  if (!(entry.role in labels)) throw new Error("Invalid transcript role.");
+  const text = entry.text.trim().replace(/\s*\n\s*/g, " ").slice(0, 10_000);
+  if (!text) return;
+  const time = new Date().toLocaleTimeString();
+  await appendFile(transcriptPath(entry.sessionId), `**${labels[entry.role]} · ${time}**  \n${text}\n\n`, "utf8");
+}
+
+async function openSpreadsheetInOnlyOffice(filePath: string): Promise<void> {
+  if (process.platform === "darwin") {
+    if (!existsSync(ONLYOFFICE_APP)) {
+      throw new Error("ONLYOFFICE is not installed in /Applications. Run: brew install --cask onlyoffice");
+    }
+    await execFileAsync("/usr/bin/open", ["-a", ONLYOFFICE_APP, filePath]);
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    await execFileAsync("/usr/bin/osascript", [
+      "-e",
+      'tell application "ONLYOFFICE" to activate',
+    ]);
+    return;
+  }
+
+  const openError = await shell.openPath(filePath);
+  if (openError) throw new Error(openError);
 }
 
 async function createRealtimeSession(): Promise<unknown> {
@@ -76,17 +147,26 @@ function registerIpc(): void {
     model: process.env.ROCKY_REALTIME_MODEL ?? MODEL,
     voice: process.env.ROCKY_VOICE ?? VOICE,
     spreadsheetDirectory: spreadsheetDirectory(),
+    spreadsheetApplication: process.platform === "darwin" ? "ONLYOFFICE" : "System default",
+    localDataDirectory: localDataDirectory(),
   }));
   ipcMain.handle("rocky:create-realtime-session", createRealtimeSession);
-  ipcMain.handle("rocky:create-spreadsheet", async (_event, spec: unknown) => {
+  ipcMain.handle("rocky:start-transcript", startTranscript);
+  ipcMain.handle("rocky:append-transcript", (_event, entry: TranscriptEntry) => appendTranscript(entry));
+  ipcMain.handle("rocky:create-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
     const result = await writeSpreadsheet(spec, spreadsheetDirectory());
-    const openError = await shell.openPath(result.path);
-    if (openError) throw new Error(`Spreadsheet created, but macOS could not open it: ${openError}`);
+    await openSpreadsheetInOnlyOffice(result.path);
+    if (sessionId) {
+      await appendTranscript({
+        sessionId,
+        role: "tool",
+        text: `Created and opened spreadsheet: ${result.filename}`,
+      });
+    }
     return result;
   });
   ipcMain.handle("rocky:open-spreadsheet", async (_event, filePath: string) => {
-    const openError = await shell.openPath(filePath);
-    if (openError) throw new Error(openError);
+    await openSpreadsheetInOnlyOffice(filePath);
   });
   ipcMain.handle("rocky:reveal-spreadsheet", (_event, filePath: string) => {
     shell.showItemInFolder(filePath);
@@ -99,7 +179,7 @@ function createWindow(): void {
     height: 760,
     minWidth: 520,
     minHeight: 600,
-    backgroundColor: "#071c25",
+    backgroundColor: "#080b0a",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {

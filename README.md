@@ -2,17 +2,19 @@
 
 Rocky is a local macOS voice companion for family conversations, science questions, and sudden
 spreadsheets. Tap the rock, talk naturally, and Rocky answers with low-latency speech. When rows
-and columns would help, Rocky creates an `.xlsx` workbook and pulls it onscreen in the Mac's normal
-spreadsheet application.
+and columns would help, Rocky creates an `.xlsx` workbook and pulls it onscreen in the open-source
+ONLYOFFICE Spreadsheet Editor.
 
 ## First voice conversation
 
-Requirements: macOS, Node.js, pnpm, a microphone, and an OpenAI API key with Realtime API access.
+Requirements: macOS, Node.js, pnpm, a microphone, ONLYOFFICE Desktop Editors, and an OpenAI API
+key with Realtime API access.
 
 ```bash
 cp .env.example .env
 # Put the OpenAI API key in .env, then:
 pnpm install
+brew install --cask onlyoffice
 pnpm dev
 ```
 
@@ -24,8 +26,14 @@ Or test the spreadsheet handoff:
 
 > Make a spreadsheet to score five imaginary planets by snacks, gravity, and fun.
 
-Workbooks are saved in `~/Documents/Rocky Spreadsheets` and opened with the default macOS app,
-such as Numbers or Microsoft Excel.
+During development, transcripts and workbooks are saved under the repository's ignored
+`local-data/` directory:
+
+- `local-data/transcripts/` contains one readable Markdown log per conversation.
+- `local-data/spreadsheets/` contains Rocky's `.xlsx` workbooks.
+
+Workbooks automatically open in [ONLYOFFICE Desktop Editors](https://github.com/ONLYOFFICE/DesktopEditors)
+and its window is brought to the foreground. `local-data/` is intentionally excluded from Git.
 
 ## Current model choice
 
@@ -52,3 +60,9 @@ pnpm dist:mac  # create an unpacked macOS application
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.
 
+## Acknowledgments
+
+Rocky's compact speech mechanics and exactness/safety rule are adapted from the MIT-licensed
+[Lagunaswift/RockyVoice](https://github.com/Lagunaswift/RockyVoice) project. This app retains its
+own direct OpenAI Realtime voice architecture rather than importing RockyVoice's Hume TTS server.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for full attribution and licenses.

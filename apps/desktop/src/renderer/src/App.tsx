@@ -39,6 +39,7 @@ export function App(): React.JSX.Element {
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     window.rocky.getConfig().then(setConfig).catch((caught) => setError(friendlyError(caught)));
@@ -55,12 +56,18 @@ export function App(): React.JSX.Element {
     channel.send(JSON.stringify(event));
   }, []);
 
+  const logTranscript = useCallback((role: "user" | "rocky" | "tool" | "system", text: string) => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId || !text.trim()) return;
+    void window.rocky.appendTranscript({ sessionId, role, text }).catch(() => undefined);
+  }, []);
+
   const handleSpreadsheetTool = useCallback(
     async (callId: string, argumentText: string) => {
       setPhase("thinking");
       try {
         const spec = JSON.parse(argumentText) as SpreadsheetSpec;
-        const result = await window.rocky.createSpreadsheet(spec);
+        const result = await window.rocky.createSpreadsheet(spec, sessionIdRef.current ?? undefined);
         setLastOpened(result.filename);
         sendEvent({
           type: "conversation.item.create",
@@ -71,7 +78,7 @@ export function App(): React.JSX.Element {
               success: true,
               filename: result.filename,
               path: result.path,
-              message: "Workbook created and pulled onscreen in the Mac's default spreadsheet app.",
+              message: "Workbook created and pulled onscreen in ONLYOFFICE Spreadsheet Editor.",
             }),
           },
         });
@@ -106,6 +113,12 @@ export function App(): React.JSX.Element {
         case "response.output_audio.done":
           setPhase("listening");
           break;
+        case "conversation.item.input_audio_transcription.completed":
+          if (event.transcript) logTranscript("user", event.transcript);
+          break;
+        case "response.output_audio_transcript.done":
+          if (event.transcript) logTranscript("rocky", event.transcript);
+          break;
         case "response.done":
           for (const item of event.response?.output ?? []) {
             if (item.type === "function_call" && item.name === "create_spreadsheet" && item.call_id) {
@@ -119,18 +132,20 @@ export function App(): React.JSX.Element {
           break;
       }
     },
-    [handleSpreadsheetTool],
+    [handleSpreadsheetTool, logTranscript],
   );
 
   const disconnect = useCallback(() => {
+    logTranscript("system", "Conversation ended.");
     channelRef.current?.close();
     peerRef.current?.close();
     streamRef.current?.getTracks().forEach((track) => track.stop());
     channelRef.current = null;
     peerRef.current = null;
     streamRef.current = null;
+    sessionIdRef.current = null;
     setPhase("idle");
-  }, []);
+  }, [logTranscript]);
 
   const connect = useCallback(async () => {
     if (peerRef.current) {
@@ -141,6 +156,8 @@ export function App(): React.JSX.Element {
     setError(null);
     setPhase("connecting");
     try {
+      const transcriptSession = await window.rocky.startTranscript();
+      sessionIdRef.current = transcriptSession.sessionId;
       const secret = await window.rocky.createRealtimeSession();
       const peer = new RTCPeerConnection();
       peerRef.current = peer;
@@ -204,11 +221,12 @@ export function App(): React.JSX.Element {
       if (!response.ok) throw new Error(`Voice connection failed (${response.status}): ${await response.text()}`);
       await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
     } catch (caught) {
+      logTranscript("system", `Connection failed: ${friendlyError(caught)}`);
       disconnect();
       setError(friendlyError(caught));
       setPhase("error");
     }
-  }, [disconnect, handleRealtimeEvent]);
+  }, [disconnect, handleRealtimeEvent, logTranscript]);
 
   const isConnected = phase !== "idle" && phase !== "error";
 

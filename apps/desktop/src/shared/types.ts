@@ -29,13 +29,29 @@ export interface RockyConfig {
   model: string;
   voice: string;
   spreadsheetDirectory: string;
+  spreadsheetApplication: string;
+  localDataDirectory: string;
+}
+
+export type TranscriptRole = "user" | "rocky" | "tool" | "system";
+
+export interface TranscriptEntry {
+  sessionId: string;
+  role: TranscriptRole;
+  text: string;
+}
+
+export interface TranscriptSession {
+  sessionId: string;
+  path: string;
 }
 
 export interface RockyApi {
   getConfig: () => Promise<RockyConfig>;
   createRealtimeSession: () => Promise<RealtimeSessionSecret>;
-  createSpreadsheet: (spec: SpreadsheetSpec) => Promise<SpreadsheetResult>;
+  startTranscript: () => Promise<TranscriptSession>;
+  appendTranscript: (entry: TranscriptEntry) => Promise<void>;
+  createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   openSpreadsheet: (filePath: string) => Promise<void>;
   revealSpreadsheet: (filePath: string) => Promise<void>;
 }
-
