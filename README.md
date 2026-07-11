@@ -62,6 +62,7 @@ Realtime client secret.
 pnpm dev       # terminal launch with hot reload
 pnpm check     # lint, strict typecheck, tests, and production build
 pnpm eval:rocky # run text-mode Rocky persona evals before voice testing
+pnpm text:rocky # interactive text-only personality/cadence lab
 pnpm dist:mac  # create an unpacked macOS application
 ```
 
@@ -84,6 +85,14 @@ prompt and unit tests so regressions remain visible. Generated eval reports stay
 The app also scores the first actual Realtime greeting. A failure is recorded in the conversation
 transcript and appended to ignored `local-data/evals/realtime-failures.md` for the next prompt
 iteration.
+
+For hands-on personality iteration without voice variables, run `pnpm text:rocky`. It uses the
+same production prompt and local family memory, maintains conversation context until `/quit`, and
+saves the session under ignored `local-data/text-chats/`. A one-shot prompt also works:
+
+```bash
+pnpm text:rocky -- "I built a cardboard spaceship today."
+```
 
 ## Acknowledgments
 

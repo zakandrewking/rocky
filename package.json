@@ -8,9 +8,11 @@
     "build": "pnpm --filter @rocky/desktop build",
     "dist:mac": "pnpm --filter @rocky/desktop dist:mac",
     "eval:rocky": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/eval-rocky-text.mjs",
+    "text:rocky": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/rocky-text-chat.mjs",
     "lint": "pnpm --filter @rocky/desktop lint",
+    "scripts:check": "node --check scripts/eval-rocky-text.mjs && node --check scripts/rocky-text-chat.mjs",
     "test": "pnpm --filter @rocky/desktop test",
     "typecheck": "pnpm --filter @rocky/desktop typecheck",
-    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build"
+    "check": "pnpm lint && pnpm scripts:check && pnpm typecheck && pnpm test && pnpm build"
   }
 }
