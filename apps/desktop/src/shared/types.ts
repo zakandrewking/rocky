@@ -69,6 +69,25 @@ export interface MemoryFactResult extends MemoryFactInput {
   saved: boolean;
 }
 
+export interface BackgroundResearchInput {
+  question: string;
+  context?: string;
+}
+
+export interface BackgroundResearchStarted {
+  id: string;
+  question: string;
+  message: string;
+}
+
+export interface BackgroundResearchResult {
+  id: string;
+  question: string;
+  answer: string;
+  path: string;
+  completedAt: string;
+}
+
 export type TranscriptRole = "user" | "rocky" | "tool" | "system";
 
 export interface TranscriptEntry {
@@ -89,6 +108,10 @@ export interface RockyApi {
   appendTranscript: (entry: TranscriptEntry) => Promise<void>;
   recordStyleFailure: (failure: RockyStyleFailure) => Promise<void>;
   rememberFamilyFact: (input: MemoryFactInput) => Promise<MemoryFactResult>;
+  startBackgroundResearch: (
+    input: BackgroundResearchInput,
+    sessionId?: string,
+  ) => Promise<BackgroundResearchStarted>;
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<void>;
   openSpreadsheet: (filePath: string) => Promise<void>;
@@ -96,4 +119,6 @@ export interface RockyApi {
   speakWithHume: (sessionId: string, text: string, flush?: boolean) => Promise<void>;
   cancelHumeSpeech: (sessionId: string) => Promise<void>;
   onHumeAudio: (listener: (sessionId: string, event: HumeAudioEvent) => void) => () => void;
+  onResearchComplete: (listener: (sessionId: string, result: BackgroundResearchResult) => void) => () => void;
+  onResearchError: (listener: (sessionId: string, result: { id: string; message: string }) => void) => () => void;
 }

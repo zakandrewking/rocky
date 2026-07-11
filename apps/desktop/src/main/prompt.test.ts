@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ROCKY_CADENCE } from "../shared/personality.ts";
-import { ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL, UPDATE_SPREADSHEET_TOOL } from "./prompt";
+import { BACKGROUND_RESEARCH_TOOL, ROCKY_INSTRUCTIONS, SPREADSHEET_TOOL, UPDATE_SPREADSHEET_TOOL } from "./prompt";
 
 describe("Rocky persona prompt", () => {
   it("preserves known drift failures as explicit negative examples", () => {
@@ -62,5 +62,10 @@ describe("Rocky persona prompt", () => {
     expect(SPREADSHEET_TOOL.description).toContain("Use proactively for complete lists");
     expect(UPDATE_SPREADSHEET_TOOL.description).toContain("currently onscreen");
     expect(ROCKY_INSTRUCTIONS).toContain("Change the active sheet in place");
+  });
+
+  it("lets Rocky dispatch slower research instead of inventing unstable facts", () => {
+    expect(ROCKY_INSTRUCTIONS).toContain("call start_background_research silently");
+    expect(BACKGROUND_RESEARCH_TOOL.description).toContain("slower web-backed research task");
   });
 });

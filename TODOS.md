@@ -86,7 +86,9 @@ in approximate priority order
     sheet with the complete updated table.
   - [x] Add install/status scripts and verify the plugin connects when a workbook is open in
     ONLYOFFICE Spreadsheet Editor.
-- [ ] make sure our spreadsheet system works with tools and command line capabilities like this:
+- [x] Add a small Rocky `.xlsx` command-line tool for inspect, set-cell, and append-row workflows,
+  so agent/debug work can edit Excel files without driving ONLYOFFICE UI.
+- [ ] Extend the Rocky `.xlsx` CLI toward the richer Claude spreadsheet skill pattern:
   /var/folders/6w/1gtm6b0n6s16j6p_fvlqbrfm0000gn/T/claude-hostloop-plugins/ccb68a6b8377b360/skills/xlsx/SKILL.md
 - [ ] Test a spoken spreadsheet tool call end to end.
 - [ ] Test a spoken visible-spreadsheet update end to end.
@@ -96,14 +98,15 @@ in approximate priority order
   answer, and associate later safe facts with that person without requesting private information.
 - [ ] Improve local memory identity correction and merging so a speech-to-text misspelling such as
   `Zac` can be corrected to `Zak` without leaving duplicate people or orphaning earlier facts.
-- [ ] Add asynchronous research handoffs for questions without obvious or stable answers. Rocky's
+- [x] Add first-pass asynchronous research handoffs for questions without obvious or stable answers. Rocky's
   low-latency conversation should dispatch a slower web-search-enabled reasoning agent, continue
   talking without blocking, and let the research agent pop naturally back into the live conversation
   when ready, similar to GPT-Live offloading long-running work to GPT-5.5.
-  - [ ] Preserve the originating question and conversation context, expose clear pending/completed/
-    failed state, support cancellation, and prevent stale results from interrupting a newer topic.
-  - [ ] Return a concise spoken answer with source provenance saved in the local transcript; apply
+  - [x] Preserve the originating question and conversation context, expose pending/completed/failed
+    state, save results locally, and inject same-session completions back into conversation.
+  - [x] Return a concise spoken answer with source provenance saved in the local transcript; apply
     kid-safe browsing rules and never let untrusted web content directly control local tools.
+  - [ ] Add explicit cancellation UI/voice behavior and stale-topic suppression beyond session matching.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
   - [x] Stabilize the voice state machine by disabling automatic Realtime VAD response creation
     and interruption, making Rocky explicitly create the first short greeting, and guarding

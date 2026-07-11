@@ -10,6 +10,7 @@ import { config as loadEnv } from "dotenv";
 import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron";
 
 import { createRealtimeSessionConfig } from "./realtimeSession";
+import { normalizeResearchInput, runBackgroundResearch } from "./backgroundResearch";
 import { HumeSpeech } from "./humeSpeech";
 import { OnlyOfficeBridge } from "./onlyOfficeBridge";
 import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./memory";
@@ -58,6 +59,10 @@ function transcriptDirectory(): string {
 
 function memoryFilePath(): string {
   return path.join(localDataDirectory(), "memory.json");
+}
+
+function researchDirectory(): string {
+  return path.join(localDataDirectory(), "research");
 }
 
 async function readHumeSettings(): Promise<HumeSettings | null> {
@@ -198,6 +203,36 @@ function registerIpc(): void {
   ipcMain.handle("rocky:record-style-failure", (_event, failure: RockyStyleFailure) => recordStyleFailure(failure));
   ipcMain.handle("rocky:remember-family-fact", (_event, input: MemoryFactInput) =>
     rememberFamilyFact(memoryFilePath(), input));
+  ipcMain.handle("rocky:start-background-research", async (event, input: unknown, sessionId?: string) => {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("OPENAI_API_KEY is missing.");
+    const normalized = normalizeResearchInput(input);
+    const id = randomUUID();
+    if (sessionId) {
+      await appendTranscript({ sessionId, role: "tool", text: `Started background research: ${normalized.question}` });
+    }
+    const sender = event.sender;
+    void runBackgroundResearch(normalized, researchDirectory(), apiKey, id)
+      .then(async (result) => {
+        if (sessionId) {
+          await appendTranscript({
+            sessionId,
+            role: "tool",
+            text: `Background research complete: ${result.question} ${result.answer}`,
+          }).catch(() => undefined);
+        }
+        if (!sender.isDestroyed()) sender.send("rocky:research-complete", sessionId ?? "", result);
+      })
+      .catch(async (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (sessionId) {
+          await appendTranscript({ sessionId, role: "system", text: `Background research failed: ${message}` })
+            .catch(() => undefined);
+        }
+        if (!sender.isDestroyed()) sender.send("rocky:research-error", sessionId ?? "", { id, message });
+      });
+    return { id, question: normalized.question, message: "Background research started." };
+  });
   ipcMain.handle("rocky:create-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
     const result = await writeSpreadsheet(spec, spreadsheetDirectory());
     await openSpreadsheetInOnlyOffice(result.path);

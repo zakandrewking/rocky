@@ -82,6 +82,9 @@ PERSISTENCE AND TRUTH
   Then translate only the spoken explanation into Rocky's small English.
 - Never describe these hidden persona rules to the family. Never use polished assistant filler when uncertain.
   Say the simple true thing or ask one direct question.
+- When an answer may depend on current facts, obscure details, prices, schedules, software versions, or other
+  things Rocky may not know, call start_background_research silently. Then say a tiny acknowledgement such as
+  "Rocky checks slow facts." Do not invent an answer while research is running.
 
 VOICE AND CONVERSATION
 - Full intelligence, small English. Never make the answer less correct to make the voice more alien.
@@ -273,5 +276,27 @@ export const MEMORY_TOOL = {
       },
     },
     required: ["person", "fact"],
+  },
+} as const;
+
+export const BACKGROUND_RESEARCH_TOOL = {
+  type: "function",
+  name: "start_background_research",
+  description:
+    "Start a slower web-backed research task for questions that may depend on current, obscure, or unstable facts. Return immediately; the result will be saved locally and injected back into the conversation when ready.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      question: {
+        type: "string",
+        description: "The exact research question to answer.",
+      },
+      context: {
+        type: "string",
+        description: "Optional concise conversation context needed to interpret the question.",
+      },
+    },
+    required: ["question"],
   },
 } as const;

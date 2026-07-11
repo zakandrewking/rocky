@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { MemoryFactInput, SpreadsheetSpec } from "../../shared/types";
+import type { BackgroundResearchInput, BackgroundResearchResult, MemoryFactInput, SpreadsheetSpec } from "../../shared/types";
 import {
   evaluateRockyStyle,
   ROCKY_DEFAULT_REPLY_CASE,
@@ -284,6 +284,54 @@ export function App(): React.JSX.Element {
     [requestResponse, sendEvent],
   );
 
+  const handleBackgroundResearchTool = useCallback(
+    async (callId: string, argumentText: string) => {
+      try {
+        const input = JSON.parse(argumentText) as BackgroundResearchInput;
+        const result = await window.rocky.startBackgroundResearch(input, sessionIdRef.current ?? undefined);
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({
+              success: true,
+              id: result.id,
+              message: "Background research started. A short result will return later.",
+            }),
+          },
+        });
+      } catch (caught) {
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: false, error: friendlyError(caught) }),
+          },
+        });
+      }
+      requestResponse("tool_result");
+    },
+    [requestResponse, sendEvent],
+  );
+
+  const injectResearchResult = useCallback((result: BackgroundResearchResult) => {
+    if (!channelRef.current || channelRef.current.readyState !== "open") return;
+    sendEvent({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{
+          type: "input_text",
+          text: `Background research result ready. Question: ${result.question}\n\nResult: ${result.answer}`,
+        }],
+      },
+    });
+    requestResponse("tool_result");
+  }, [requestResponse, sendEvent]);
+
   const handleRealtimeEvent = useCallback(
     (event: RealtimeEvent) => {
       switch (event.type) {
@@ -365,6 +413,9 @@ export function App(): React.JSX.Element {
             if (item.type === "function_call" && item.name === "update_active_spreadsheet" && item.call_id) {
               void handleActiveSpreadsheetTool(item.call_id, item.arguments ?? "{}");
             }
+            if (item.type === "function_call" && item.name === "start_background_research" && item.call_id) {
+              void handleBackgroundResearchTool(item.call_id, item.arguments ?? "{}");
+            }
           }
           if (!toolCalls.length) answerPendingUserTurn();
           break;
@@ -378,6 +429,7 @@ export function App(): React.JSX.Element {
     [
       answerPendingUserTurn,
       handleActiveSpreadsheetTool,
+      handleBackgroundResearchTool,
       handleMemoryTool,
       handleSpreadsheetTool,
       logTranscript,
@@ -415,6 +467,17 @@ export function App(): React.JSX.Element {
     userSpokeBeforeFirstRockyRef.current = false;
     setPhase("idle");
   }, [logTranscript, stopRemoteAudioMonitor]);
+
+  useEffect(() => window.rocky.onResearchComplete((sessionId, result) => {
+    if (sessionId && sessionId !== sessionIdRef.current) return;
+    logTranscript("tool", `Background research ready: ${result.question}`);
+    injectResearchResult(result);
+  }), [injectResearchResult, logTranscript]);
+
+  useEffect(() => window.rocky.onResearchError((sessionId, result) => {
+    if (sessionId && sessionId !== sessionIdRef.current) return;
+    logTranscript("system", `Background research failed: ${result.message}`);
+  }), [logTranscript]);
 
   const connect = useCallback(async () => {
     if (peerRef.current) {

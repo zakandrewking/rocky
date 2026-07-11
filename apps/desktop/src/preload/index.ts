@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import type { HumeAudioEvent, MemoryFactInput, RockyApi, SpreadsheetSpec, TranscriptEntry } from "../shared/types";
+import type {
+  BackgroundResearchInput,
+  BackgroundResearchResult,
+  HumeAudioEvent,
+  MemoryFactInput,
+  RockyApi,
+  SpreadsheetSpec,
+  TranscriptEntry,
+} from "../shared/types";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
 
 const rockyApi: RockyApi = {
@@ -10,6 +18,8 @@ const rockyApi: RockyApi = {
   appendTranscript: (entry: TranscriptEntry) => ipcRenderer.invoke("rocky:append-transcript", entry),
   recordStyleFailure: (failure: RockyStyleFailure) => ipcRenderer.invoke("rocky:record-style-failure", failure),
   rememberFamilyFact: (input: MemoryFactInput) => ipcRenderer.invoke("rocky:remember-family-fact", input),
+  startBackgroundResearch: (input: BackgroundResearchInput, sessionId?: string) =>
+    ipcRenderer.invoke("rocky:start-background-research", input, sessionId),
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) =>
     ipcRenderer.invoke("rocky:create-spreadsheet", spec, sessionId),
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) =>
@@ -29,6 +39,20 @@ const rockyApi: RockyApi = {
     };
     ipcRenderer.on("rocky:hume-audio", handler);
     return () => ipcRenderer.removeListener("rocky:hume-audio", handler);
+  },
+  onResearchComplete: (listener: (sessionId: string, result: BackgroundResearchResult) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId: string, result: BackgroundResearchResult): void => {
+      listener(sessionId, result);
+    };
+    ipcRenderer.on("rocky:research-complete", handler);
+    return () => ipcRenderer.removeListener("rocky:research-complete", handler);
+  },
+  onResearchError: (listener: (sessionId: string, result: { id: string; message: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId: string, result: { id: string; message: string }): void => {
+      listener(sessionId, result);
+    };
+    ipcRenderer.on("rocky:research-error", handler);
+    return () => ipcRenderer.removeListener("rocky:research-error", handler);
   },
 };
 

@@ -95,6 +95,7 @@ pnpm check     # lint, strict typecheck, tests, and production build
 pnpm eval:rocky # run text-mode Rocky persona evals before voice testing
 pnpm review:rocky # review all saved Rocky utterances against the current style contract
 pnpm text:rocky # interactive text-only personality/cadence lab
+pnpm xlsx:rocky inspect local-data/spreadsheets/example.xlsx # inspect/edit .xlsx files from CLI
 pnpm alien:demo # render an ignored WAV using the same Eridian chords as the live app
 pnpm voice:hume:audition # generate three original Hume voice-design candidates (requires local key)
 pnpm voice:hume:save -- 3 # save the selected candidate as a private Hume account voice
@@ -106,6 +107,17 @@ pnpm dist:mac  # create unsigned macOS DMG, zip, and unpacked app artifacts
 
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.
+`pnpm xlsx:rocky` provides command-line workbook operations for agent/debug workflows:
+
+```bash
+pnpm xlsx:rocky inspect local-data/spreadsheets/minecraft_biomes.xlsx 'Biomes!A1:D20'
+pnpm xlsx:rocky set-cell local-data/spreadsheets/minecraft_biomes.xlsx 'Biomes!B2' Updated
+pnpm xlsx:rocky append-row local-data/spreadsheets/minecraft_biomes.xlsx Biomes '["New biome","Notes"]'
+```
+
+Rocky also has a `start_background_research` voice tool for current or obscure facts. Results are
+saved under `local-data/research/`, appended to the conversation transcript, and injected back into
+the live session when the slower web-backed answer is ready.
 
 ### macOS releases
 
