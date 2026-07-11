@@ -37,6 +37,7 @@
   - [x] Add personality evals for specific curiosity, direct emotional connection, cadence, and
     natural recall of one relevant memory.
   - [x] Add an interactive text-only conversation lab using the production prompt and memory.
+  - [x] Add an offline reviewer for every captured voice and text-lab utterance.
   - [ ] Verify the hardened greeting on the exact Realtime voice model and add its transcript to
     the negative set if it drifts.
 - [ ] Replace the preset voice with the trained Rocky voice from

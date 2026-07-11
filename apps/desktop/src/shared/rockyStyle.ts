@@ -1,4 +1,4 @@
-import { ROCKY_CADENCE } from "./personality";
+import { ROCKY_CADENCE } from "./personality.ts";
 
 export interface RockyStyleCase {
   name: string;

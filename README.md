@@ -62,6 +62,7 @@ Realtime client secret.
 pnpm dev       # terminal launch with hot reload
 pnpm check     # lint, strict typecheck, tests, and production build
 pnpm eval:rocky # run text-mode Rocky persona evals before voice testing
+pnpm review:rocky # review all saved Rocky utterances against the current style contract
 pnpm text:rocky # interactive text-only personality/cadence lab
 pnpm dist:mac  # create an unpacked macOS application
 ```
@@ -95,6 +96,11 @@ saves the session under ignored `local-data/text-chats/`. A one-shot prompt also
 ```bash
 pnpm text:rocky -- "I built a cardboard spaceship today."
 ```
+
+Run `pnpm review:rocky` to rescore every saved voice transcript and text-lab conversation without
+making an API call. The command prints a short summary and writes the detailed ignored report to
+`local-data/evals/latest-transcript-review.md`, which makes prompt changes easy to compare against
+real family interactions.
 
 The primary cadence knobs live together in
 `apps/desktop/src/shared/personality.ts`: normal reply length, sentence cap, greeting length,
