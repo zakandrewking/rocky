@@ -41,7 +41,8 @@ export function isGreetingTurn(
   assumeFirstRockyIsGreeting = false,
 ): boolean {
   const rockyTurnIndex = turns.slice(0, turnIndex + 1).filter((turn) => turn.role === "rocky").length - 1;
-  if (assumeFirstRockyIsGreeting && rockyTurnIndex === 0) return true;
+  const humanAlreadySpoke = turns.slice(0, turnIndex).some((turn) => turn.role === "you");
+  if (assumeFirstRockyIsGreeting && rockyTurnIndex === 0 && !humanAlreadySpoke) return true;
 
   const previous = turns[turnIndex - 1];
   return previous?.role === "you"

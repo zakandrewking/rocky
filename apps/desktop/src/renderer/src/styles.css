@@ -78,6 +78,15 @@ button { font: inherit; }
 .rock-orb:active { transform: scale(.98); }
 .rock-orb:focus-visible { outline: 2px solid var(--amber-bright); outline-offset: 12px; }
 .rock-orb::before { content: ""; position: absolute; inset: 11%; border-radius: inherit; border: 1px solid rgba(243,179,105,.15); transform: rotate(17deg); }
+.rock-orb::after {
+  content: "";
+  position: absolute;
+  inset: -9%;
+  border-radius: inherit;
+  border: 2px solid transparent;
+  opacity: 0;
+  pointer-events: none;
+}
 .facet { position: absolute; background: linear-gradient(135deg, rgba(247,193,124,.14), rgba(12,16,15,.05)); clip-path: polygon(50% 0, 100% 90%, 10% 100%); }
 .facet-one { inset: 3% 35% 49% 14%; transform: rotate(-22deg); }
 .facet-two { inset: 42% 4% 8% 49%; transform: rotate(28deg); }
@@ -88,6 +97,18 @@ button { font: inherit; }
 .wave-b { animation-delay: -.18s !important; }.wave-c { animation-delay: -.36s !important; }.wave-d { animation-delay: -.54s !important; }.wave-e { animation-delay: -.72s !important; }
 .rock-orb:hover .orb-core { border-color: rgba(255,195,125,.28); box-shadow: inset 0 0 30px rgba(0,0,0,.68), 0 0 38px rgba(211,142,72,.2); }
 .phase-speaking { box-shadow: 0 36px 90px rgba(0,0,0,.64), inset 14px 10px 30px rgba(255,205,143,.18), 0 0 76px rgba(210,125,53,.25); }
+.phase-connecting::after, .phase-thinking::after {
+  opacity: .72;
+  border-color: rgba(216,148,79,.2) rgba(255,195,125,.72) rgba(216,148,79,.2) rgba(255,195,125,.08);
+  box-shadow: 0 0 24px rgba(216,148,79,.16);
+  animation: signal-orbit 1.5s linear infinite;
+}
+.phase-listening::after {
+  opacity: .62;
+  border-color: rgba(155,180,155,.7);
+  box-shadow: 0 0 28px rgba(155,180,155,.2), inset 0 0 18px rgba(155,180,155,.08);
+  animation: signal-listen 1.8s ease-in-out infinite;
+}
 .phase-connecting { animation: breathe 1.5s ease-in-out infinite; }
 .phase-error { filter: saturate(.3); }
 
@@ -130,6 +151,8 @@ tbody tr:nth-child(even) { background: #f2f8f5; }
 .reveal-button { margin: 12px; background: #e2eee8; color: #315e53; }
 
 @keyframes wave { 0%,100% { height: 18%; opacity: .45; } 50% { height: 68%; opacity: 1; } }
+@keyframes signal-orbit { to { transform: rotate(360deg); } }
+@keyframes signal-listen { 0%,100% { transform: scale(.97); opacity: .32; } 50% { transform: scale(1.025); opacity: .78; } }
 @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.035); } }
 @keyframes blink { 50% { opacity: .25; } }
 

@@ -35,4 +35,11 @@ Tiny light waves scatter more. Blue wins, wins, wins!
     );
     expect(isGreetingTurn(text, 1)).toBe(true);
   });
+
+  it("treats the first Rocky utterance as a reply when the human spoke first", () => {
+    const turns = parseConversationTurns(
+      "**You · now**  \nLet us talk Minecraft.\n\n**Rocky · now**  \nUnderstand. Blocks are useful.",
+    );
+    expect(isGreetingTurn(turns, 1, true)).toBe(false);
+  });
 });

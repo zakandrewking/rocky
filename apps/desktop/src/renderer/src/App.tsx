@@ -33,16 +33,62 @@ export function App(): React.JSX.Element {
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const remoteAudioContextRef = useRef<AudioContext | null>(null);
+  const remoteAudioFrameRef = useRef<number | null>(null);
+  const remoteSpeakingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
   const rockyUtteranceCountRef = useRef(0);
+  const userSpokeBeforeFirstRockyRef = useRef(false);
 
   useEffect(() => {
     return () => {
       channelRef.current?.close();
       peerRef.current?.close();
       streamRef.current?.getTracks().forEach((track) => track.stop());
+      if (remoteAudioFrameRef.current !== null) cancelAnimationFrame(remoteAudioFrameRef.current);
+      void remoteAudioContextRef.current?.close();
     };
   }, []);
+
+  const stopRemoteAudioMonitor = useCallback(() => {
+    if (remoteAudioFrameRef.current !== null) cancelAnimationFrame(remoteAudioFrameRef.current);
+    remoteAudioFrameRef.current = null;
+    remoteSpeakingRef.current = false;
+    void remoteAudioContextRef.current?.close();
+    remoteAudioContextRef.current = null;
+  }, []);
+
+  const monitorRemoteAudio = useCallback((stream: MediaStream) => {
+    stopRemoteAudioMonitor();
+    const context = new AudioContext();
+    const analyser = context.createAnalyser();
+    const source = context.createMediaStreamSource(stream);
+    let lastAudibleAt = 0;
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.55;
+    const samples = new Float32Array(analyser.fftSize);
+    source.connect(analyser);
+    remoteAudioContextRef.current = context;
+    void context.resume();
+
+    const sample = (): void => {
+      analyser.getFloatTimeDomainData(samples);
+      const rms = Math.sqrt(samples.reduce((sum, value) => sum + value * value, 0) / samples.length);
+      const now = performance.now();
+      if (rms > 0.012) {
+        lastAudibleAt = now;
+        if (!remoteSpeakingRef.current) {
+          remoteSpeakingRef.current = true;
+          setPhase("speaking");
+        }
+      } else if (remoteSpeakingRef.current && now - lastAudibleAt > 280) {
+        remoteSpeakingRef.current = false;
+        setPhase((current) => current === "speaking" ? "listening" : current);
+      }
+      remoteAudioFrameRef.current = requestAnimationFrame(sample);
+    };
+    sample();
+  }, [stopRemoteAudioMonitor]);
 
   const sendEvent = useCallback((event: object) => {
     const channel = channelRef.current;
@@ -136,19 +182,16 @@ export function App(): React.JSX.Element {
         case "response.created":
           setPhase("thinking");
           break;
-        case "response.output_audio.delta":
-          setPhase("speaking");
-          break;
-        case "response.output_audio.done":
-          setPhase("listening");
-          break;
         case "conversation.item.input_audio_transcription.completed":
-          if (event.transcript) logTranscript("user", event.transcript);
+          if (event.transcript) {
+            if (rockyUtteranceCountRef.current === 0) userSpokeBeforeFirstRockyRef.current = true;
+            logTranscript("user", event.transcript);
+          }
           break;
         case "response.output_audio_transcript.done":
           if (event.transcript) {
             logTranscript("rocky", event.transcript);
-            const styleCase = rockyUtteranceCountRef.current === 0
+            const styleCase = rockyUtteranceCountRef.current === 0 && !userSpokeBeforeFirstRockyRef.current
               ? ROCKY_GREETING_CASE
               : ROCKY_DEFAULT_REPLY_CASE;
             const result = evaluateRockyStyle(styleCase, event.transcript);
@@ -189,10 +232,12 @@ export function App(): React.JSX.Element {
     channelRef.current = null;
     peerRef.current = null;
     streamRef.current = null;
+    stopRemoteAudioMonitor();
     sessionIdRef.current = null;
     rockyUtteranceCountRef.current = 0;
+    userSpokeBeforeFirstRockyRef.current = false;
     setPhase("idle");
-  }, [logTranscript]);
+  }, [logTranscript, stopRemoteAudioMonitor]);
 
   const connect = useCallback(async () => {
     if (peerRef.current) {
@@ -211,7 +256,9 @@ export function App(): React.JSX.Element {
       const audio = document.createElement("audio");
       audio.autoplay = true;
       peer.ontrack = (event) => {
-        audio.srcObject = event.streams[0] ?? null;
+        const remoteStream = event.streams[0];
+        audio.srcObject = remoteStream ?? null;
+        if (remoteStream) monitorRemoteAudio(remoteStream);
       };
       peer.onconnectionstatechange = () => {
         if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
@@ -263,7 +310,7 @@ export function App(): React.JSX.Element {
       disconnect();
       setPhase("error");
     }
-  }, [disconnect, handleRealtimeEvent, logTranscript]);
+  }, [disconnect, handleRealtimeEvent, logTranscript, monitorRemoteAudio]);
 
   const isConnected = phase !== "idle" && phase !== "error";
 
