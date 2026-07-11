@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -10,6 +10,7 @@ import { config as loadEnv } from "dotenv";
 import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron";
 
 import { createRealtimeSessionConfig } from "./realtimeSession";
+import { HumeSpeech } from "./humeSpeech";
 import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./memory";
 import { writeSpreadsheet } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
@@ -19,6 +20,12 @@ const MODEL = process.env.ROCKY_REALTIME_MODEL ?? "gpt-realtime-2.1";
 const VOICE = process.env.ROCKY_VOICE ?? "cedar";
 const execFileAsync = promisify(execFile);
 const ONLYOFFICE_APP = "/Applications/ONLYOFFICE.app";
+const humeSpeechSessions = new Map<string, { ownerId: number; speech: HumeSpeech }>();
+
+interface HumeSettings {
+  apiKey: string;
+  voiceId: string;
+}
 
 function loadEnvironment(): void {
   const candidates = [
@@ -48,6 +55,24 @@ function transcriptDirectory(): string {
 
 function memoryFilePath(): string {
   return path.join(localDataDirectory(), "memory.json");
+}
+
+async function readHumeSettings(): Promise<HumeSettings | null> {
+  if (process.env.ROCKY_SPEECH_PROVIDER === "openai") return null;
+  const apiKey = process.env.HUME_API_KEY;
+  if (!apiKey) return null;
+  let voiceId = process.env.HUME_VOICE_ID;
+  if (!voiceId) {
+    try {
+      const saved = JSON.parse(
+        await readFile(path.join(localDataDirectory(), "voice-clone/hume/saved-voice.json"), "utf8"),
+      ) as { id?: unknown };
+      if (typeof saved.id === "string") voiceId = saved.id;
+    } catch {
+      return null;
+    }
+  }
+  return voiceId ? { apiKey, voiceId } : null;
 }
 
 function transcriptPath(sessionId: string): string {
@@ -123,6 +148,7 @@ async function createRealtimeSession(): Promise<unknown> {
     .update(`rocky-local-family:${os.hostname()}`)
     .digest("hex");
   const memoryContext = formatMemoryForPrompt(await readFamilyMemory(memoryFilePath()));
+  const hume = await readHumeSettings();
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
     headers: {
@@ -135,6 +161,7 @@ async function createRealtimeSession(): Promise<unknown> {
         process.env.ROCKY_REALTIME_MODEL ?? MODEL,
         process.env.ROCKY_VOICE ?? VOICE,
         memoryContext,
+        hume ? "text" : "audio",
       ),
     }),
   });
@@ -147,7 +174,7 @@ async function createRealtimeSession(): Promise<unknown> {
 }
 
 function registerIpc(): void {
-  ipcMain.handle("rocky:get-config", () => ({
+  ipcMain.handle("rocky:get-config", async () => ({
     hasApiKey: Boolean(process.env.OPENAI_API_KEY),
     model: process.env.ROCKY_REALTIME_MODEL ?? MODEL,
     voice: process.env.ROCKY_VOICE ?? VOICE,
@@ -156,6 +183,7 @@ function registerIpc(): void {
     localDataDirectory: localDataDirectory(),
     alienVoiceEnabled: process.env.ROCKY_ALIEN_VOICE !== "0",
     alienVoiceVolume: Math.max(0, Math.min(0.18, Number(process.env.ROCKY_ALIEN_VOICE_VOLUME) || 0.045)),
+    speechProvider: await readHumeSettings() ? "hume" : "openai",
   }));
   ipcMain.handle("rocky:create-realtime-session", createRealtimeSession);
   ipcMain.handle("rocky:start-transcript", startTranscript);
@@ -180,6 +208,29 @@ function registerIpc(): void {
   });
   ipcMain.handle("rocky:reveal-spreadsheet", (_event, filePath: string) => {
     shell.showItemInFolder(filePath);
+  });
+  ipcMain.handle("rocky:hume-speak", async (event, sessionId: string, text: string) => {
+    transcriptPath(sessionId);
+    const settings = await readHumeSettings();
+    if (!settings) throw new Error("Hume speech is not configured.");
+    let active = humeSpeechSessions.get(sessionId);
+    if (active && active.ownerId !== event.sender.id) throw new Error("Invalid Hume speech session owner.");
+    if (!active) {
+      const sender = event.sender;
+      const speech = new HumeSpeech(settings.apiKey, settings.voiceId, (audioEvent) => {
+        if (!sender.isDestroyed()) sender.send("rocky:hume-audio", sessionId, audioEvent);
+      });
+      active = { ownerId: sender.id, speech };
+      humeSpeechSessions.set(sessionId, active);
+    }
+    await active.speech.speak(text);
+  });
+  ipcMain.handle("rocky:hume-cancel", (event, sessionId: string) => {
+    transcriptPath(sessionId);
+    const active = humeSpeechSessions.get(sessionId);
+    if (!active || active.ownerId !== event.sender.id) return;
+    active.speech.cancel();
+    humeSpeechSessions.delete(sessionId);
   });
 }
 

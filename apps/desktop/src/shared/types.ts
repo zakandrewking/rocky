@@ -35,7 +35,12 @@ export interface RockyConfig {
   localDataDirectory: string;
   alienVoiceEnabled: boolean;
   alienVoiceVolume: number;
+  speechProvider: "openai" | "hume";
 }
+
+export type HumeAudioEvent =
+  | { type: "audio"; audio: string; sampleRate: number; isLastChunk: boolean }
+  | { type: "error"; message: string };
 
 export interface MemoryFact {
   text: string;
@@ -85,4 +90,7 @@ export interface RockyApi {
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   openSpreadsheet: (filePath: string) => Promise<void>;
   revealSpreadsheet: (filePath: string) => Promise<void>;
+  speakWithHume: (sessionId: string, text: string) => Promise<void>;
+  cancelHumeSpeech: (sessionId: string) => Promise<void>;
+  onHumeAudio: (listener: (sessionId: string, event: HumeAudioEvent) => void) => () => void;
 }

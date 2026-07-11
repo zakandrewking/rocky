@@ -60,16 +60,6 @@ in approximate priority order
     them; candidate 3 was the clear initial winner.
   - [x] Save Voice Design candidate 3 as the private account voice `Rocky Original` and keep its ID
     in ignored local configuration.
-- [ ] make sure our spreadsheet system works with tools and command line capabilities like this:
-  /var/folders/6w/1gtm6b0n6s16j6p_fvlqbrfm0000gn/T/claude-hostloop-plugins/ccb68a6b8377b360/skills/xlsx/SKILL.md
-- [ ] Test a spoken spreadsheet tool call end to end.
-- [ ] Verify that asking for all Minecraft biomes proactively opens a scoped biome workbook.
-- [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
-- [ ] Add a friendly settings screen for model, voice, and API-key status.
-- [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.
-- [ ] Publish a downloadable macOS DMG on GitHub Releases so Rocky remains easy to reinstall after
-  time away from the project. Add a reproducible release workflow, versioned release notes, code
-  signing and notarization when credentials are available, and document the unsigned-build fallback.
 - [ ] Implement Hume Octave 2 bidirectional streaming behind a provider boundary, with buffered incremental text, immediate barge-in cancellation, and the Eridian chord layer mixed locally.
   - [ ] Keep the Hume key and private voice ID in Electron's main process; give the renderer only
     narrowly scoped IPC audio events, never reusable credentials.
@@ -83,6 +73,16 @@ in approximate priority order
     misconfigured; record a useful ignored diagnostic without speaking implementation details.
   - [ ] Measure time-to-first-audio and full turn latency in ignored session diagnostics, then run
     end-to-end family tests for greeting, interruption, memory, and spreadsheet creation/update.
+- [ ] make sure our spreadsheet system works with tools and command line capabilities like this:
+  /var/folders/6w/1gtm6b0n6s16j6p_fvlqbrfm0000gn/T/claude-hostloop-plugins/ccb68a6b8377b360/skills/xlsx/SKILL.md
+- [ ] Test a spoken spreadsheet tool call end to end.
+- [ ] Verify that asking for all Minecraft biomes proactively opens a scoped biome workbook.
+- [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
+- [ ] Add a friendly settings screen for model, voice, and API-key status.
+- [ ] Package and sign a macOS `.app`, then add it to the Dock and optionally the Desktop.
+- [ ] Publish a downloadable macOS DMG on GitHub Releases so Rocky remains easy to reinstall after
+  time away from the project. Add a reproducible release workflow, versioned release notes, code
+  signing and notarization when credentials are available, and document the unsigned-build fallback.
 - [ ] Verify the hardened greeting on the exact Realtime voice model and add its transcript to
   the negative set if it drifts.
 - [ ] Select a voice engine only after it clearly beats the published YourTTS sample in family A/B.

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import type { MemoryFactInput, RockyApi, SpreadsheetSpec, TranscriptEntry } from "../shared/types";
+import type { HumeAudioEvent, MemoryFactInput, RockyApi, SpreadsheetSpec, TranscriptEntry } from "../shared/types";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
 
 const rockyApi: RockyApi = {
@@ -14,6 +14,15 @@ const rockyApi: RockyApi = {
     ipcRenderer.invoke("rocky:create-spreadsheet", spec, sessionId),
   openSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:open-spreadsheet", filePath),
   revealSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:reveal-spreadsheet", filePath),
+  speakWithHume: (sessionId: string, text: string) => ipcRenderer.invoke("rocky:hume-speak", sessionId, text),
+  cancelHumeSpeech: (sessionId: string) => ipcRenderer.invoke("rocky:hume-cancel", sessionId),
+  onHumeAudio: (listener: (sessionId: string, event: HumeAudioEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId: string, event: HumeAudioEvent): void => {
+      listener(sessionId, event);
+    };
+    ipcRenderer.on("rocky:hume-audio", handler);
+    return () => ipcRenderer.removeListener("rocky:hume-audio", handler);
+  },
 };
 
 contextBridge.exposeInMainWorld("rocky", rockyApi);

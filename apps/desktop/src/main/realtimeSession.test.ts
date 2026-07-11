@@ -42,4 +42,9 @@ describe("Realtime session configuration", () => {
     };
     expect(config.tools.map((tool) => tool.name)).toContain("remember_family_fact");
   });
+
+  it("supports text-only output for an external speech provider", () => {
+    const config = createRealtimeSessionConfig("voice-model", "test-voice", "", "text");
+    expect(config).toMatchObject({ output_modalities: ["text"] });
+  });
 });

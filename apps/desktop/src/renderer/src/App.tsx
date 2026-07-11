@@ -7,13 +7,16 @@ import {
   ROCKY_GREETING_CASE,
 } from "../../shared/rockyStyle";
 import { START_GREETING_EVENT } from "../../shared/realtimeEvents";
+import { splitSpeechChunks } from "../../shared/speechChunks";
 import { EridianAudio } from "./eridianAudio";
+import { HumePcmAudio } from "./humePcmAudio";
 
 type Phase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
 
 interface RealtimeEvent {
   type?: string;
   transcript?: string;
+  text?: string;
   delta?: string;
   response?: {
     output?: Array<{
@@ -39,6 +42,10 @@ export function App(): React.JSX.Element {
   const remoteAudioFrameRef = useRef<number | null>(null);
   const remoteSpeakingRef = useRef(false);
   const eridianAudioRef = useRef<EridianAudio | null>(null);
+  const humeAudioRef = useRef<HumePcmAudio | null>(null);
+  const speechProviderRef = useRef<"openai" | "hume">("openai");
+  const humeTextBufferRef = useRef("");
+  const humeResponseTextRef = useRef("");
   const sessionIdRef = useRef<string | null>(null);
   const rockyUtteranceCountRef = useRef(0);
   const userSpokeBeforeFirstRockyRef = useRef(false);
@@ -51,8 +58,22 @@ export function App(): React.JSX.Element {
       if (remoteAudioFrameRef.current !== null) cancelAnimationFrame(remoteAudioFrameRef.current);
       void remoteAudioContextRef.current?.close();
       void eridianAudioRef.current?.close();
+      void humeAudioRef.current?.close();
     };
   }, []);
+
+  useEffect(() => window.rocky.onHumeAudio((sessionId, event) => {
+    if (sessionId !== sessionIdRef.current) return;
+    if (event.type === "audio") {
+      humeAudioRef.current?.push(event.audio, event.sampleRate);
+    } else {
+      void window.rocky.appendTranscript({
+        sessionId,
+        role: "system",
+        text: `Hume speech error: ${event.message}`,
+      }).catch(() => undefined);
+    }
+  }), []);
 
   const stopRemoteAudioMonitor = useCallback(() => {
     if (remoteAudioFrameRef.current !== null) cancelAnimationFrame(remoteAudioFrameRef.current);
@@ -105,6 +126,36 @@ export function App(): React.JSX.Element {
     if (!sessionId || !text.trim()) return;
     void window.rocky.appendTranscript({ sessionId, role, text }).catch(() => undefined);
   }, []);
+
+  const recordRockyUtterance = useCallback((text: string) => {
+    if (!text.trim()) return;
+    logTranscript("rocky", text);
+    const styleCase = rockyUtteranceCountRef.current === 0 && !userSpokeBeforeFirstRockyRef.current
+      ? ROCKY_GREETING_CASE
+      : ROCKY_DEFAULT_REPLY_CASE;
+    const result = evaluateRockyStyle(styleCase, text);
+    if (result.failures.length) {
+      logTranscript("system", `${styleCase.name} failed: ${result.failures.join("; ")}`);
+      void window.rocky.recordStyleFailure({
+        caseName: styleCase.name,
+        text,
+        failures: result.failures,
+      }).catch(() => undefined);
+    }
+    rockyUtteranceCountRef.current += 1;
+  }, [logTranscript]);
+
+  const sendHumeChunks = useCallback((delta: string, flush = false) => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId || speechProviderRef.current !== "hume") return;
+    const split = splitSpeechChunks(humeTextBufferRef.current, delta, flush);
+    humeTextBufferRef.current = split.remainder;
+    for (const chunk of split.complete) {
+      void window.rocky.speakWithHume(sessionId, chunk).catch((error) => {
+        logTranscript("system", `Hume speech request failed: ${friendlyError(error)}`);
+      });
+    }
+  }, [logTranscript]);
 
   const handleSpreadsheetTool = useCallback(
     async (callId: string, argumentText: string) => {
@@ -181,6 +232,12 @@ export function App(): React.JSX.Element {
       switch (event.type) {
         case "input_audio_buffer.speech_started":
           eridianAudioRef.current?.stop();
+          humeAudioRef.current?.stop();
+          humeTextBufferRef.current = "";
+          humeResponseTextRef.current = "";
+          if (sessionIdRef.current && speechProviderRef.current === "hume") {
+            void window.rocky.cancelHumeSpeech(sessionIdRef.current).catch(() => undefined);
+          }
           setPhase("listening");
           break;
         case "input_audio_buffer.speech_stopped":
@@ -199,22 +256,24 @@ export function App(): React.JSX.Element {
         case "response.output_audio_transcript.done":
           if (event.transcript) {
             eridianAudioRef.current?.flushTranscript();
-            logTranscript("rocky", event.transcript);
-            const styleCase = rockyUtteranceCountRef.current === 0 && !userSpokeBeforeFirstRockyRef.current
-              ? ROCKY_GREETING_CASE
-              : ROCKY_DEFAULT_REPLY_CASE;
-            const result = evaluateRockyStyle(styleCase, event.transcript);
-            if (result.failures.length) {
-              logTranscript("system", `${styleCase.name} failed: ${result.failures.join("; ")}`);
-              void window.rocky.recordStyleFailure({
-                caseName: styleCase.name,
-                text: event.transcript,
-                failures: result.failures,
-              }).catch(() => undefined);
-            }
-            rockyUtteranceCountRef.current += 1;
+            recordRockyUtterance(event.transcript);
           }
           break;
+        case "response.output_text.delta":
+          if (event.delta) {
+            humeResponseTextRef.current += event.delta;
+            eridianAudioRef.current?.pushTranscriptDelta(event.delta);
+            sendHumeChunks(event.delta);
+          }
+          break;
+        case "response.output_text.done": {
+          sendHumeChunks("", true);
+          eridianAudioRef.current?.flushTranscript();
+          const text = event.text ?? humeResponseTextRef.current;
+          humeResponseTextRef.current = "";
+          recordRockyUtterance(text);
+          break;
+        }
         case "response.done":
           for (const item of event.response?.output ?? []) {
             if (item.type === "function_call" && item.name === "create_spreadsheet" && item.call_id) {
@@ -230,11 +289,15 @@ export function App(): React.JSX.Element {
           break;
       }
     },
-    [handleMemoryTool, handleSpreadsheetTool, logTranscript],
+    [handleMemoryTool, handleSpreadsheetTool, logTranscript, recordRockyUtterance, sendHumeChunks],
   );
 
   const disconnect = useCallback(() => {
     logTranscript("system", "Conversation ended.");
+    const sessionId = sessionIdRef.current;
+    if (sessionId && speechProviderRef.current === "hume") {
+      void window.rocky.cancelHumeSpeech(sessionId).catch(() => undefined);
+    }
     channelRef.current?.close();
     peerRef.current?.close();
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -244,6 +307,10 @@ export function App(): React.JSX.Element {
     stopRemoteAudioMonitor();
     void eridianAudioRef.current?.close();
     eridianAudioRef.current = null;
+    void humeAudioRef.current?.close();
+    humeAudioRef.current = null;
+    humeTextBufferRef.current = "";
+    humeResponseTextRef.current = "";
     sessionIdRef.current = null;
     rockyUtteranceCountRef.current = 0;
     userSpokeBeforeFirstRockyRef.current = false;
@@ -259,6 +326,13 @@ export function App(): React.JSX.Element {
     setPhase("connecting");
     try {
       const config = await window.rocky.getConfig();
+      speechProviderRef.current = config.speechProvider;
+      if (config.speechProvider === "hume") {
+        humeAudioRef.current ??= new HumePcmAudio((speaking) => {
+          setPhase(speaking ? "speaking" : "listening");
+        });
+        await humeAudioRef.current.resume();
+      }
       if (config.alienVoiceEnabled) {
         eridianAudioRef.current ??= new EridianAudio(config.alienVoiceVolume);
         await eridianAudioRef.current.resume();
