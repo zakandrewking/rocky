@@ -31,9 +31,16 @@ During development, transcripts and workbooks are saved under the repository's i
 
 - `local-data/transcripts/` contains one readable Markdown log per conversation.
 - `local-data/spreadsheets/` contains Rocky's `.xlsx` workbooks.
+- `local-data/memory.json` contains safe, volunteered names or nicknames, interests, favorites,
+  recurring activities, and ongoing projects that Rocky can recall in later sessions.
 
 Workbooks automatically open in [ONLYOFFICE Desktop Editors](https://github.com/ONLYOFFICE/DesktopEditors)
 and its window is brought to the foreground. `local-data/` is intentionally excluded from Git.
+
+Rocky updates memory through a narrowly scoped local tool. The app refuses memory facts containing
+common sensitive-data categories, and the persona prompt tells Rocky not to request or retain
+addresses, schools, contact details, credentials, health details, surnames, secrets, or guesses.
+This is intentionally rudimentary; parental review and delete controls remain future work.
 
 ## Current model choice
 

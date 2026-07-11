@@ -21,6 +21,12 @@
 - [x] Verify direct workbook creation and foreground handoff to Numbers.
 - [x] Keep ignored local transcript and spreadsheet history in `local-data/`.
 - [x] Standardize spreadsheet viewing and editing on open-source ONLYOFFICE Desktop Editors.
+- [x] make sure we have some personality instruction in the prompt. use what you learned from the 
+  film. rocky likes to connect and interact with people, learn about them, connect. If you do not
+  have the film screenplay, download it to this repo for reference.
+- [x] to make this possible, implement a rudimentary memory system that saves to and reads from a 
+  local file. and update the prompt appropriately
+- [ ] the electron UI should be minimal - no text! just the rock that reponds to hovers and clicks
 - [ ] Test a spoken spreadsheet tool call end to end.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
   - [x] Add repeatable text-mode style evals and preserve failed phrases as negative examples.

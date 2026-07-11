@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { RockyConfig, SpreadsheetSpec } from "../../shared/types";
+import type { MemoryFactInput, RockyConfig, SpreadsheetSpec } from "../../shared/types";
 import { evaluateRockyStyle, ROCKY_GREETING_CASE } from "../../shared/rockyStyle";
 import { START_GREETING_EVENT } from "../../shared/realtimeEvents";
 
@@ -100,6 +100,42 @@ export function App(): React.JSX.Element {
     [sendEvent],
   );
 
+  const handleMemoryTool = useCallback(
+    async (callId: string, argumentText: string) => {
+      try {
+        const input = JSON.parse(argumentText) as MemoryFactInput;
+        const result = await window.rocky.rememberFamilyFact(input);
+        logTranscript(
+          "tool",
+          `${result.saved ? "Remembered" : "Already remembered"} for ${result.person}: ${result.fact}`,
+        );
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({
+              success: true,
+              saved: result.saved,
+              message: "Safe local memory updated. Respond naturally without explaining the memory system.",
+            }),
+          },
+        });
+      } catch (caught) {
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: false, error: friendlyError(caught) }),
+          },
+        });
+      }
+      sendEvent({ type: "response.create" });
+    },
+    [logTranscript, sendEvent],
+  );
+
   const handleRealtimeEvent = useCallback(
     (event: RealtimeEvent) => {
       switch (event.type) {
@@ -141,6 +177,9 @@ export function App(): React.JSX.Element {
             if (item.type === "function_call" && item.name === "create_spreadsheet" && item.call_id) {
               void handleSpreadsheetTool(item.call_id, item.arguments ?? "{}");
             }
+            if (item.type === "function_call" && item.name === "remember_family_fact" && item.call_id) {
+              void handleMemoryTool(item.call_id, item.arguments ?? "{}");
+            }
           }
           break;
         case "error":
@@ -149,7 +188,7 @@ export function App(): React.JSX.Element {
           break;
       }
     },
-    [handleSpreadsheetTool, logTranscript],
+    [handleMemoryTool, handleSpreadsheetTool, logTranscript],
   );
 
   const disconnect = useCallback(() => {

@@ -10,9 +10,10 @@ import { config as loadEnv } from "dotenv";
 import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron";
 
 import { createRealtimeSessionConfig } from "./realtimeSession";
+import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./memory";
 import { writeSpreadsheet } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
-import type { TranscriptEntry, TranscriptRole } from "../shared/types";
+import type { MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
 
 const MODEL = process.env.ROCKY_REALTIME_MODEL ?? "gpt-realtime-2.1";
 const VOICE = process.env.ROCKY_VOICE ?? "cedar";
@@ -43,6 +44,10 @@ function spreadsheetDirectory(): string {
 
 function transcriptDirectory(): string {
   return path.join(localDataDirectory(), "transcripts");
+}
+
+function memoryFilePath(): string {
+  return path.join(localDataDirectory(), "memory.json");
 }
 
 function transcriptPath(sessionId: string): string {
@@ -117,6 +122,7 @@ async function createRealtimeSession(): Promise<unknown> {
   const safetyIdentifier = createHash("sha256")
     .update(`rocky-local-family:${os.hostname()}`)
     .digest("hex");
+  const memoryContext = formatMemoryForPrompt(await readFamilyMemory(memoryFilePath()));
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
     headers: {
@@ -128,6 +134,7 @@ async function createRealtimeSession(): Promise<unknown> {
       session: createRealtimeSessionConfig(
         process.env.ROCKY_REALTIME_MODEL ?? MODEL,
         process.env.ROCKY_VOICE ?? VOICE,
+        memoryContext,
       ),
     }),
   });
@@ -152,6 +159,8 @@ function registerIpc(): void {
   ipcMain.handle("rocky:start-transcript", startTranscript);
   ipcMain.handle("rocky:append-transcript", (_event, entry: TranscriptEntry) => appendTranscript(entry));
   ipcMain.handle("rocky:record-style-failure", (_event, failure: RockyStyleFailure) => recordStyleFailure(failure));
+  ipcMain.handle("rocky:remember-family-fact", (_event, input: MemoryFactInput) =>
+    rememberFamilyFact(memoryFilePath(), input));
   ipcMain.handle("rocky:create-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
     const result = await writeSpreadsheet(spec, spreadsheetDirectory());
     await openSpreadsheetInOnlyOffice(result.path);

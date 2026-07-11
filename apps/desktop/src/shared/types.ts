@@ -35,6 +35,31 @@ export interface RockyConfig {
   localDataDirectory: string;
 }
 
+export interface MemoryFact {
+  text: string;
+  createdAt: string;
+}
+
+export interface PersonMemory {
+  name: string;
+  facts: MemoryFact[];
+}
+
+export interface FamilyMemory {
+  version: 1;
+  updatedAt: string;
+  people: PersonMemory[];
+}
+
+export interface MemoryFactInput {
+  person: string;
+  fact: string;
+}
+
+export interface MemoryFactResult extends MemoryFactInput {
+  saved: boolean;
+}
+
 export type TranscriptRole = "user" | "rocky" | "tool" | "system";
 
 export interface TranscriptEntry {
@@ -54,6 +79,7 @@ export interface RockyApi {
   startTranscript: () => Promise<TranscriptSession>;
   appendTranscript: (entry: TranscriptEntry) => Promise<void>;
   recordStyleFailure: (failure: RockyStyleFailure) => Promise<void>;
+  rememberFamilyFact: (input: MemoryFactInput) => Promise<MemoryFactResult>;
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   openSpreadsheet: (filePath: string) => Promise<void>;
   revealSpreadsheet: (filePath: string) => Promise<void>;
