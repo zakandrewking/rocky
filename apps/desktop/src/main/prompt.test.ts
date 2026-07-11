@@ -16,5 +16,6 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain('word "question" only at the END');
     expect(ROCKY_INSTRUCTIONS).toContain("repeat the important word exactly three times");
     expect(ROCKY_INSTRUCTIONS).toContain("refer to yourself as \"Rocky\"");
+    expect(ROCKY_INSTRUCTIONS).toContain("Never drift into normal assistant voice");
   });
 });
