@@ -197,14 +197,7 @@ export function App(): React.JSX.Element {
       };
       channel.onopen = () => {
         setPhase("listening");
-        channel.send(
-          JSON.stringify({
-            type: "response.create",
-            response: {
-              instructions: "Give your brief first-contact greeting now, then listen.",
-            },
-          }),
-        );
+        channel.send(JSON.stringify({ type: "response.create" }));
       };
 
       const offer = await peer.createOffer();

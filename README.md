@@ -54,6 +54,7 @@ Realtime client secret.
 ```bash
 pnpm dev       # terminal launch with hot reload
 pnpm check     # lint, strict typecheck, tests, and production build
+pnpm eval:rocky # run text-mode Rocky persona evals before voice testing
 pnpm dist:mac  # create an unpacked macOS application
 ```
 

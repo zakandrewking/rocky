@@ -23,6 +23,8 @@
 - [x] Standardize spreadsheet viewing and editing on open-source ONLYOFFICE Desktop Editors.
 - [ ] Test a spoken spreadsheet tool call end to end.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
+  - [x] Add repeatable text-mode style evals and preserve failed phrases as negative examples.
+  - [ ] Make all greeting, acknowledgement, science, and safety style evals pass consistently.
 - [ ] Replace the preset voice with the trained Rocky voice from
   [Pedram Amini's Rocky voice-clone project](https://pedsidian.pedramamini.com/Claude/Blog/2026-03-28-rocky-voice-clone#The%20Final%20Product).
   Locate the model/artifacts, confirm their license and permitted use, and determine the lowest-latency

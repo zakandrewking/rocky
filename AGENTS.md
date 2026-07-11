@@ -15,4 +15,8 @@
 - Keep the app runnable after each push; add setup and launch instructions to README.md
 - For UI work, verify the main flow in a real browser
 - Commit in small, coherent increments with descriptive messages
+- After you commit, keep working; do not pause unless instructed to do so or you genuinely need
+  user feedback
 - Do not overwrite unrelated user changes in a dirty worktree
+- After you commit, keep working. Do not pause unless instructed to do so, or if you really 
+  need feedback
