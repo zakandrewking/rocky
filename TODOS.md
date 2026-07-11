@@ -103,6 +103,9 @@ in approximate priority order
   - [ ] Return a concise spoken answer with source provenance saved in the local transcript; apply
     kid-safe browsing rules and never let untrusted web content directly control local tools.
 - [ ] Tune Rocky's prompt, voice, interruption behavior, and musical personality with the family.
+  - [x] Stabilize the voice state machine by disabling automatic Realtime VAD response creation
+    and interruption, making Rocky explicitly create the first short greeting, and guarding
+    speech-start events that are likely caused by Rocky's own output.
   - [x] Add rare, context-triggered family easter eggs for oversized encouragement, literal joke
     reveals, ball-sport innocence, whole-good wordplay, affection for Earth and friendship, sensory
     planet names, reciprocal creature nicknames, messy-room reactions, and alien disgust at eating;

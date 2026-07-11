@@ -27,8 +27,8 @@ describe("Realtime session configuration", () => {
           turn_detection: {
             type: "semantic_vad",
             eagerness: "low",
-            create_response: true,
-            interrupt_response: true,
+            create_response: false,
+            interrupt_response: false,
           },
         },
       },

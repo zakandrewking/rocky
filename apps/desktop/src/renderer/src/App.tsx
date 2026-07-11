@@ -6,7 +6,7 @@ import {
   ROCKY_DEFAULT_REPLY_CASE,
   ROCKY_GREETING_CASE,
 } from "../../shared/rockyStyle";
-import { START_GREETING_EVENT } from "../../shared/realtimeEvents";
+import { RESPONSE_CREATE_EVENT } from "../../shared/realtimeEvents";
 import { splitSpeechChunks } from "../../shared/speechChunks";
 import { EridianAudio } from "./eridianAudio";
 import { HumePcmAudio } from "./humePcmAudio";
@@ -47,6 +47,11 @@ export function App(): React.JSX.Element {
   const humeTextBufferRef = useRef("");
   const humeResponseTextRef = useRef("");
   const sessionIdRef = useRef<string | null>(null);
+  const responseInProgressRef = useRef(false);
+  const userTurnPendingRef = useRef(false);
+  const initialGreetingDoneRef = useRef(false);
+  const rockyOutputActiveRef = useRef(false);
+  const ignoreSpeechStartedUntilRef = useRef(0);
   const rockyUtteranceCountRef = useRef(0);
   const userSpokeBeforeFirstRockyRef = useRef(false);
 
@@ -79,6 +84,7 @@ export function App(): React.JSX.Element {
     if (remoteAudioFrameRef.current !== null) cancelAnimationFrame(remoteAudioFrameRef.current);
     remoteAudioFrameRef.current = null;
     remoteSpeakingRef.current = false;
+    rockyOutputActiveRef.current = false;
     void remoteAudioContextRef.current?.close();
     remoteAudioContextRef.current = null;
   }, []);
@@ -104,10 +110,12 @@ export function App(): React.JSX.Element {
         lastAudibleAt = now;
         if (!remoteSpeakingRef.current) {
           remoteSpeakingRef.current = true;
+          rockyOutputActiveRef.current = true;
           setPhase("speaking");
         }
       } else if (remoteSpeakingRef.current && now - lastAudibleAt > 280) {
         remoteSpeakingRef.current = false;
+        rockyOutputActiveRef.current = false;
         setPhase((current) => current === "speaking" ? "listening" : current);
       }
       remoteAudioFrameRef.current = requestAnimationFrame(sample);
@@ -120,6 +128,26 @@ export function App(): React.JSX.Element {
     if (!channel || channel.readyState !== "open") throw new Error("Rocky’s data channel is not open.");
     channel.send(JSON.stringify(event));
   }, []);
+
+  const requestResponse = useCallback((reason: "initial_greeting" | "user_turn" | "tool_result") => {
+    if (responseInProgressRef.current) return false;
+    if (reason !== "initial_greeting" && !initialGreetingDoneRef.current) return false;
+    responseInProgressRef.current = true;
+    setPhase("thinking");
+    try {
+      sendEvent(RESPONSE_CREATE_EVENT);
+      return true;
+    } catch {
+      responseInProgressRef.current = false;
+      throw new Error("Rocky could not start a response.");
+    }
+  }, [sendEvent]);
+
+  const answerPendingUserTurn = useCallback(() => {
+    if (!userTurnPendingRef.current) return;
+    if (rockyOutputActiveRef.current) return;
+    if (requestResponse("user_turn")) userTurnPendingRef.current = false;
+  }, [requestResponse]);
 
   const logTranscript = useCallback((role: "user" | "rocky" | "tool" | "system", text: string) => {
     const sessionId = sessionIdRef.current;
@@ -186,9 +214,9 @@ export function App(): React.JSX.Element {
           },
         });
       }
-      sendEvent({ type: "response.create" });
+      requestResponse("tool_result");
     },
-    [sendEvent],
+    [requestResponse, sendEvent],
   );
 
   const handleMemoryTool = useCallback(
@@ -222,9 +250,9 @@ export function App(): React.JSX.Element {
           },
         });
       }
-      sendEvent({ type: "response.create" });
+      requestResponse("tool_result");
     },
-    [logTranscript, sendEvent],
+    [logTranscript, requestResponse, sendEvent],
   );
 
   const handleActiveSpreadsheetTool = useCallback(
@@ -251,15 +279,19 @@ export function App(): React.JSX.Element {
           },
         });
       }
-      sendEvent({ type: "response.create" });
+      requestResponse("tool_result");
     },
-    [sendEvent],
+    [requestResponse, sendEvent],
   );
 
   const handleRealtimeEvent = useCallback(
     (event: RealtimeEvent) => {
       switch (event.type) {
-        case "input_audio_buffer.speech_started":
+        case "input_audio_buffer.speech_started": {
+          const isLikelySelfAudio = responseInProgressRef.current
+            || rockyOutputActiveRef.current
+            || performance.now() < ignoreSpeechStartedUntilRef.current;
+          if (isLikelySelfAudio) break;
           eridianAudioRef.current?.stop();
           humeAudioRef.current?.stop();
           humeTextBufferRef.current = "";
@@ -267,16 +299,28 @@ export function App(): React.JSX.Element {
           if (sessionIdRef.current && speechProviderRef.current === "hume") {
             void window.rocky.cancelHumeSpeech(sessionIdRef.current).catch(() => undefined);
           }
+          userTurnPendingRef.current = true;
           setPhase("listening");
           break;
+        }
         case "input_audio_buffer.speech_stopped":
+          if (userTurnPendingRef.current) {
+            setPhase("thinking");
+            answerPendingUserTurn();
+          }
+          break;
         case "response.created":
+          responseInProgressRef.current = true;
           setPhase("thinking");
           break;
         case "conversation.item.input_audio_transcription.completed":
           if (event.transcript) {
             if (rockyUtteranceCountRef.current === 0) userSpokeBeforeFirstRockyRef.current = true;
             logTranscript("user", event.transcript);
+            if (!responseInProgressRef.current || !initialGreetingDoneRef.current) {
+              userTurnPendingRef.current = true;
+              answerPendingUserTurn();
+            }
           }
           break;
         case "response.output_audio_transcript.delta":
@@ -291,6 +335,7 @@ export function App(): React.JSX.Element {
         case "response.output_text.delta":
           if (event.delta) {
             if (!humeResponseTextRef.current) humeAudioRef.current?.beginResponse();
+            rockyOutputActiveRef.current = true;
             humeResponseTextRef.current += event.delta;
             eridianAudioRef.current?.pushTranscriptDelta(event.delta);
             sendHumeChunks(event.delta);
@@ -304,7 +349,12 @@ export function App(): React.JSX.Element {
           recordRockyUtterance(text);
           break;
         }
-        case "response.done":
+        case "response.done": {
+          responseInProgressRef.current = false;
+          if (!initialGreetingDoneRef.current && rockyUtteranceCountRef.current > 0) {
+            initialGreetingDoneRef.current = true;
+          }
+          const toolCalls = event.response?.output?.filter((item) => item.type === "function_call") ?? [];
           for (const item of event.response?.output ?? []) {
             if (item.type === "function_call" && item.name === "create_spreadsheet" && item.call_id) {
               void handleSpreadsheetTool(item.call_id, item.arguments ?? "{}");
@@ -316,13 +366,24 @@ export function App(): React.JSX.Element {
               void handleActiveSpreadsheetTool(item.call_id, item.arguments ?? "{}");
             }
           }
+          if (!toolCalls.length) answerPendingUserTurn();
           break;
+        }
         case "error":
+          responseInProgressRef.current = false;
           setPhase("error");
           break;
       }
     },
-    [handleActiveSpreadsheetTool, handleMemoryTool, handleSpreadsheetTool, logTranscript, recordRockyUtterance, sendHumeChunks],
+    [
+      answerPendingUserTurn,
+      handleActiveSpreadsheetTool,
+      handleMemoryTool,
+      handleSpreadsheetTool,
+      logTranscript,
+      recordRockyUtterance,
+      sendHumeChunks,
+    ],
   );
 
   const disconnect = useCallback(() => {
@@ -345,6 +406,11 @@ export function App(): React.JSX.Element {
     humeTextBufferRef.current = "";
     humeResponseTextRef.current = "";
     sessionIdRef.current = null;
+    responseInProgressRef.current = false;
+    userTurnPendingRef.current = false;
+    initialGreetingDoneRef.current = false;
+    rockyOutputActiveRef.current = false;
+    ignoreSpeechStartedUntilRef.current = 0;
     rockyUtteranceCountRef.current = 0;
     userSpokeBeforeFirstRockyRef.current = false;
     setPhase("idle");
@@ -362,7 +428,9 @@ export function App(): React.JSX.Element {
       speechProviderRef.current = config.speechProvider;
       if (config.speechProvider === "hume") {
         humeAudioRef.current ??= new HumePcmAudio((speaking) => {
-          setPhase(speaking ? "speaking" : "listening");
+          rockyOutputActiveRef.current = speaking;
+          setPhase(speaking ? "speaking" : responseInProgressRef.current ? "thinking" : "listening");
+          if (!speaking) answerPendingUserTurn();
         }, config.humeExtraDelayMs);
         await humeAudioRef.current.resume();
       }
@@ -411,8 +479,8 @@ export function App(): React.JSX.Element {
         }
       };
       channel.onopen = () => {
-        setPhase("listening");
-        channel.send(JSON.stringify(START_GREETING_EVENT));
+        ignoreSpeechStartedUntilRef.current = performance.now() + 1_500;
+        requestResponse("initial_greeting");
       };
 
       const offer = await peer.createOffer();
@@ -433,7 +501,7 @@ export function App(): React.JSX.Element {
       disconnect();
       setPhase("error");
     }
-  }, [disconnect, handleRealtimeEvent, logTranscript, monitorRemoteAudio]);
+  }, [answerPendingUserTurn, disconnect, handleRealtimeEvent, logTranscript, monitorRemoteAudio, requestResponse]);
 
   const isConnected = phase !== "idle" && phase !== "error";
 
