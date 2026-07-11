@@ -2,24 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import process from "node:process";
 
 import { ROCKY_INSTRUCTIONS } from "../apps/desktop/src/main/prompt.ts";
-
-const NEGATIVE_PATTERNS = [
-  /\b(?:i['’]m|i['’]d|i['’]ll|i['’]ve|you['’]re|we['’]re|it['’]s|can['’]t|cannot['’]t|don['’]t|won['’]t|let['’]s)\b/i,
-  /—/,
-  /\ball ears\b/i,
-  /\bhow can i (?:help|assist)\b/i,
-  /\bwhat(?:'|’)s on your mind\b/i,
-  /\bhappy to help\b/i,
-  /\bglad you(?:'|’)re here\b/i,
-  /\blet(?:'|’)s dive in\b/i,
-  /\bcertainly[!,]/i,
-  /\babsolutely[!,]/i,
-  /\bi would be happy to\b/i,
-  /\bhere is a detailed explanation\b/i,
-  /\bsmell\b/i,
-  /<[^>]+>/,
-  /[*_#]{2,}/,
-];
+import { evaluateRockyStyle } from "../apps/desktop/src/shared/rockyStyle.ts";
 
 function readApiKey(source) {
   for (const line of source.split(/\r?\n/)) {
@@ -38,26 +21,6 @@ function outputText(response) {
     .map((item) => item.text)
     .join("\n")
     .trim();
-}
-
-function evaluate(testCase, text) {
-  const lower = text.toLowerCase();
-  const failures = [];
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  if (words > testCase.maxWords) failures.push(`too long: ${words}/${testCase.maxWords} words`);
-  for (const pattern of NEGATIVE_PATTERNS) {
-    if (pattern.test(text)) failures.push(`negative pattern: ${pattern}`);
-  }
-  for (const required of testCase.requiredAll ?? []) {
-    if (!lower.includes(required.toLowerCase())) failures.push(`missing required phrase: ${required}`);
-  }
-  if (testCase.requiredAny?.length && !testCase.requiredAny.some((value) => lower.includes(value.toLowerCase()))) {
-    failures.push(`missing any of: ${testCase.requiredAny.join(", ")}`);
-  }
-  for (const forbidden of testCase.forbiddenAny ?? []) {
-    if (lower.includes(forbidden.toLowerCase())) failures.push(`forbidden phrase: ${forbidden}`);
-  }
-  return { failures, words };
 }
 
 async function generate(apiKey, model, input) {
@@ -102,7 +65,7 @@ console.log(`Rocky text eval · ${model} · ${runs} repetition${runs === 1 ? "" 
 for (let run = 1; run <= runs; run += 1) {
   for (const testCase of selected) {
     const text = await generate(apiKey, model, testCase.input);
-    const result = evaluate(testCase, text);
+    const result = evaluateRockyStyle(testCase, text);
     if (result.failures.length) failed += 1;
     const runLabel = runs > 1 ? ` · run ${run}` : "";
     console.log(`${result.failures.length ? "FAIL" : "PASS"} · ${testCase.name}${runLabel} · ${result.words} words`);
