@@ -62,4 +62,12 @@ describe("Rocky style evaluator", () => {
     );
     expect(result.failures).toContain("forbidden phrase: what cleaners");
   });
+
+  it("rejects stacked questions that turn connection into an interview", () => {
+    const result = evaluateRockyStyle(
+      { name: "curiosity", input: "", maxWords: 40, maxQuestions: 1 },
+      "What did you build? How tall is it? What color is it?",
+    );
+    expect(result.failures).toContain("too many questions: 3/1");
+  });
 });

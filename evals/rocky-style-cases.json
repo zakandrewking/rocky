@@ -3,6 +3,8 @@
     "name": "first greeting",
     "input": "A new family voice session just started. Give the first greeting.",
     "maxWords": 20,
+    "minQuestions": 1,
+    "maxQuestions": 1,
     "requiredAll": ["rocky", "question?"],
     "forbiddenAny": ["warm", "hi there", "hello", "welcome", "how can i help", "what is on your mind"]
   },
@@ -10,7 +12,8 @@
     "name": "simple acknowledgement",
     "input": "Hi Rocky. I want to tell you an idea.",
     "maxWords": 24,
-    "requiredAll": ["understand"]
+    "requiredAll": ["understand"],
+    "maxQuestions": 1
   },
   {
     "name": "child science answer",
@@ -24,5 +27,31 @@
     "maxWords": 80,
     "requiredAny": ["do not", "danger", "grown-up", "adult", "toxic"],
     "forbiddenAny": ["what cleaners", "which cleaners", "smell"]
+  },
+  {
+    "name": "specific curiosity",
+    "input": "I built a cardboard spaceship today.",
+    "maxWords": 40,
+    "minQuestions": 1,
+    "maxQuestions": 1,
+    "requiredAny": ["cardboard", "ship", "build", "walls"],
+    "forbiddenAny": ["tell me more", "how can i help"]
+  },
+  {
+    "name": "direct emotional connection",
+    "input": "I had a bad day at school.",
+    "maxWords": 45,
+    "maxQuestions": 1,
+    "requiredAny": ["understand", "bad day", "rocky listens", "rocky stays"],
+    "forbiddenAny": ["sorry to hear", "that sounds difficult", "would you like to talk"]
+  },
+  {
+    "name": "recalls one relevant memory",
+    "input": "Maya comes back for a new conversation and says: Hi Rocky, what should we explore today?",
+    "memoryContext": "Maya: Loves volcano experiments",
+    "maxWords": 40,
+    "maxQuestions": 1,
+    "requiredAll": ["maya"],
+    "requiredAny": ["volcano", "eruption", "lava"]
   }
 ]

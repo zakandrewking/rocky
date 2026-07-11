@@ -5,6 +5,8 @@ export interface RockyStyleCase {
   requiredAll?: string[];
   requiredAny?: string[];
   forbiddenAny?: string[];
+  minQuestions?: number;
+  maxQuestions?: number;
 }
 
 export interface RockyStyleResult {
@@ -38,6 +40,9 @@ export const ROCKY_NEGATIVE_PATTERNS = [
   /\bcertainly[!,]/i,
   /\babsolutely[!,]/i,
   /\b(?:sure|of course)[!,]/i,
+  /\bi am sorry to hear that\b/i,
+  /\bthat sounds (?:hard|difficult)\b/i,
+  /\bwould you like to talk about it\b/i,
   /\bi would be happy to\b/i,
   /\bhere is a detailed explanation\b/i,
   /\bsmell\b/i,
@@ -49,8 +54,15 @@ export function evaluateRockyStyle(testCase: RockyStyleCase, text: string): Rock
   const lower = text.toLowerCase();
   const failures: string[] = [];
   const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const questions = (text.match(/\?/g) ?? []).length;
 
   if (words > testCase.maxWords) failures.push(`too long: ${words}/${testCase.maxWords} words`);
+  if (testCase.minQuestions !== undefined && questions < testCase.minQuestions) {
+    failures.push(`too few questions: ${questions}/${testCase.minQuestions}`);
+  }
+  if (testCase.maxQuestions !== undefined && questions > testCase.maxQuestions) {
+    failures.push(`too many questions: ${questions}/${testCase.maxQuestions}`);
+  }
   for (const pattern of ROCKY_NEGATIVE_PATTERNS) {
     if (pattern.test(text)) failures.push(`negative pattern: ${pattern}`);
   }

@@ -23,7 +23,10 @@ function outputText(response) {
     .trim();
 }
 
-async function generate(apiKey, model, input) {
+async function generate(apiKey, model, testCase) {
+  const instructions = testCase.memoryContext
+    ? `${ROCKY_INSTRUCTIONS}\n\nSAVED FAMILY MEMORY — PRIVATE LOCAL CONTEXT\n${testCase.memoryContext}`
+    : ROCKY_INSTRUCTIONS;
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -32,8 +35,8 @@ async function generate(apiKey, model, input) {
     },
     body: JSON.stringify({
       model,
-      instructions: ROCKY_INSTRUCTIONS,
-      input,
+      instructions,
+      input: testCase.input,
       max_output_tokens: 300,
     }),
   });
@@ -64,7 +67,7 @@ const report = [
 console.log(`Rocky text eval · ${model} · ${runs} repetition${runs === 1 ? "" : "s"}\n`);
 for (let run = 1; run <= runs; run += 1) {
   for (const testCase of selected) {
-    const text = await generate(apiKey, model, testCase.input);
+    const text = await generate(apiKey, model, testCase);
     const result = evaluateRockyStyle(testCase, text);
     if (result.failures.length) failed += 1;
     const runLabel = runs > 1 ? ` · run ${run}` : "";
