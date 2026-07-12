@@ -5,7 +5,12 @@ import { createRealtimeSessionConfig } from "./realtimeSession";
 
 describe("Realtime session configuration", () => {
   it("sends the complete persona prompt and selected voice", () => {
-    const config = createRealtimeSessionConfig("voice-model", "test-voice", "Maya: Loves volcanoes");
+    const config = createRealtimeSessionConfig(
+      "voice-model",
+      "test-voice",
+      "Maya: Loves volcanoes",
+      "Human: We were fixing a spreadsheet.\nRocky: Can hear.",
+    );
     expect(config).toMatchObject({
       type: "realtime",
       model: "voice-model",
@@ -13,6 +18,8 @@ describe("Realtime session configuration", () => {
       audio: { output: { voice: "test-voice" } },
       tool_choice: "auto",
     });
+    expect((config as { instructions: string }).instructions).toContain("RECENT CONVERSATION CONTINUITY");
+    expect((config as { instructions: string }).instructions).toContain("We were fixing a spreadsheet");
   });
 
   it("keeps transcription, semantic turn detection, and spreadsheet tool calling", () => {
@@ -46,7 +53,7 @@ describe("Realtime session configuration", () => {
   });
 
   it("supports text-only output for an external speech provider", () => {
-    const config = createRealtimeSessionConfig("voice-model", "test-voice", "", "text");
+    const config = createRealtimeSessionConfig("voice-model", "test-voice", "", "", "text");
     expect(config).toMatchObject({ output_modalities: ["text"] });
   });
 });

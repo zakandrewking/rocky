@@ -10,15 +10,20 @@ export function createRealtimeSessionConfig(
   model: string,
   voice: string,
   memoryContext = "",
+  continuityContext = "",
   outputModality: "audio" | "text" = "audio",
 ): object {
-  const memoryInstructions = memoryContext
-    ? `${ROCKY_INSTRUCTIONS}\n\nSAVED FAMILY MEMORY — PRIVATE LOCAL CONTEXT\n${memoryContext}`
-    : ROCKY_INSTRUCTIONS;
+  const contextSections = [
+    memoryContext ? `SAVED FAMILY MEMORY — PRIVATE LOCAL CONTEXT\n${memoryContext}` : "",
+    continuityContext
+      ? `RECENT CONVERSATION CONTINUITY — PRIVATE LOCAL CONTEXT\n${continuityContext}\nUse this to resume naturally after app restarts. Do not recite it.`
+      : "",
+  ].filter(Boolean);
+  const instructions = contextSections.length ? `${ROCKY_INSTRUCTIONS}\n\n${contextSections.join("\n\n")}` : ROCKY_INSTRUCTIONS;
   return {
     type: "realtime",
     model,
-    instructions: memoryInstructions,
+    instructions,
     output_modalities: [outputModality],
     audio: {
       input: {

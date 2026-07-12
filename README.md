@@ -33,6 +33,8 @@ During development, transcripts and workbooks are saved under the repository's i
 - `local-data/spreadsheets/` contains Rocky's `.xlsx` workbooks.
 - `local-data/memory.json` contains safe, volunteered names or nicknames, interests, favorites,
   recurring activities, and ongoing projects that Rocky can recall in later sessions.
+- `local-data/continuity.json` contains a bounded rolling window of recent non-system turns so a
+  restarted voice session can resume context instead of feeling like a blank new chat.
 
 Workbooks automatically open in [ONLYOFFICE Desktop Editors](https://github.com/ONLYOFFICE/DesktopEditors)
 and its window is brought to the foreground. `local-data/` is intentionally excluded from Git.

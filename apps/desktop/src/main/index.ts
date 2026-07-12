@@ -14,6 +14,7 @@ import { normalizeResearchInput, runBackgroundResearch } from "./backgroundResea
 import { HumeSpeech } from "./humeSpeech";
 import { OnlyOfficeBridge } from "./onlyOfficeBridge";
 import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./memory";
+import { appendContinuity, formatContinuityForPrompt } from "./sessionContinuity";
 import { normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
 import type { MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
@@ -59,6 +60,10 @@ function transcriptDirectory(): string {
 
 function memoryFilePath(): string {
   return path.join(localDataDirectory(), "memory.json");
+}
+
+function continuityFilePath(): string {
+  return path.join(localDataDirectory(), "continuity.json");
 }
 
 function researchDirectory(): string {
@@ -114,6 +119,7 @@ async function appendTranscript(entry: TranscriptEntry): Promise<void> {
   if (!text) return;
   const time = new Date().toLocaleTimeString();
   await appendFile(transcriptPath(entry.sessionId), `**${labels[entry.role]} · ${time}**  \n${text}\n\n`, "utf8");
+  await appendContinuity(continuityFilePath(), { ...entry, text });
 }
 
 async function recordStyleFailure(failure: RockyStyleFailure): Promise<void> {
@@ -158,6 +164,7 @@ async function createRealtimeSession(): Promise<unknown> {
     .update(`rocky-local-family:${os.hostname()}`)
     .digest("hex");
   const memoryContext = formatMemoryForPrompt(await readFamilyMemory(memoryFilePath()));
+  const continuityContext = await formatContinuityForPrompt(continuityFilePath());
   const hume = await readHumeSettings();
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
@@ -171,6 +178,7 @@ async function createRealtimeSession(): Promise<unknown> {
         process.env.ROCKY_REALTIME_MODEL ?? MODEL,
         process.env.ROCKY_VOICE ?? VOICE,
         memoryContext,
+        continuityContext,
         hume ? "text" : "audio",
       ),
     }),

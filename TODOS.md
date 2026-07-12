@@ -22,6 +22,8 @@ in approximate priority order
 - [x] Test the first full spoken conversation against the live API.
 - [x] Verify direct workbook creation and foreground handoff to Numbers.
 - [x] Keep ignored local transcript and spreadsheet history in `local-data/`.
+- [x] Persist bounded recent conversation continuity across app restarts in ignored local data, so
+  a fresh Realtime session can resume after a crash, disconnect, or manual restart.
 - [x] Standardize spreadsheet viewing and editing on open-source ONLYOFFICE Desktop Editors.
 - [x] make sure we have some personality instruction in the prompt. use what you learned from the 
   film. rocky likes to connect and interact with people, learn about them, connect. If you do not
