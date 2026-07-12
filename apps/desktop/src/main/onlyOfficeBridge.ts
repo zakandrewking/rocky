@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { normalizeSpreadsheetSpec } from "./spreadsheet";
-import type { CellValue, SpreadsheetSpec } from "../shared/types";
+import type { CellValue, OnlyOfficeBridgeStatus, SpreadsheetSpec } from "../shared/types";
 
 export const ONLYOFFICE_BRIDGE_PORT = 17_421;
 
@@ -92,15 +92,7 @@ export class OnlyOfficeBridge {
       }
       if (request.method === "GET" && url.pathname === "/status") {
         response.setHeader("Content-Type", "application/json");
-        response.end(
-          JSON.stringify({
-            connected: this.isConnected(),
-            lastPollAt: this.lastPollAt || null,
-            msSinceLastPoll: this.lastPollAt ? Date.now() - this.lastPollAt : null,
-            queued: this.queue.length,
-            pending: this.pending.size,
-          }),
-        );
+        response.end(JSON.stringify(this.status()));
         return;
       }
       if (request.method === "POST" && url.pathname === "/complete") {
@@ -124,6 +116,16 @@ export class OnlyOfficeBridge {
 
   isConnected(): boolean {
     return Date.now() - this.lastPollAt < 2_000;
+  }
+
+  status(): OnlyOfficeBridgeStatus {
+    return {
+      connected: this.isConnected(),
+      lastPollAt: this.lastPollAt || null,
+      msSinceLastPoll: this.lastPollAt ? Date.now() - this.lastPollAt : null,
+      queued: this.queue.length,
+      pending: this.pending.size,
+    };
   }
 
   replaceActiveSheet(spec: SpreadsheetSpec): Promise<void> {

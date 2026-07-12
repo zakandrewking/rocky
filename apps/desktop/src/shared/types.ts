@@ -203,6 +203,14 @@ export interface DebugLogEntry {
   detail?: Record<string, unknown>;
 }
 
+export interface OnlyOfficeBridgeStatus {
+  connected: boolean;
+  lastPollAt: number | null;
+  msSinceLastPoll: number | null;
+  queued: number;
+  pending: number;
+}
+
 export interface RockyApi {
   getConfig: () => Promise<RockyConfig>;
   createRealtimeSession: () => Promise<RealtimeSessionSecret>;
@@ -216,6 +224,7 @@ export interface RockyApi {
     sessionId?: string,
   ) => Promise<BackgroundResearchStarted>;
   listBackgroundResearch: () => Promise<BackgroundResearchStatus[]>;
+  getOnlyOfficeStatus: () => Promise<OnlyOfficeBridgeStatus>;
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<void>;
   inspectCurrentSpreadsheet: (spec: SpreadsheetInspectSpec, sessionId?: string) => Promise<SpreadsheetInspectResult>;

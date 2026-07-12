@@ -436,6 +436,13 @@ function registerIpc(): void {
     return { id, question: normalized.question, message: "Background research started." };
   });
   ipcMain.handle("rocky:list-background-research", () => listRecentResearchStatuses(researchDirectory(), 20));
+  ipcMain.handle("rocky:get-onlyoffice-status", () => onlyOfficeBridge?.status() ?? {
+    connected: false,
+    lastPollAt: null,
+    msSinceLastPoll: null,
+    queued: 0,
+    pending: 0,
+  });
   ipcMain.handle("rocky:create-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
     const result = await writeSpreadsheet(spec, spreadsheetDirectory());
     currentSpreadsheetPath = result.path;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { activeSheetCommand, columnName } from "./onlyOfficeBridge";
+import { activeSheetCommand, columnName, OnlyOfficeBridge } from "./onlyOfficeBridge";
 
 describe("ONLYOFFICE bridge commands", () => {
   it("converts column indexes to spreadsheet names", () => {
@@ -42,6 +42,18 @@ describe("ONLYOFFICE bridge commands", () => {
       type: "save_active_document",
     }).toMatchObject({
       type: "save_active_document",
+    });
+  });
+
+  it("reports disconnected bridge status before plugin polling starts", () => {
+    const bridge = new OnlyOfficeBridge("/tmp/rocky-test-token.json");
+
+    expect(bridge.status()).toMatchObject({
+      connected: false,
+      lastPollAt: null,
+      msSinceLastPoll: null,
+      queued: 0,
+      pending: 0,
     });
   });
 });

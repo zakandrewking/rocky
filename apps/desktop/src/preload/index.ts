@@ -28,6 +28,7 @@ const rockyApi: RockyApi = {
   startBackgroundResearch: (input: BackgroundResearchInput, sessionId?: string) =>
     ipcRenderer.invoke("rocky:start-background-research", input, sessionId),
   listBackgroundResearch: () => ipcRenderer.invoke("rocky:list-background-research"),
+  getOnlyOfficeStatus: () => ipcRenderer.invoke("rocky:get-onlyoffice-status"),
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) =>
     ipcRenderer.invoke("rocky:create-spreadsheet", spec, sessionId),
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) =>

@@ -7,6 +7,7 @@ import type {
   DebugLogEntry,
   HowToDocSpec,
   MemoryFactInput,
+  OnlyOfficeBridgeStatus,
   RockyFileListInput,
   RockyFileOpenInput,
   SpreadsheetEditSpec,
@@ -80,6 +81,7 @@ export function App(): React.JSX.Element {
   });
   const [debugOpen, setDebugOpen] = useState(false);
   const [researchDebug, setResearchDebug] = useState<ResearchDebugItem[]>([]);
+  const [onlyOfficeStatus, setOnlyOfficeStatus] = useState<OnlyOfficeBridgeStatus | null>(null);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -166,12 +168,23 @@ export function App(): React.JSX.Element {
     }
   }, []);
 
+  const loadOnlyOfficeStatus = useCallback(async () => {
+    try {
+      setOnlyOfficeStatus(await window.rocky.getOnlyOfficeStatus());
+    } catch {
+      setOnlyOfficeStatus(null);
+    }
+  }, []);
+
   const toggleDebugOpen = useCallback(() => {
     setDebugOpen((open) => {
-      if (!open) void loadPersistedResearchDebug();
+      if (!open) {
+        void loadPersistedResearchDebug();
+        void loadOnlyOfficeStatus();
+      }
       return !open;
     });
-  }, [loadPersistedResearchDebug]);
+  }, [loadOnlyOfficeStatus, loadPersistedResearchDebug]);
 
   useEffect(() => {
     return () => {
@@ -1035,6 +1048,13 @@ export function App(): React.JSX.Element {
           <small>{debugSnapshot.last}</small>
           {debugOpen ? (
             <div className="debug-details">
+              <strong>onlyoffice</strong>
+              {onlyOfficeStatus ? (
+                <p>
+                  {onlyOfficeStatus.connected ? "connected" : "not connected"} · q:{onlyOfficeStatus.queued} p:{onlyOfficeStatus.pending}
+                  {onlyOfficeStatus.msSinceLastPoll === null ? "" : ` · ${Math.round(onlyOfficeStatus.msSinceLastPoll)}ms`}
+                </p>
+              ) : <p>status unavailable</p>}
               <strong>background research</strong>
               {researchDebug.length ? researchDebug.map((item) => (
                 <div className={`research-debug research-${item.status}`} key={`${item.id}-${item.at}`}>
