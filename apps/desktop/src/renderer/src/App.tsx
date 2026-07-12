@@ -397,9 +397,14 @@ export function App(): React.JSX.Element {
       const retryText = humeRetryTextRef.current;
       writeDebugLog("hume-first-audio-retry", { textLength: retryText.length });
       humeAudioRef.current?.beginResponse();
-      void window.rocky.speakWithHume(sessionId, retryText, true).catch((error) => {
-        logTranscript("system", `Hume speech retry failed: ${friendlyError(error)}`);
-      });
+      // Cancel the stale connection first: the original request may just be slow, not lost, and
+      // would otherwise still deliver audio after the retry's audio, doubling the spoken line.
+      void window.rocky.cancelHumeSpeech(sessionId)
+        .catch(() => undefined)
+        .then(() => window.rocky.speakWithHume(sessionId, retryText, true))
+        .catch((error) => {
+          logTranscript("system", `Hume speech retry failed: ${friendlyError(error)}`);
+        });
       schedule();
       }, 2_500);
     };
