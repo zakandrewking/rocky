@@ -357,7 +357,7 @@ export function App(): React.JSX.Element {
   }, [clearHumeTurnWatchdog, setRockyPhase, writeDebugLog]);
 
   const speakLocalInitialGreeting = useCallback(() => {
-    const text = "Rocky here. Friend close! What do now, question?";
+    const text = "Rocky here. See friend is close. What do now, question?";
     initialGreetingDoneRef.current = true;
     humeTextBufferRef.current = "";
     humeResponseTextRef.current = text;
