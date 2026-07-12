@@ -35,6 +35,8 @@ During development, transcripts and workbooks are saved under the repository's i
   recurring activities, and ongoing projects that Rocky can recall in later sessions.
 - `local-data/continuity.json` contains a bounded rolling window of recent non-system turns so a
   restarted voice session can resume context instead of feeling like a blank new chat.
+- `local-data/debug/rocky-state.jsonl` contains renderer state-machine diagnostics for stuck
+  voice sessions: phase, peer state, data-channel state, response flags, and recent events.
 
 Workbooks automatically open in [ONLYOFFICE Desktop Editors](https://github.com/ONLYOFFICE/DesktopEditors)
 and its window is brought to the foreground. `local-data/` is intentionally excluded from Git.

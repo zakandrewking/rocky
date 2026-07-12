@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   BackgroundResearchInput,
   BackgroundResearchResult,
+  DebugLogEntry,
   HumeAudioEvent,
   MemoryFactInput,
   RockyApi,
@@ -16,6 +17,7 @@ const rockyApi: RockyApi = {
   createRealtimeSession: () => ipcRenderer.invoke("rocky:create-realtime-session"),
   startTranscript: () => ipcRenderer.invoke("rocky:start-transcript"),
   appendTranscript: (entry: TranscriptEntry) => ipcRenderer.invoke("rocky:append-transcript", entry),
+  appendDebugLog: (entry: DebugLogEntry) => ipcRenderer.invoke("rocky:append-debug-log", entry),
   recordStyleFailure: (failure: RockyStyleFailure) => ipcRenderer.invoke("rocky:record-style-failure", failure),
   rememberFamilyFact: (input: MemoryFactInput) => ipcRenderer.invoke("rocky:remember-family-fact", input),
   startBackgroundResearch: (input: BackgroundResearchInput, sessionId?: string) =>

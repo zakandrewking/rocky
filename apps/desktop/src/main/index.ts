@@ -17,7 +17,7 @@ import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./m
 import { appendContinuity, formatContinuityForPrompt } from "./sessionContinuity";
 import { normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
-import type { MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
+import type { DebugLogEntry, MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
 
 const MODEL = process.env.ROCKY_REALTIME_MODEL ?? "gpt-realtime-2.1";
 const VOICE = process.env.ROCKY_VOICE ?? "cedar";
@@ -56,6 +56,10 @@ function spreadsheetDirectory(): string {
 
 function transcriptDirectory(): string {
   return path.join(localDataDirectory(), "transcripts");
+}
+
+function debugDirectory(): string {
+  return path.join(localDataDirectory(), "debug");
 }
 
 function memoryFilePath(): string {
@@ -120,6 +124,18 @@ async function appendTranscript(entry: TranscriptEntry): Promise<void> {
   const time = new Date().toLocaleTimeString();
   await appendFile(transcriptPath(entry.sessionId), `**${labels[entry.role]} · ${time}**  \n${text}\n\n`, "utf8");
   await appendContinuity(continuityFilePath(), { ...entry, text });
+}
+
+async function appendDebugLog(entry: DebugLogEntry): Promise<void> {
+  const safeEntry = {
+    at: new Date().toISOString(),
+    event: String(entry.event).slice(0, 120),
+    sessionId: entry.sessionId?.slice(0, 80),
+    phase: entry.phase?.slice(0, 40),
+    detail: entry.detail ?? {},
+  };
+  await mkdir(debugDirectory(), { recursive: true });
+  await appendFile(path.join(debugDirectory(), "rocky-state.jsonl"), `${JSON.stringify(safeEntry)}\n`, "utf8");
 }
 
 async function recordStyleFailure(failure: RockyStyleFailure): Promise<void> {
@@ -208,6 +224,7 @@ function registerIpc(): void {
   ipcMain.handle("rocky:create-realtime-session", createRealtimeSession);
   ipcMain.handle("rocky:start-transcript", startTranscript);
   ipcMain.handle("rocky:append-transcript", (_event, entry: TranscriptEntry) => appendTranscript(entry));
+  ipcMain.handle("rocky:append-debug-log", (_event, entry: DebugLogEntry) => appendDebugLog(entry));
   ipcMain.handle("rocky:record-style-failure", (_event, failure: RockyStyleFailure) => recordStyleFailure(failure));
   ipcMain.handle("rocky:remember-family-fact", (_event, input: MemoryFactInput) =>
     rememberFamilyFact(memoryFilePath(), input));

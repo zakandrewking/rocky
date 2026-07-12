@@ -101,11 +101,19 @@ export interface TranscriptSession {
   path: string;
 }
 
+export interface DebugLogEntry {
+  event: string;
+  sessionId?: string;
+  phase?: string;
+  detail?: Record<string, unknown>;
+}
+
 export interface RockyApi {
   getConfig: () => Promise<RockyConfig>;
   createRealtimeSession: () => Promise<RealtimeSessionSecret>;
   startTranscript: () => Promise<TranscriptSession>;
   appendTranscript: (entry: TranscriptEntry) => Promise<void>;
+  appendDebugLog: (entry: DebugLogEntry) => Promise<void>;
   recordStyleFailure: (failure: RockyStyleFailure) => Promise<void>;
   rememberFamilyFact: (input: MemoryFactInput) => Promise<MemoryFactResult>;
   startBackgroundResearch: (

@@ -193,6 +193,35 @@ tbody tr:nth-child(even) { background: #f2f8f5; }
   -webkit-app-region: no-drag;
 }
 
+.debug-state {
+  position: fixed;
+  left: 14px;
+  bottom: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: calc(100vw - 28px);
+  padding: 5px 7px;
+  border: 1px solid rgba(155, 180, 155, .1);
+  border-radius: 6px;
+  background: rgba(8, 11, 10, .38);
+  color: rgba(200, 215, 181, .62);
+  font: 9px "DM Mono", monospace;
+  letter-spacing: .02em;
+  -webkit-app-region: no-drag;
+  pointer-events: none;
+}
+
+.debug-state span {
+  color: rgba(255, 195, 125, .72);
+}
+
+.debug-state small {
+  color: rgba(155, 180, 155, .46);
+  white-space: nowrap;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rock-orb, .wave { animation: none !important; transition-duration: .01ms; }
 }

@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type SetStateAction } from "react";
 
-import type { BackgroundResearchInput, BackgroundResearchResult, MemoryFactInput, SpreadsheetSpec } from "../../shared/types";
+import type {
+  BackgroundResearchInput,
+  BackgroundResearchResult,
+  DebugLogEntry,
+  MemoryFactInput,
+  SpreadsheetSpec,
+} from "../../shared/types";
 import {
   evaluateRockyStyle,
   ROCKY_DEFAULT_REPLY_CASE,
@@ -12,6 +18,18 @@ import { EridianAudio } from "./eridianAudio";
 import { HumePcmAudio } from "./humePcmAudio";
 
 type Phase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
+
+interface DebugSnapshot {
+  phase: Phase;
+  session: string;
+  peer: string;
+  channel: string;
+  response: string;
+  pending: string;
+  output: string;
+  greeting: string;
+  last: string;
+}
 
 interface RealtimeEvent {
   type?: string;
@@ -35,6 +53,17 @@ function friendlyError(error: unknown): string {
 
 export function App(): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>("idle");
+  const [debugSnapshot, setDebugSnapshot] = useState<DebugSnapshot>({
+    phase: "idle",
+    session: "none",
+    peer: "none",
+    channel: "none",
+    response: "no",
+    pending: "no",
+    output: "no",
+    greeting: "no",
+    last: "boot",
+  });
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -54,9 +83,47 @@ export function App(): React.JSX.Element {
   const ignoreSpeechStartedUntilRef = useRef(0);
   const rockyUtteranceCountRef = useRef(0);
   const userSpokeBeforeFirstRockyRef = useRef(false);
+  const phaseRef = useRef<Phase>("idle");
+
+  const buildDebugSnapshot = useCallback((last: string): DebugSnapshot => ({
+    phase: phaseRef.current,
+    session: sessionIdRef.current ? sessionIdRef.current.slice(-8) : "none",
+    peer: peerRef.current?.connectionState ?? "none",
+    channel: channelRef.current?.readyState ?? "none",
+    response: responseInProgressRef.current ? "yes" : "no",
+    pending: userTurnPendingRef.current ? "yes" : "no",
+    output: rockyOutputActiveRef.current ? "yes" : "no",
+    greeting: initialGreetingDoneRef.current ? "yes" : "no",
+    last,
+  }), []);
+
+  const writeDebugLog = useCallback((event: string, detail: Record<string, unknown> = {}) => {
+    const snapshot = buildDebugSnapshot(event);
+    setDebugSnapshot(snapshot);
+    const entry: DebugLogEntry = {
+      event,
+      phase: snapshot.phase,
+      detail: { ...snapshot, ...detail },
+    };
+    if (sessionIdRef.current) entry.sessionId = sessionIdRef.current;
+    void window.rocky.appendDebugLog(entry).catch(() => undefined);
+  }, [buildDebugSnapshot]);
+
+  const refreshDebug = useCallback((last: string) => {
+    setDebugSnapshot(buildDebugSnapshot(last));
+  }, [buildDebugSnapshot]);
+
+  const setRockyPhase = useCallback((next: SetStateAction<Phase>, reason: string) => {
+    const current = phaseRef.current;
+    const resolved = typeof next === "function" ? next(current) : next;
+    phaseRef.current = resolved;
+    setPhase(resolved);
+    writeDebugLog(`phase:${reason}`);
+  }, [writeDebugLog]);
 
   useEffect(() => {
     return () => {
+      writeDebugLog("renderer:unmount");
       channelRef.current?.close();
       peerRef.current?.close();
       streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -65,7 +132,12 @@ export function App(): React.JSX.Element {
       void eridianAudioRef.current?.close();
       void humeAudioRef.current?.close();
     };
-  }, []);
+  }, [writeDebugLog]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => refreshDebug("tick"), 1_000);
+    return () => window.clearInterval(timer);
+  }, [refreshDebug]);
 
   useEffect(() => window.rocky.onHumeAudio((sessionId, event) => {
     if (sessionId !== sessionIdRef.current) return;
@@ -111,29 +183,33 @@ export function App(): React.JSX.Element {
         if (!remoteSpeakingRef.current) {
           remoteSpeakingRef.current = true;
           rockyOutputActiveRef.current = true;
-          setPhase("speaking");
+          setRockyPhase("speaking", "remote-audio-start");
         }
       } else if (remoteSpeakingRef.current && now - lastAudibleAt > 280) {
         remoteSpeakingRef.current = false;
         rockyOutputActiveRef.current = false;
-        setPhase((current) => current === "speaking" ? "listening" : current);
+        setRockyPhase((current) => current === "speaking" ? "listening" : current, "remote-audio-stop");
       }
       remoteAudioFrameRef.current = requestAnimationFrame(sample);
     };
     sample();
-  }, [stopRemoteAudioMonitor]);
+  }, [setRockyPhase, stopRemoteAudioMonitor]);
 
   const sendEvent = useCallback((event: object) => {
     const channel = channelRef.current;
     if (!channel || channel.readyState !== "open") throw new Error("Rocky’s data channel is not open.");
+    writeDebugLog("send-event", { eventType: "type" in event ? event.type : "unknown" });
     channel.send(JSON.stringify(event));
-  }, []);
+  }, [writeDebugLog]);
 
   const requestResponse = useCallback((reason: "initial_greeting" | "user_turn" | "tool_result") => {
     if (responseInProgressRef.current) return false;
-    if (reason !== "initial_greeting" && !initialGreetingDoneRef.current) return false;
+    if (reason !== "initial_greeting" && !initialGreetingDoneRef.current) {
+      writeDebugLog("request-response-blocked", { reason, why: "initial greeting not done" });
+      return false;
+    }
     responseInProgressRef.current = true;
-    setPhase("thinking");
+    setRockyPhase("thinking", `request-response-${reason}`);
     try {
       sendEvent(RESPONSE_CREATE_EVENT);
       return true;
@@ -141,7 +217,7 @@ export function App(): React.JSX.Element {
       responseInProgressRef.current = false;
       throw new Error("Rocky could not start a response.");
     }
-  }, [sendEvent]);
+  }, [sendEvent, setRockyPhase, writeDebugLog]);
 
   const answerPendingUserTurn = useCallback(() => {
     if (!userTurnPendingRef.current) return;
@@ -187,7 +263,7 @@ export function App(): React.JSX.Element {
 
   const handleSpreadsheetTool = useCallback(
     async (callId: string, argumentText: string) => {
-      setPhase("thinking");
+      setRockyPhase("thinking", "spreadsheet-tool");
       try {
         const spec = JSON.parse(argumentText) as SpreadsheetSpec;
         const result = await window.rocky.createSpreadsheet(spec, sessionIdRef.current ?? undefined);
@@ -216,7 +292,7 @@ export function App(): React.JSX.Element {
       }
       requestResponse("tool_result");
     },
-    [requestResponse, sendEvent],
+    [requestResponse, sendEvent, setRockyPhase],
   );
 
   const handleMemoryTool = useCallback(
@@ -257,7 +333,7 @@ export function App(): React.JSX.Element {
 
   const handleActiveSpreadsheetTool = useCallback(
     async (callId: string, argumentText: string) => {
-      setPhase("thinking");
+      setRockyPhase("thinking", "active-spreadsheet-tool");
       try {
         const spec = JSON.parse(argumentText) as SpreadsheetSpec;
         await window.rocky.updateActiveSpreadsheet(spec, sessionIdRef.current ?? undefined);
@@ -281,7 +357,7 @@ export function App(): React.JSX.Element {
       }
       requestResponse("tool_result");
     },
-    [requestResponse, sendEvent],
+    [requestResponse, sendEvent, setRockyPhase],
   );
 
   const handleBackgroundResearchTool = useCallback(
@@ -334,12 +410,23 @@ export function App(): React.JSX.Element {
 
   const handleRealtimeEvent = useCallback(
     (event: RealtimeEvent) => {
+      writeDebugLog("realtime-event", {
+        type: event.type ?? "unknown",
+        outputItems: event.response?.output?.length ?? 0,
+      });
       switch (event.type) {
         case "input_audio_buffer.speech_started": {
           const isLikelySelfAudio = responseInProgressRef.current
             || rockyOutputActiveRef.current
             || performance.now() < ignoreSpeechStartedUntilRef.current;
-          if (isLikelySelfAudio) break;
+          if (isLikelySelfAudio) {
+            writeDebugLog("speech-started-ignored", {
+              responseInProgress: responseInProgressRef.current,
+              rockyOutputActive: rockyOutputActiveRef.current,
+              ignoreWindow: performance.now() < ignoreSpeechStartedUntilRef.current,
+            });
+            break;
+          }
           eridianAudioRef.current?.stop();
           humeAudioRef.current?.stop();
           humeTextBufferRef.current = "";
@@ -348,18 +435,18 @@ export function App(): React.JSX.Element {
             void window.rocky.cancelHumeSpeech(sessionIdRef.current).catch(() => undefined);
           }
           userTurnPendingRef.current = true;
-          setPhase("listening");
+          setRockyPhase("listening", "speech-started");
           break;
         }
         case "input_audio_buffer.speech_stopped":
           if (userTurnPendingRef.current) {
-            setPhase("thinking");
+            setRockyPhase("thinking", "speech-stopped");
             answerPendingUserTurn();
           }
           break;
         case "response.created":
           responseInProgressRef.current = true;
-          setPhase("thinking");
+          setRockyPhase("thinking", "response-created");
           break;
         case "conversation.item.input_audio_transcription.completed":
           if (event.transcript) {
@@ -403,6 +490,10 @@ export function App(): React.JSX.Element {
             initialGreetingDoneRef.current = true;
           }
           const toolCalls = event.response?.output?.filter((item) => item.type === "function_call") ?? [];
+          writeDebugLog("response-done", {
+            toolCalls: toolCalls.map((item) => item.name ?? "unknown"),
+            outputItems: event.response?.output?.length ?? 0,
+          });
           for (const item of event.response?.output ?? []) {
             if (item.type === "function_call" && item.name === "create_spreadsheet" && item.call_id) {
               void handleSpreadsheetTool(item.call_id, item.arguments ?? "{}");
@@ -422,7 +513,7 @@ export function App(): React.JSX.Element {
         }
         case "error":
           responseInProgressRef.current = false;
-          setPhase("error");
+          setRockyPhase("error", "realtime-error");
           break;
       }
     },
@@ -435,6 +526,8 @@ export function App(): React.JSX.Element {
       logTranscript,
       recordRockyUtterance,
       sendHumeChunks,
+      setRockyPhase,
+      writeDebugLog,
     ],
   );
 
@@ -465,8 +558,8 @@ export function App(): React.JSX.Element {
     ignoreSpeechStartedUntilRef.current = 0;
     rockyUtteranceCountRef.current = 0;
     userSpokeBeforeFirstRockyRef.current = false;
-    setPhase("idle");
-  }, [logTranscript, stopRemoteAudioMonitor]);
+    setRockyPhase("idle", "disconnect");
+  }, [logTranscript, setRockyPhase, stopRemoteAudioMonitor]);
 
   useEffect(() => window.rocky.onResearchComplete((sessionId, result) => {
     if (sessionId && sessionId !== sessionIdRef.current) return;
@@ -485,14 +578,19 @@ export function App(): React.JSX.Element {
       return;
     }
 
-    setPhase("connecting");
+    setRockyPhase("connecting", "connect");
     try {
       const config = await window.rocky.getConfig();
       speechProviderRef.current = config.speechProvider;
+      writeDebugLog("connect:config", {
+        speechProvider: config.speechProvider,
+        alienVoiceEnabled: config.alienVoiceEnabled,
+        hasApiKey: config.hasApiKey,
+      });
       if (config.speechProvider === "hume") {
         humeAudioRef.current ??= new HumePcmAudio((speaking) => {
           rockyOutputActiveRef.current = speaking;
-          setPhase(speaking ? "speaking" : responseInProgressRef.current ? "thinking" : "listening");
+          setRockyPhase(speaking ? "speaking" : responseInProgressRef.current ? "thinking" : "listening", "hume-speaking");
           if (!speaking) answerPendingUserTurn();
         }, config.humeExtraDelayMs);
         await humeAudioRef.current.resume();
@@ -503,7 +601,9 @@ export function App(): React.JSX.Element {
       }
       const transcriptSession = await window.rocky.startTranscript();
       sessionIdRef.current = transcriptSession.sessionId;
+      writeDebugLog("connect:transcript-started", { transcriptSession: transcriptSession.sessionId });
       const secret = await window.rocky.createRealtimeSession();
+      writeDebugLog("connect:realtime-secret-created", { expiresAt: secret.expires_at ?? null });
       const peer = new RTCPeerConnection();
       peerRef.current = peer;
 
@@ -511,15 +611,18 @@ export function App(): React.JSX.Element {
       audio.autoplay = true;
       peer.ontrack = (event) => {
         const remoteStream = event.streams[0];
+        writeDebugLog("peer:ontrack", { hasStream: Boolean(remoteStream) });
         audio.srcObject = remoteStream ?? null;
         if (remoteStream) monitorRemoteAudio(remoteStream);
       };
       peer.onconnectionstatechange = () => {
+        writeDebugLog("peer:connection-state", { state: peer.connectionState });
         if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
           disconnect();
         }
       };
 
+      writeDebugLog("mic:request");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -530,18 +633,23 @@ export function App(): React.JSX.Element {
       streamRef.current = stream;
       const track = stream.getAudioTracks()[0];
       if (!track) throw new Error("No microphone was found.");
+      writeDebugLog("mic:ready", { trackState: track.readyState, trackLabel: track.label });
       peer.addTrack(track, stream);
 
       const channel = peer.createDataChannel("oai-events");
       channelRef.current = channel;
+      channel.onclose = () => writeDebugLog("data-channel:close");
+      channel.onerror = () => writeDebugLog("data-channel:error");
       channel.onmessage = (message) => {
         try {
           handleRealtimeEvent(JSON.parse(String(message.data)) as RealtimeEvent);
         } catch {
+          writeDebugLog("data-channel:malformed-message");
           // Ignore malformed diagnostic events while keeping the conversation alive.
         }
       };
       channel.onopen = () => {
+        writeDebugLog("data-channel:open");
         ignoreSpeechStartedUntilRef.current = performance.now() + 1_500;
         requestResponse("initial_greeting");
       };
@@ -549,6 +657,7 @@ export function App(): React.JSX.Element {
       const offer = await peer.createOffer();
       await peer.setLocalDescription(offer);
       if (!offer.sdp) throw new Error("The browser could not create a voice connection offer.");
+      writeDebugLog("peer:local-description-set");
       const response = await fetch("https://api.openai.com/v1/realtime/calls", {
         method: "POST",
         headers: {
@@ -559,12 +668,23 @@ export function App(): React.JSX.Element {
       });
       if (!response.ok) throw new Error(`Voice connection failed (${response.status}): ${await response.text()}`);
       await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
+      writeDebugLog("peer:remote-description-set");
     } catch (caught) {
+      writeDebugLog("connect:error", { error: friendlyError(caught) });
       logTranscript("system", `Connection failed: ${friendlyError(caught)}`);
       disconnect();
-      setPhase("error");
+      setRockyPhase("error", "connect-error");
     }
-  }, [answerPendingUserTurn, disconnect, handleRealtimeEvent, logTranscript, monitorRemoteAudio, requestResponse]);
+  }, [
+    answerPendingUserTurn,
+    disconnect,
+    handleRealtimeEvent,
+    logTranscript,
+    monitorRemoteAudio,
+    requestResponse,
+    setRockyPhase,
+    writeDebugLog,
+  ]);
 
   const isConnected = phase !== "idle" && phase !== "error";
 
@@ -589,6 +709,13 @@ export function App(): React.JSX.Element {
             <span className="wave wave-e" />
           </span>
         </button>
+        <aside className="debug-state" aria-label="Rocky state">
+          <span>{debugSnapshot.phase}</span>
+          <small>
+            p:{debugSnapshot.peer} c:{debugSnapshot.channel} r:{debugSnapshot.response} u:{debugSnapshot.pending} o:{debugSnapshot.output}
+          </small>
+          <small>{debugSnapshot.last}</small>
+        </aside>
       </section>
     </main>
   );
