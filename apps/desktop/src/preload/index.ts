@@ -9,6 +9,7 @@ import type {
   MemoryFactInput,
   RockyApi,
   SpreadsheetEditSpec,
+  SpreadsheetInspectSpec,
   SpreadsheetSpec,
   TranscriptEntry,
 } from "../shared/types";
@@ -28,6 +29,8 @@ const rockyApi: RockyApi = {
     ipcRenderer.invoke("rocky:create-spreadsheet", spec, sessionId),
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) =>
     ipcRenderer.invoke("rocky:update-active-spreadsheet", spec, sessionId),
+  inspectCurrentSpreadsheet: (spec: SpreadsheetInspectSpec, sessionId?: string) =>
+    ipcRenderer.invoke("rocky:inspect-current-spreadsheet", spec, sessionId),
   editCurrentSpreadsheet: (spec: SpreadsheetEditSpec, sessionId?: string) =>
     ipcRenderer.invoke("rocky:edit-current-spreadsheet", spec, sessionId),
   createHowToDoc: (spec: HowToDocSpec, sessionId?: string) =>

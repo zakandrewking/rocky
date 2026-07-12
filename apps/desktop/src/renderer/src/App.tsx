@@ -7,6 +7,7 @@ import type {
   HowToDocSpec,
   MemoryFactInput,
   SpreadsheetEditSpec,
+  SpreadsheetInspectSpec,
   SpreadsheetSpec,
 } from "../../shared/types";
 import {
@@ -437,6 +438,40 @@ export function App(): React.JSX.Element {
     [requestResponse, sendEvent, setRockyPhase],
   );
 
+  const handleInspectSpreadsheetTool = useCallback(
+    async (callId: string, argumentText: string) => {
+      setRockyPhase("thinking", "inspect-spreadsheet-tool");
+      try {
+        const spec = JSON.parse(argumentText) as SpreadsheetInspectSpec;
+        const result = await window.rocky.inspectCurrentSpreadsheet(spec, sessionIdRef.current ?? undefined);
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({
+              success: true,
+              filename: result.filename,
+              sheets: result.sheets,
+              inspected: result.inspected,
+            }),
+          },
+        });
+      } catch (caught) {
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: false, error: friendlyError(caught) }),
+          },
+        });
+      }
+      requestResponse("tool_result");
+    },
+    [requestResponse, sendEvent, setRockyPhase],
+  );
+
   const handleHowToDocTool = useCallback(
     async (callId: string, argumentText: string) => {
       setRockyPhase("thinking", "how-to-doc-tool");
@@ -626,6 +661,9 @@ export function App(): React.JSX.Element {
             if (item.type === "function_call" && item.name === "update_active_spreadsheet" && item.call_id) {
               void handleActiveSpreadsheetTool(item.call_id, item.arguments ?? "{}");
             }
+            if (item.type === "function_call" && item.name === "inspect_current_spreadsheet" && item.call_id) {
+              void handleInspectSpreadsheetTool(item.call_id, item.arguments ?? "{}");
+            }
             if (item.type === "function_call" && item.name === "edit_current_spreadsheet" && item.call_id) {
               void handleEditSpreadsheetTool(item.call_id, item.arguments ?? "{}");
             }
@@ -651,6 +689,7 @@ export function App(): React.JSX.Element {
       handleBackgroundResearchTool,
       handleEditSpreadsheetTool,
       handleHowToDocTool,
+      handleInspectSpreadsheetTool,
       handleMemoryTool,
       handleSpreadsheetTool,
       logTranscript,

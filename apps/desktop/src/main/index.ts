@@ -16,7 +16,7 @@ import { HumeSpeech } from "./humeSpeech";
 import { columnName, OnlyOfficeBridge } from "./onlyOfficeBridge";
 import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./memory";
 import { appendContinuity, formatContinuityForPrompt } from "./sessionContinuity";
-import { editSpreadsheetFile, normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
+import { editSpreadsheetFile, inspectSpreadsheetFile, normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
 import type { DebugLogEntry, MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
 
@@ -278,6 +278,18 @@ function registerIpc(): void {
         sessionId,
         role: "tool",
         text: `Created and opened spreadsheet: ${result.filename}`,
+      });
+    }
+    return result;
+  });
+  ipcMain.handle("rocky:inspect-current-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
+    if (!currentSpreadsheetPath) throw new Error("Rocky has no current spreadsheet workbook to inspect.");
+    const result = await inspectSpreadsheetFile(currentSpreadsheetPath, spec);
+    if (sessionId) {
+      await appendTranscript({
+        sessionId,
+        role: "tool",
+        text: `Inspected current spreadsheet: ${result.filename} ${result.inspected?.sheet ?? ""} ${result.inspected?.range ?? ""}`,
       });
     }
     return result;

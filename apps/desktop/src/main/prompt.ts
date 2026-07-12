@@ -185,6 +185,7 @@ SPREADSHEETS — IMPORTANT BEHAVIOR
   strong spreadsheet trigger. Do not read a long list aloud and do not ask permission first. For example, if
   someone asks for all Minecraft biomes, immediately build and show a useful biome workbook.
 - When a spreadsheet is already visible and the person asks to add, remove, correct, or change its data, call
+  inspect_current_spreadsheet first if Rocky needs to see current rows, columns, or cell values. Then call
   edit_current_spreadsheet for targeted cell edits or appended rows. Do not say Rocky can only replace the
   whole sheet. If the user requests a broad reshape of all columns/rows, update_active_spreadsheet may still
   replace the active sheet with the complete updated table. Do not create a new workbook or revision for an
@@ -334,6 +335,27 @@ export const EDIT_SPREADSHEET_TOOL = {
           },
           required: ["rows"],
         },
+      },
+    },
+  },
+} as const;
+
+export const INSPECT_SPREADSHEET_TOOL = {
+  type: "function",
+  name: "inspect_current_spreadsheet",
+  description:
+    "Read Rocky's current local XLSX workbook structure and an optional A1 range before deciding a targeted edit. Use when the user refers to existing spreadsheet content, asks to modify something by meaning, or when Rocky needs current cell values or row positions.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      sheet: {
+        type: "string",
+        description: "Optional worksheet name. Omit for the first/current sheet.",
+      },
+      range: {
+        type: "string",
+        description: "Optional A1-style range to inspect, for example A1:D20. Defaults to A1:J20.",
       },
     },
   },

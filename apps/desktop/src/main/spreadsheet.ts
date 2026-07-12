@@ -9,6 +9,8 @@ import type {
   SpreadsheetCellEdit,
   SpreadsheetEditResult,
   SpreadsheetEditSpec,
+  SpreadsheetInspectResult,
+  SpreadsheetInspectSpec,
   SpreadsheetResult,
   SpreadsheetSheet,
   SpreadsheetSpec,
@@ -18,6 +20,7 @@ const MAX_SHEETS = 6;
 const MAX_COLUMNS = 20;
 const MAX_ROWS = 200;
 const CELL_ADDRESS = /^[A-Z]{1,3}[1-9][0-9]{0,6}$/i;
+const CELL_RANGE = /^([A-Z]{1,3}[1-9][0-9]{0,6})(?::([A-Z]{1,3}[1-9][0-9]{0,6}))?$/i;
 
 export function nextSpreadsheetPath(outputDirectory: string, filename: string): string {
   const initialPath = path.join(outputDirectory, filename);
@@ -56,6 +59,12 @@ function normalizeCellAddress(value: unknown): string {
   return address;
 }
 
+function normalizeRange(value: unknown, fallback = "A1:J20"): string {
+  const range = cleanText(value, fallback, 40).toUpperCase();
+  if (!CELL_RANGE.test(range)) throw new Error(`Invalid cell range: ${range}`);
+  return range.includes(":") ? range : `${range}:${range}`;
+}
+
 function normalizeCellEdits(value: unknown): SpreadsheetCellEdit[] {
   if (!Array.isArray(value)) return [];
   return value.slice(0, 80).map((item) => {
@@ -91,6 +100,14 @@ export function normalizeSpreadsheetEditSpec(value: unknown): SpreadsheetEditSpe
     setCells: normalizeCellEdits(source.setCells),
     appendRows: normalizeAppendRows(source.appendRows),
   };
+}
+
+export function normalizeSpreadsheetInspectSpec(value: unknown): SpreadsheetInspectSpec {
+  const source = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+  const result: SpreadsheetInspectSpec = {};
+  if (typeof source.sheet === "string") result.sheet = cleanText(source.sheet, "", 31).replace(/[\\/*?:[\]]/g, "-");
+  if (typeof source.range === "string") result.range = normalizeRange(source.range);
+  return result;
 }
 
 function normalizeSheet(value: unknown, index: number): SpreadsheetSheet {
@@ -234,5 +251,47 @@ export async function editSpreadsheetFile(
     filename: path.basename(filePath),
     setCells,
     appendedRows,
+  };
+}
+
+export async function inspectSpreadsheetFile(
+  filePath: string,
+  value: unknown = {},
+): Promise<SpreadsheetInspectResult> {
+  const spec = normalizeSpreadsheetInspectSpec(value);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const sheets = workbook.worksheets.map((worksheet) => ({
+    name: worksheet.name,
+    rowCount: worksheet.rowCount,
+    columnCount: worksheet.columnCount,
+  }));
+  const firstSheet = workbook.worksheets[0];
+  if (!firstSheet) throw new Error("Workbook has no worksheets.");
+
+  const requestedSheet = spec.sheet ? workbook.getWorksheet(spec.sheet) : firstSheet;
+  if (!requestedSheet) throw new Error(`Sheet not found: ${spec.sheet}`);
+  const range = normalizeRange(spec.range);
+  const [start = "A1", end = start] = range.split(":");
+  const startCell = requestedSheet.getCell(start);
+  const endCell = requestedSheet.getCell(end);
+  const rows: CellValue[][] = [];
+  for (let rowNumber = startCell.row; rowNumber <= endCell.row; rowNumber += 1) {
+    const row: CellValue[] = [];
+    for (let columnNumber = startCell.col; columnNumber <= endCell.col; columnNumber += 1) {
+      row.push(cleanCell(requestedSheet.getCell(rowNumber, columnNumber).value));
+    }
+    rows.push(row);
+  }
+
+  return {
+    path: filePath,
+    filename: path.basename(filePath),
+    sheets,
+    inspected: {
+      sheet: requestedSheet.name,
+      range,
+      rows,
+    },
   };
 }

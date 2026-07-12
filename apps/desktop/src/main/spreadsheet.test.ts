@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   editSpreadsheetFile,
+  inspectSpreadsheetFile,
   nextSpreadsheetPath,
+  normalizeSpreadsheetInspectSpec,
   normalizeSpreadsheetEditSpec,
   normalizeSpreadsheetSpec,
   writeSpreadsheet,
@@ -79,5 +81,23 @@ describe("spreadsheet writer", () => {
     expect(result.filename).toBe("Biomes.xlsx");
     expect(result.setCells).toEqual([{ cell: "B2", value: "Grassy", sheet: "Biomes" }]);
     expect(result.appendedRows).toEqual([{ sheet: "Biomes", startRow: 3, rows: [["Desert", "Dry"]] }]);
+  });
+
+  it("inspects workbook structure and ranges", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "rocky-sheet-inspect-"));
+    const created = await writeSpreadsheet(
+      { title: "Biomes", sheets: [{ name: "Biomes", columns: ["Biome", "Note"], rows: [["Plains", "Flat"]] }] },
+      directory,
+    );
+
+    expect(normalizeSpreadsheetInspectSpec({ range: "a1:b2" })).toEqual({ range: "A1:B2" });
+    const result = await inspectSpreadsheetFile(created.path, { sheet: "Biomes", range: "A1:B2" });
+
+    expect(result.sheets).toEqual([{ name: "Biomes", rowCount: 2, columnCount: 2 }]);
+    expect(result.inspected).toEqual({
+      sheet: "Biomes",
+      range: "A1:B2",
+      rows: [["Biome", "Note"], ["Plains", "Flat"]],
+    });
   });
 });

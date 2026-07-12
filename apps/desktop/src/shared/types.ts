@@ -44,6 +44,22 @@ export interface SpreadsheetEditResult {
   appendedRows: Array<{ sheet: string; startRow: number; rows: CellValue[][] }>;
 }
 
+export interface SpreadsheetInspectSpec {
+  sheet?: string;
+  range?: string;
+}
+
+export interface SpreadsheetInspectResult {
+  path: string;
+  filename: string;
+  sheets: Array<{ name: string; rowCount: number; columnCount: number }>;
+  inspected?: {
+    sheet: string;
+    range: string;
+    rows: CellValue[][];
+  };
+}
+
 export interface HowToDocSection {
   heading: string;
   bullets: string[];
@@ -168,6 +184,7 @@ export interface RockyApi {
   ) => Promise<BackgroundResearchStarted>;
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<void>;
+  inspectCurrentSpreadsheet: (spec: SpreadsheetInspectSpec, sessionId?: string) => Promise<SpreadsheetInspectResult>;
   editCurrentSpreadsheet: (spec: SpreadsheetEditSpec, sessionId?: string) => Promise<SpreadsheetEditResult>;
   createHowToDoc: (spec: HowToDocSpec, sessionId?: string) => Promise<HowToDocResult>;
   openSpreadsheet: (filePath: string) => Promise<void>;
