@@ -60,6 +60,17 @@ ROCKY_REALTIME_MODEL=gpt-realtime-2.1
 ROCKY_VOICE=cedar
 ```
 
+Background research uses OpenAI Responses with web search, saves status/results under
+`local-data/research/`, and defaults to a fast 20 second budget so Rocky does not leave the family
+waiting on a multi-minute side quest. Tune it with:
+
+```dotenv
+ROCKY_RESEARCH_MODEL=gpt-5.5
+ROCKY_RESEARCH_TIMEOUT_MS=20000
+ROCKY_RESEARCH_REASONING_EFFORT=low
+ROCKY_RESEARCH_MAX_OUTPUT_TOKENS=900
+```
+
 The standard API key stays in Electron's main process. The renderer receives only a short-lived
 Realtime client secret. In development, Rocky reads the repository `.env`. In an installed app,
 Rocky reads `~/Library/Application Support/Rocky/config.env`; do not put API keys in the app bundle,
