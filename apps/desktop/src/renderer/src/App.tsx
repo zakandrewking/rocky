@@ -6,6 +6,8 @@ import type {
   DebugLogEntry,
   HowToDocSpec,
   MemoryFactInput,
+  RockyFileListInput,
+  RockyFileOpenInput,
   SpreadsheetEditSpec,
   SpreadsheetInspectSpec,
   SpreadsheetSpec,
@@ -572,6 +574,68 @@ export function App(): React.JSX.Element {
     [pushResearchDebug, requestResponse, sendEvent],
   );
 
+  const handleListRockyFilesTool = useCallback(
+    async (callId: string, argumentText: string) => {
+      setRockyPhase("thinking", "list-files-tool");
+      try {
+        const input = JSON.parse(argumentText || "{}") as RockyFileListInput;
+        const files = await window.rocky.listRockyFiles(input, sessionIdRef.current ?? undefined);
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: true, files }),
+          },
+        });
+      } catch (caught) {
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: false, error: friendlyError(caught) }),
+          },
+        });
+      }
+      requestResponse("tool_result");
+    },
+    [requestResponse, sendEvent, setRockyPhase],
+  );
+
+  const handleOpenRockyFileTool = useCallback(
+    async (callId: string, argumentText: string) => {
+      setRockyPhase("thinking", "open-file-tool");
+      try {
+        const input = JSON.parse(argumentText || "{}") as RockyFileOpenInput;
+        const file = await window.rocky.openRockyFile(input, sessionIdRef.current ?? undefined);
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({
+              success: true,
+              file,
+              message: "Saved Rocky file opened in ONLYOFFICE.",
+            }),
+          },
+        });
+      } catch (caught) {
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: false, error: friendlyError(caught) }),
+          },
+        });
+      }
+      requestResponse("tool_result");
+    },
+    [requestResponse, sendEvent, setRockyPhase],
+  );
+
   const injectResearchResult = useCallback((result: BackgroundResearchResult) => {
     if (!channelRef.current || channelRef.current.readyState !== "open") return;
     sendEvent({
@@ -693,6 +757,12 @@ export function App(): React.JSX.Element {
             if (item.type === "function_call" && item.name === "create_how_to_doc" && item.call_id) {
               void handleHowToDocTool(item.call_id, item.arguments ?? "{}");
             }
+            if (item.type === "function_call" && item.name === "list_rocky_files" && item.call_id) {
+              void handleListRockyFilesTool(item.call_id, item.arguments ?? "{}");
+            }
+            if (item.type === "function_call" && item.name === "open_rocky_file" && item.call_id) {
+              void handleOpenRockyFileTool(item.call_id, item.arguments ?? "{}");
+            }
             if (item.type === "function_call" && item.name === "start_background_research" && item.call_id) {
               void handleBackgroundResearchTool(item.call_id, item.arguments ?? "{}");
             }
@@ -713,7 +783,9 @@ export function App(): React.JSX.Element {
       handleEditSpreadsheetTool,
       handleHowToDocTool,
       handleInspectSpreadsheetTool,
+      handleListRockyFilesTool,
       handleMemoryTool,
+      handleOpenRockyFileTool,
       handleSpreadsheetTool,
       logTranscript,
       recordRockyUtterance,

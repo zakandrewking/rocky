@@ -83,6 +83,30 @@ export interface HowToDocResult {
   steps: string[];
 }
 
+export type RockyFileKind = "spreadsheet" | "document";
+
+export interface RockyFileRecord {
+  kind: RockyFileKind;
+  filename: string;
+  path: string;
+  updatedAt: string;
+}
+
+export interface RockyFileListInput {
+  kind?: RockyFileKind;
+  limit?: number;
+}
+
+export interface RockyFileOpenInput {
+  kind?: RockyFileKind;
+  filename?: string;
+  latest?: boolean;
+}
+
+export interface RockyFileOpenResult extends RockyFileRecord {
+  opened: boolean;
+}
+
 export interface RealtimeSessionSecret {
   value: string;
   expires_at?: number;
@@ -187,6 +211,8 @@ export interface RockyApi {
   inspectCurrentSpreadsheet: (spec: SpreadsheetInspectSpec, sessionId?: string) => Promise<SpreadsheetInspectResult>;
   editCurrentSpreadsheet: (spec: SpreadsheetEditSpec, sessionId?: string) => Promise<SpreadsheetEditResult>;
   createHowToDoc: (spec: HowToDocSpec, sessionId?: string) => Promise<HowToDocResult>;
+  listRockyFiles: (input: RockyFileListInput, sessionId?: string) => Promise<RockyFileRecord[]>;
+  openRockyFile: (input: RockyFileOpenInput, sessionId?: string) => Promise<RockyFileOpenResult>;
   openSpreadsheet: (filePath: string) => Promise<void>;
   revealSpreadsheet: (filePath: string) => Promise<void>;
   speakWithHume: (sessionId: string, text: string, flush?: boolean) => Promise<void>;

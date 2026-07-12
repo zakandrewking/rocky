@@ -24,7 +24,16 @@ import {
   writeSpreadsheet,
 } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
-import type { DebugLogEntry, MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
+import type {
+  DebugLogEntry,
+  MemoryFactInput,
+  RockyFileKind,
+  RockyFileListInput,
+  RockyFileOpenInput,
+  RockyFileRecord,
+  TranscriptEntry,
+  TranscriptRole,
+} from "../shared/types";
 
 const MODEL = process.env.ROCKY_REALTIME_MODEL ?? "gpt-realtime-2.1";
 const VOICE = process.env.ROCKY_VOICE ?? "cedar";
@@ -90,6 +99,13 @@ function researchStatusDirectory(): string {
   return path.join(researchDirectory(), "status");
 }
 
+function rockyFileGroups(): Array<{ kind: RockyFileKind; directory: string; extension: string }> {
+  return [
+    { kind: "spreadsheet", directory: spreadsheetDirectory(), extension: ".xlsx" },
+    { kind: "document", directory: documentDirectory(), extension: ".docx" },
+  ];
+}
+
 async function writeResearchStatus(
   id: string,
   status: "started" | "complete" | "error",
@@ -115,12 +131,27 @@ async function resolveCurrentSpreadsheetPath(): Promise<string> {
   return latest;
 }
 
-async function recentFilesForPrompt(): Promise<string> {
-  const groups = [
-    { label: "spreadsheets", directory: spreadsheetDirectory(), extension: ".xlsx" },
-    { label: "documents", directory: documentDirectory(), extension: ".docx" },
-  ];
-  const lines: string[] = [];
+function normalizeFileKind(value: unknown): RockyFileKind | undefined {
+  if (value === "spreadsheet" || value === "document") return value;
+  if (value === undefined || value === null || value === "") return undefined;
+  throw new Error("File kind must be spreadsheet or document.");
+}
+
+function safeRockyFilename(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const filename = value.trim();
+  if (!filename) return undefined;
+  if (filename.includes("/") || filename.includes("\\") || filename === "." || filename === "..") {
+    throw new Error("Use a saved Rocky filename, not a path.");
+  }
+  return filename;
+}
+
+async function listRockyFileRecords(input: RockyFileListInput = {}): Promise<RockyFileRecord[]> {
+  const kind = normalizeFileKind(input.kind);
+  const limit = Math.max(1, Math.min(30, Number(input.limit) || 10));
+  const groups = rockyFileGroups().filter((group) => !kind || group.kind === kind);
+  const records: Array<RockyFileRecord & { mtimeMs: number }> = [];
   for (const group of groups) {
     const filenames = await readdir(group.directory).catch(() => []);
     const files = await Promise.all(
@@ -130,22 +161,64 @@ async function recentFilesForPrompt(): Promise<string> {
           const filePath = path.join(group.directory, filename);
           try {
             const metadata = await stat(filePath);
-            return metadata.isFile() ? { filename, filePath, mtimeMs: metadata.mtimeMs } : null;
+            return metadata.isFile()
+              ? {
+                kind: group.kind,
+                filename,
+                path: filePath,
+                updatedAt: metadata.mtime.toISOString(),
+                mtimeMs: metadata.mtimeMs,
+              }
+              : null;
           } catch {
             return null;
           }
         }),
     );
-    const recent = files
-      .filter((file): file is { filename: string; filePath: string; mtimeMs: number } => Boolean(file))
-      .sort((left, right) => right.mtimeMs - left.mtimeMs)
-      .slice(0, 5);
+    for (const file of files) {
+      if (file) records.push(file);
+    }
+  }
+  return records
+    .sort((left, right) => right.mtimeMs - left.mtimeMs)
+    .slice(0, limit)
+    .map(({ kind: recordKind, filename, path: filePath, updatedAt }) => ({
+      kind: recordKind,
+      filename,
+      path: filePath,
+      updatedAt,
+    }));
+}
+
+async function recentFilesForPrompt(): Promise<string> {
+  const lines: string[] = [];
+  for (const [kind, label] of [["spreadsheet", "spreadsheets"], ["document", "documents"]] as const) {
+    const recent = await listRockyFileRecords({ kind, limit: 5 });
     if (recent.length) {
-      lines.push(`${group.label}:`);
-      for (const file of recent) lines.push(`- ${file.filename} (${file.filePath})`);
+      lines.push(`${label}:`);
+      for (const file of recent) lines.push(`- ${file.filename} (${file.path})`);
     }
   }
   return lines.join("\n");
+}
+
+async function openSavedRockyFile(input: RockyFileOpenInput): Promise<RockyFileRecord> {
+  const kind = normalizeFileKind(input.kind);
+  const filename = safeRockyFilename(input.filename);
+  if (!filename && !input.latest) throw new Error("Provide a saved filename or set latest=true.");
+  if (input.latest && !kind) throw new Error("Provide kind when opening the latest Rocky file.");
+  const candidates = await listRockyFileRecords({ ...(kind ? { kind } : {}), limit: 30 });
+  const match = filename
+    ? candidates.find((file) => file.filename.toLowerCase() === filename.toLowerCase())
+    : candidates[0];
+  if (!match) throw new Error("No matching saved Rocky file found.");
+  const resolved = path.resolve(match.path);
+  const allowedGroup = rockyFileGroups().find((group) =>
+    group.kind === match.kind && resolved.startsWith(`${path.resolve(group.directory)}${path.sep}`));
+  if (!allowedGroup) throw new Error("Saved Rocky file is outside the allowed local-data folder.");
+  await openFileInOnlyOffice(resolved);
+  if (match.kind === "spreadsheet") currentSpreadsheetPath = resolved;
+  return { ...match, path: resolved };
 }
 
 async function readHumeSettings(): Promise<HumeSettings | null> {
@@ -415,6 +488,28 @@ function registerIpc(): void {
       });
     }
     return result;
+  });
+  ipcMain.handle("rocky:list-rocky-files", async (_event, input: RockyFileListInput = {}, sessionId?: string) => {
+    const result = await listRockyFileRecords(input);
+    if (sessionId) {
+      await appendTranscript({
+        sessionId,
+        role: "tool",
+        text: `Listed saved Rocky files: ${result.map((file) => file.filename).join(", ") || "none"}`,
+      });
+    }
+    return result;
+  });
+  ipcMain.handle("rocky:open-rocky-file", async (_event, input: RockyFileOpenInput, sessionId?: string) => {
+    const result = await openSavedRockyFile(input);
+    if (sessionId) {
+      await appendTranscript({
+        sessionId,
+        role: "tool",
+        text: `Opened saved Rocky file: ${result.filename}`,
+      });
+    }
+    return { ...result, opened: true };
   });
   ipcMain.handle("rocky:update-active-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
     if (!onlyOfficeBridge) throw new Error("ONLYOFFICE live-update bridge is not running.");

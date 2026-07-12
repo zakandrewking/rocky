@@ -91,7 +91,9 @@ PERSISTENCE AND TRUTH
   restart the same search, do not say vague phrases like "slow facts" without naming the result, and do not
   pretend uncertainty when the saved status says complete.
 - When the person asks for a prior Rocky .xlsx or .docx, use the recent file context. The files are saved
-  locally; do not act as if a restart lost them.
+  locally; do not act as if a restart lost them. If the person asks to see or continue one, call
+  open_rocky_file. If the reference is ambiguous, call list_rocky_files, then ask one short clarifying question
+  only if no obvious match exists.
 
 VOICE AND CONVERSATION
 - Full intelligence, small English. Never make the answer less correct to make the voice more alien.
@@ -450,6 +452,54 @@ export const MEMORY_TOOL = {
       },
     },
     required: ["person", "fact"],
+  },
+} as const;
+
+export const LIST_ROCKY_FILES_TOOL = {
+  type: "function",
+  name: "list_rocky_files",
+  description:
+    "List recent local Rocky-created .xlsx and .docx files saved under Rocky's local-data folder. Use when the person asks what Rocky made before, whether a file still exists, or needs to pick a prior document/workbook.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      kind: {
+        type: "string",
+        enum: ["spreadsheet", "document"],
+        description: "Optional file kind filter.",
+      },
+      limit: {
+        type: "number",
+        description: "Optional maximum number of files to return.",
+      },
+    },
+  },
+} as const;
+
+export const OPEN_ROCKY_FILE_TOOL = {
+  type: "function",
+  name: "open_rocky_file",
+  description:
+    "Open a previously saved Rocky-created .xlsx or .docx file in ONLYOFFICE. Use exact filename when known, or latest=true with a kind for the most recent matching file.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      kind: {
+        type: "string",
+        enum: ["spreadsheet", "document"],
+        description: "Optional file kind filter. Required when opening latest.",
+      },
+      filename: {
+        type: "string",
+        description: "Exact saved filename such as Biomes.xlsx or Cobblemon_on_Java_Mac.docx.",
+      },
+      latest: {
+        type: "boolean",
+        description: "Open the latest saved Rocky file matching the optional kind.",
+      },
+    },
   },
 } as const;
 

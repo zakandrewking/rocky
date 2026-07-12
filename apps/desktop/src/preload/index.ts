@@ -8,6 +8,8 @@ import type {
   HowToDocSpec,
   MemoryFactInput,
   RockyApi,
+  RockyFileListInput,
+  RockyFileOpenInput,
   SpreadsheetEditSpec,
   SpreadsheetInspectSpec,
   SpreadsheetSpec,
@@ -35,6 +37,10 @@ const rockyApi: RockyApi = {
     ipcRenderer.invoke("rocky:edit-current-spreadsheet", spec, sessionId),
   createHowToDoc: (spec: HowToDocSpec, sessionId?: string) =>
     ipcRenderer.invoke("rocky:create-how-to-doc", spec, sessionId),
+  listRockyFiles: (input: RockyFileListInput, sessionId?: string) =>
+    ipcRenderer.invoke("rocky:list-rocky-files", input, sessionId),
+  openRockyFile: (input: RockyFileOpenInput, sessionId?: string) =>
+    ipcRenderer.invoke("rocky:open-rocky-file", input, sessionId),
   openSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:open-spreadsheet", filePath),
   revealSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:reveal-spreadsheet", filePath),
   speakWithHume: (sessionId: string, text: string, flush?: boolean) => ipcRenderer.invoke(
