@@ -12,7 +12,7 @@ import {
   ROCKY_DEFAULT_REPLY_CASE,
   ROCKY_GREETING_CASE,
 } from "../../shared/rockyStyle";
-import { RESPONSE_CREATE_EVENT } from "../../shared/realtimeEvents";
+import { RESPONSE_CANCEL_EVENT, RESPONSE_CREATE_EVENT } from "../../shared/realtimeEvents";
 import { splitSpeechChunks } from "../../shared/speechChunks";
 import { EridianAudio } from "./eridianAudio";
 import { HumePcmAudio } from "./humePcmAudio";
@@ -78,6 +78,7 @@ export function App(): React.JSX.Element {
   const sessionIdRef = useRef<string | null>(null);
   const responseInProgressRef = useRef(false);
   const userTurnPendingRef = useRef(false);
+  const userSpeechActiveRef = useRef(false);
   const initialGreetingDoneRef = useRef(false);
   const rockyOutputActiveRef = useRef(false);
   const ignoreSpeechStartedUntilRef = useRef(0);
@@ -221,6 +222,7 @@ export function App(): React.JSX.Element {
 
   const answerPendingUserTurn = useCallback(() => {
     if (!userTurnPendingRef.current) return;
+    if (userSpeechActiveRef.current) return;
     if (rockyOutputActiveRef.current) return;
     if (requestResponse("user_turn")) userTurnPendingRef.current = false;
   }, [requestResponse]);
@@ -260,6 +262,28 @@ export function App(): React.JSX.Element {
       });
     }
   }, [logTranscript]);
+
+  const stopRockyOutput = useCallback((reason: string) => {
+    const hadResponse = responseInProgressRef.current;
+    const hadOutput = rockyOutputActiveRef.current;
+    eridianAudioRef.current?.stop();
+    humeAudioRef.current?.stop();
+    humeTextBufferRef.current = "";
+    humeResponseTextRef.current = "";
+    rockyOutputActiveRef.current = false;
+    if (sessionIdRef.current && speechProviderRef.current === "hume") {
+      void window.rocky.cancelHumeSpeech(sessionIdRef.current).catch(() => undefined);
+    }
+    if (hadResponse && channelRef.current?.readyState === "open") {
+      try {
+        sendEvent(RESPONSE_CANCEL_EVENT);
+      } catch {
+        // If the channel closed while handling a barge-in, normal disconnect cleanup will reset state.
+      }
+    }
+    responseInProgressRef.current = false;
+    writeDebugLog("rocky-output-stopped", { reason, hadResponse, hadOutput });
+  }, [sendEvent, writeDebugLog]);
 
   const handleSpreadsheetTool = useCallback(
     async (callId: string, argumentText: string) => {
@@ -416,32 +440,32 @@ export function App(): React.JSX.Element {
       });
       switch (event.type) {
         case "input_audio_buffer.speech_started": {
-          const isLikelySelfAudio = responseInProgressRef.current
-            || rockyOutputActiveRef.current
-            || performance.now() < ignoreSpeechStartedUntilRef.current;
+          const ignoreWindow = performance.now() < ignoreSpeechStartedUntilRef.current;
+          const isLikelySelfAudio = ignoreWindow && !userTurnPendingRef.current;
           if (isLikelySelfAudio) {
             writeDebugLog("speech-started-ignored", {
               responseInProgress: responseInProgressRef.current,
               rockyOutputActive: rockyOutputActiveRef.current,
-              ignoreWindow: performance.now() < ignoreSpeechStartedUntilRef.current,
+              ignoreWindow,
             });
             break;
           }
-          eridianAudioRef.current?.stop();
-          humeAudioRef.current?.stop();
-          humeTextBufferRef.current = "";
-          humeResponseTextRef.current = "";
-          if (sessionIdRef.current && speechProviderRef.current === "hume") {
-            void window.rocky.cancelHumeSpeech(sessionIdRef.current).catch(() => undefined);
-          }
+          userSpeechActiveRef.current = true;
           userTurnPendingRef.current = true;
+          if (responseInProgressRef.current || rockyOutputActiveRef.current) {
+            stopRockyOutput("user-barge-in");
+          }
           setRockyPhase("listening", "speech-started");
           break;
         }
         case "input_audio_buffer.speech_stopped":
           if (userTurnPendingRef.current) {
+            if (rockyOutputActiveRef.current) stopRockyOutput("pending-turn-after-speech-stopped");
+            userSpeechActiveRef.current = false;
             setRockyPhase("thinking", "speech-stopped");
             answerPendingUserTurn();
+          } else {
+            userSpeechActiveRef.current = false;
           }
           break;
         case "response.created":
@@ -527,6 +551,7 @@ export function App(): React.JSX.Element {
       recordRockyUtterance,
       sendHumeChunks,
       setRockyPhase,
+      stopRockyOutput,
       writeDebugLog,
     ],
   );
@@ -553,6 +578,7 @@ export function App(): React.JSX.Element {
     sessionIdRef.current = null;
     responseInProgressRef.current = false;
     userTurnPendingRef.current = false;
+    userSpeechActiveRef.current = false;
     initialGreetingDoneRef.current = false;
     rockyOutputActiveRef.current = false;
     ignoreSpeechStartedUntilRef.current = 0;
@@ -591,7 +617,7 @@ export function App(): React.JSX.Element {
         humeAudioRef.current ??= new HumePcmAudio((speaking) => {
           rockyOutputActiveRef.current = speaking;
           setRockyPhase(speaking ? "speaking" : responseInProgressRef.current ? "thinking" : "listening", "hume-speaking");
-          if (!speaking) answerPendingUserTurn();
+          if (!speaking && !userSpeechActiveRef.current) answerPendingUserTurn();
         }, config.humeExtraDelayMs);
         await humeAudioRef.current.resume();
       }
