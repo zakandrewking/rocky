@@ -71,5 +71,7 @@ describe("Rocky persona prompt", () => {
   it("lets Rocky dispatch slower research instead of inventing unstable facts", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("call start_background_research silently");
     expect(BACKGROUND_RESEARCH_TOOL.description).toContain("slower web-backed research task");
+    expect(ROCKY_INSTRUCTIONS).toContain("30 spoken words");
+    expect(ROCKY_INSTRUCTIONS).toContain("do not read the whole result aloud");
   });
 });

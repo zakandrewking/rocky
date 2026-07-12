@@ -351,6 +351,7 @@ export function App(): React.JSX.Element {
       if (!rockyOutputActiveRef.current || userSpeechActiveRef.current || responseInProgressRef.current) return;
       writeDebugLog("hume-playback-watchdog", { timeoutMs, textLength: text.length });
       humeAudioRef.current?.stop();
+      if (sessionId) void window.rocky.cancelHumeSpeech(sessionId).catch(() => undefined);
       rockyOutputActiveRef.current = false;
       setRockyPhase("listening", "hume-playback-watchdog");
     }, timeoutMs);
@@ -718,7 +719,14 @@ export function App(): React.JSX.Element {
         role: "user",
         content: [{
           type: "input_text",
-          text: `Background research result ready. Question: ${result.question}\n\nResult: ${result.answer}`,
+          text: [
+            "Background research result ready.",
+            "Give a spoken Rocky summary in at most 30 words and 3 short sentences.",
+            "Mention only the best few findings. Do not read the full source table aloud.",
+            `Question: ${result.question}`,
+            "",
+            `Result: ${result.answer}`,
+          ].join("\n"),
         }],
       },
     });
