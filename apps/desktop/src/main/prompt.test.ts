@@ -15,6 +15,10 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky will keep it simple and useful");
     expect(ROCKY_INSTRUCTIONS).toContain("Sea life is like a moving machine");
     expect(ROCKY_INSTRUCTIONS).toContain("One small question");
+    expect(ROCKY_INSTRUCTIONS).toContain("First target");
+    expect(ROCKY_INSTRUCTIONS).toContain("Rocky is here, steady");
+    expect(ROCKY_INSTRUCTIONS).toContain("tiny mission");
+    expect(ROCKY_INSTRUCTIONS).toContain("Rocky here. Friend close! What do now, question?");
   });
 
   it("contains the highest-signal RockyVoice mechanics", () => {
