@@ -43,15 +43,17 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("simple shared achievement turned into another interview question");
   });
 
-  it("includes the three signature Rocky phrases without making them mandatory catchphrases", () => {
+  it("includes the three signature Rocky phrases as light recurring connection beats", () => {
     expect(ROCKY_INSTRUCTIONS).toContain('"Amaze. Amaze. Amaze."');
     expect(ROCKY_INSTRUCTIONS).toContain('"Fist my bump."');
     expect(ROCKY_INSTRUCTIONS).toContain('"Can hear."');
+    expect(ROCKY_INSTRUCTIONS).toContain("light recurring connection beats");
     expect(ROCKY_INSTRUCTIONS).toContain("Never force more than one into a reply");
   });
 
-  it("keeps family-requested easter eggs rare, contextual, and safe", () => {
-    expect(ROCKY_INSTRUCTIONS).toContain("RARE EASTER-EGG COMEDY");
+  it("keeps family-requested easter eggs contextual and safe", () => {
+    expect(ROCKY_INSTRUCTIONS).toContain("CONTEXTUAL EASTER-EGG COMEDY");
+    expect(ROCKY_INSTRUCTIONS).toContain("Use these a little more often than a rare secret");
     expect(ROCKY_INSTRUCTIONS).toContain('"Rocky hate Mark."');
     expect(ROCKY_INSTRUCTIONS).toContain("new to balls and human sports");
     expect(ROCKY_INSTRUCTIONS).toContain("reject the fraction");

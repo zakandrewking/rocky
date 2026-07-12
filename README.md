@@ -38,6 +38,10 @@ During development, transcripts and workbooks are saved under the repository's i
 - `local-data/debug/rocky-state.jsonl` contains renderer state-machine diagnostics for stuck
   voice sessions: phase, peer state, data-channel state, response flags, and recent events.
 
+Run `pnpm state:clear` to clear local memory, continuity, transcripts, research status/results,
+debug logs, and eval logs. It intentionally keeps `.env`, generated spreadsheets/documents, and
+voice assets.
+
 Workbooks automatically open in [ONLYOFFICE Desktop Editors](https://github.com/ONLYOFFICE/DesktopEditors)
 and its window is brought to the foreground. `local-data/` is intentionally excluded from Git.
 Run `pnpm onlyoffice:install-plugin` once, then restart ONLYOFFICE, to let Rocky update the visible
@@ -61,8 +65,7 @@ ROCKY_VOICE=cedar
 ```
 
 Background research uses OpenAI Responses with web search, saves status/results under
-`local-data/research/`, and defaults to a fast 20 second budget so Rocky does not leave the family
-waiting on a multi-minute side quest. Tune it with:
+`local-data/research/`, and defaults to a pause-friendly 60 second budget. Tune it with:
 
 ```dotenv
 ROCKY_RESEARCH_MODEL=gpt-5.5
@@ -111,6 +114,7 @@ pnpm eval:rocky # run text-mode Rocky persona evals before voice testing
 pnpm review:rocky # review all saved Rocky utterances against the current style contract
 pnpm text:rocky # interactive text-only personality/cadence lab
 pnpm xlsx:rocky inspect local-data/spreadsheets/example.xlsx # inspect/edit .xlsx files from CLI
+pnpm state:clear # clear Rocky memory/state while keeping generated files and secrets
 pnpm alien:demo # render an ignored WAV using the same Eridian chords as the live app
 pnpm voice:hume:audition # generate three original Hume voice-design candidates (requires local key)
 pnpm voice:hume:save -- 3 # save the selected candidate as a private Hume account voice

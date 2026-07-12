@@ -232,9 +232,11 @@ tbody tr:nth-child(even) { background: #f2f8f5; }
   align-items: start;
   gap: 5px;
   width: min(520px, calc(100vw - 28px));
+  max-height: min(72vh, 560px);
   padding: 8px;
   background: rgba(8, 11, 10, .86);
   backdrop-filter: blur(8px);
+  overflow: hidden;
 }
 
 .debug-state span {
@@ -249,10 +251,15 @@ tbody tr:nth-child(even) { background: #f2f8f5; }
 .debug-details {
   display: grid;
   gap: 6px;
+  max-height: calc(min(72vh, 560px) - 58px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding-top: 4px;
+  padding-right: 4px;
   border-top: 1px solid rgba(155, 180, 155, .12);
   color: rgba(218, 225, 201, .72);
   line-height: 1.35;
+  scrollbar-width: thin;
 }
 
 .debug-details strong {

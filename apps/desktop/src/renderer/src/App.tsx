@@ -68,14 +68,14 @@ function friendlyError(error: unknown): string {
 }
 
 function summarizeResearchResultForResume(result: BackgroundResearchResult): string {
-  const names = Array.from(result.answer.matchAll(/\*\*([^*\n]{2,80})\*\*/g))
-    .map((match) => match[1]?.replace(/\s+—.*$/, "").replace(/\s+-.*$/, "").trim())
-    .filter((value): value is string => Boolean(value))
-    .filter((value, index, list) => list.indexOf(value) === index)
-    .slice(0, 5);
-  const prefix = "Research finished.";
-  if (!names.length) return `${prefix} Rocky found useful facts. Best parts saved in research log.`;
-  return `${prefix} Strong picks: ${names.join(", ")}. Details saved.`;
+  const lower = `${result.question}\n${result.answer}`.toLowerCase();
+  if (/\bfood|burrito|restaurant|taco|eat|eater|critic\b/.test(lower)) {
+    return "Research finished. Pattern is clear: local favorites, critic picks, and fan legends overlap. Rocky saved details for sheet or guide.";
+  }
+  if (/\bepisode|season|show|movie|game\b/.test(lower)) {
+    return "Research finished. Consensus has clusters, not one perfect answer. Rocky saved details for ranking sheet or guide.";
+  }
+  return "Research finished. Rocky found useful patterns and saved details for sheet or guide.";
 }
 
 export function App(): React.JSX.Element {
@@ -96,6 +96,7 @@ export function App(): React.JSX.Element {
   const [researchDebug, setResearchDebug] = useState<ResearchDebugItem[]>([]);
   const [onlyOfficeStatus, setOnlyOfficeStatus] = useState<OnlyOfficeBridgeStatus | null>(null);
   const pendingResearchResultsRef = useRef<BackgroundResearchResult[]>([]);
+  const locallySpokenResearchIdsRef = useRef<Set<string>>(new Set());
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const intentionalPeerCloseRef = useRef(false);
   const channelRef = useRef<RTCDataChannel | null>(null);
@@ -780,7 +781,7 @@ export function App(): React.JSX.Element {
     [requestResponse, sendEvent, setRockyPhase],
   );
 
-  const injectResearchResult = useCallback((result: BackgroundResearchResult) => {
+  const injectResearchResult = useCallback((result: BackgroundResearchResult, options: { respond: boolean } = { respond: true }) => {
     if (!channelRef.current || channelRef.current.readyState !== "open") return;
     sendEvent({
       type: "conversation.item.create",
@@ -790,9 +791,13 @@ export function App(): React.JSX.Element {
         content: [{
           type: "input_text",
           text: [
-            "Background research result ready.",
-            "Give a spoken Rocky summary in at most 30 words and 3 short sentences.",
-            "Mention only the best few findings. Do not read the full source table aloud.",
+            options.respond
+              ? "Background research result ready."
+              : "Background research result ready for private context only. Do not speak about it now.",
+            options.respond
+              ? "Give a spoken Rocky summary in at most 30 words and 3 short sentences."
+              : "Use this later if the human asks for details, DOCX, XLSX, rankings, or a guide.",
+            "Summarize in Rocky's own words. Do not read the list or source table aloud.",
             `Question: ${result.question}`,
             "",
             `Result: ${result.answer}`,
@@ -800,7 +805,7 @@ export function App(): React.JSX.Element {
         }],
       },
     });
-    requestResponse("tool_result");
+    if (options.respond) requestResponse("tool_result");
   }, [requestResponse, sendEvent]);
 
   const flushPendingResearchResults = useCallback(() => {
@@ -811,13 +816,16 @@ export function App(): React.JSX.Element {
       id: next.id,
       remaining: pendingResearchResultsRef.current.length,
     });
-    injectResearchResult(next);
+    const alreadySpoken = locallySpokenResearchIdsRef.current.has(next.id);
+    locallySpokenResearchIdsRef.current.delete(next.id);
+    injectResearchResult(next, { respond: !alreadySpoken });
   }, [injectResearchResult, writeDebugLog]);
 
   const speakPendingResearchResultLocally = useCallback(() => {
     if (speechProviderRef.current !== "hume") return false;
-    const next = pendingResearchResultsRef.current.shift();
+    const next = pendingResearchResultsRef.current[0];
     if (!next) return false;
+    locallySpokenResearchIdsRef.current.add(next.id);
     writeDebugLog("research:speak-pending-on-resume", {
       id: next.id,
       remaining: pendingResearchResultsRef.current.length,
