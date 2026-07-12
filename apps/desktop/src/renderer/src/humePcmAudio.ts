@@ -8,9 +8,15 @@ export function pcm16LeToFloat32(base64: string): Float32Array {
   return samples;
 }
 
+export function humeTurnWatchdogMs(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(4_000, Math.min(12_000, 2_000 + words * 420));
+}
+
 export class HumePcmAudio {
   private readonly context = new AudioContext();
   private readonly sources = new Set<AudioBufferSourceNode>();
+  private readonly sourceTimers = new Map<AudioBufferSourceNode, number>();
   private nextStart = 0;
   private delayNextChunk = false;
 
@@ -41,14 +47,24 @@ export class HumePcmAudio {
     this.nextStart = start + buffer.duration;
     this.sources.add(source);
     this.onSpeaking(true);
-    source.addEventListener("ended", () => {
+    const finishSource = (): void => {
+      const timer = this.sourceTimers.get(source);
+      if (timer !== undefined) window.clearTimeout(timer);
+      this.sourceTimers.delete(source);
       this.sources.delete(source);
       if (this.sources.size === 0) this.onSpeaking(false);
+    };
+    source.addEventListener("ended", () => {
+      finishSource();
     }, { once: true });
     source.start(start);
+    const finishDelayMs = Math.max(100, (start + buffer.duration - this.context.currentTime) * 1_000 + 750);
+    this.sourceTimers.set(source, window.setTimeout(finishSource, finishDelayMs));
   }
 
   stop(): void {
+    for (const timer of this.sourceTimers.values()) window.clearTimeout(timer);
+    this.sourceTimers.clear();
     for (const source of this.sources) {
       try {
         source.stop();
