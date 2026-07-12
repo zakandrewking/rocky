@@ -463,6 +463,9 @@ function registerIpc(): void {
   });
   ipcMain.handle("rocky:edit-current-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
     const filePath = await resolveCurrentSpreadsheetPath();
+    if (onlyOfficeBridge?.isConnected()) {
+      await onlyOfficeBridge.saveActiveDocument();
+    }
     const result = await editSpreadsheetFile(filePath, spec);
     const cells = result.setCells.map((edit) => ({ address: edit.cell, value: edit.value }));
     const ranges = result.appendedRows.map((edit) => ({

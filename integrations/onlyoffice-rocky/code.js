@@ -15,6 +15,10 @@
     await new Promise((resolve) => {
       window.Asc.plugin.callCommand(function () {
         const update = Asc.scope.rockyCommand;
+        if (update.type === "save_active_document") {
+          if (Asc.editor && Asc.editor.asc_Save) Asc.editor.asc_Save();
+          return;
+        }
         const sheet = Api.GetActiveSheet();
         if (update.type === "replace_active_sheet") {
           sheet.GetRange(update.clearRange).Clear();
@@ -44,6 +48,9 @@
         }
       }, false, true, resolve);
     });
+    if (command.type === "save_active_document") {
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+    }
     await complete(command.id);
   }
 

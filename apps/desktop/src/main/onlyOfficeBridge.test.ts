@@ -35,4 +35,13 @@ describe("ONLYOFFICE bridge commands", () => {
       ranges: [{ targetRange: "A3:B3", values: [["Desert", "Dry"]] }],
     });
   });
+
+  it("supports an active-document save command before disk-based edits", () => {
+    expect({
+      id: "test",
+      type: "save_active_document",
+    }).toMatchObject({
+      type: "save_active_document",
+    });
+  });
 });

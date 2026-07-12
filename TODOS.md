@@ -103,6 +103,10 @@ in approximate priority order
     ONLYOFFICE plugin to save/sync the active document, reread the relevant workbook ranges with
     CLI tools, apply targeted edits to the freshest `.xlsx`, then refresh only the affected visible
     cells/ranges. Avoid overwriting user changes made since Rocky last opened the file.
+    - [x] Add first-pass `save_active_document` bridge command and call it before disk-based
+      targeted edits when the ONLYOFFICE plugin is connected.
+    - [ ] Validate the save command end to end inside ONLYOFFICE Desktop Editors with a human edit
+      made in the visible workbook before Rocky edits.
   - [ ] Add voice tools for reading current workbook structure/ranges and applying targeted edits.
   - [ ] Preserve existing formulas, styles, sheet names, and user conventions when editing a
     workbook; never flatten formulas by accidentally saving a value-only read.
