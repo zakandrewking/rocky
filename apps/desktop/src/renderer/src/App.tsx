@@ -24,7 +24,7 @@ import { splitSpeechChunks } from "../../shared/speechChunks";
 import { EridianAudio } from "./eridianAudio";
 import { humeTurnWatchdogMs, HumePcmAudio } from "./humePcmAudio";
 
-type Phase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "error";
+type Phase = "idle" | "connecting" | "listening" | "thinking" | "speaking" | "paused" | "error";
 
 interface DebugSnapshot {
   phase: Phase;
@@ -84,7 +84,9 @@ export function App(): React.JSX.Element {
   const [debugOpen, setDebugOpen] = useState(false);
   const [researchDebug, setResearchDebug] = useState<ResearchDebugItem[]>([]);
   const [onlyOfficeStatus, setOnlyOfficeStatus] = useState<OnlyOfficeBridgeStatus | null>(null);
+  const pendingResearchResultsRef = useRef<BackgroundResearchResult[]>([]);
   const peerRef = useRef<RTCPeerConnection | null>(null);
+  const intentionalPeerCloseRef = useRef(false);
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const remoteAudioContextRef = useRef<AudioContext | null>(null);
@@ -774,6 +776,17 @@ export function App(): React.JSX.Element {
     requestResponse("tool_result");
   }, [requestResponse, sendEvent]);
 
+  const flushPendingResearchResults = useCallback(() => {
+    if (!channelRef.current || channelRef.current.readyState !== "open") return;
+    const next = pendingResearchResultsRef.current.shift();
+    if (!next) return;
+    writeDebugLog("research:flush-pending-on-resume", {
+      id: next.id,
+      remaining: pendingResearchResultsRef.current.length,
+    });
+    injectResearchResult(next);
+  }, [injectResearchResult, writeDebugLog]);
+
   const handleRealtimeEvent = useCallback(
     (event: RealtimeEvent) => {
       writeDebugLog("realtime-event", {
@@ -926,6 +939,7 @@ export function App(): React.JSX.Element {
     if (sessionId && speechProviderRef.current === "hume") {
       void window.rocky.cancelHumeSpeech(sessionId).catch(() => undefined);
     }
+    intentionalPeerCloseRef.current = true;
     channelRef.current?.close();
     peerRef.current?.close();
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -952,8 +966,41 @@ export function App(): React.JSX.Element {
     ignoreSpeechStartedUntilRef.current = 0;
     rockyUtteranceCountRef.current = 0;
     userSpokeBeforeFirstRockyRef.current = false;
+    intentionalPeerCloseRef.current = false;
     setRockyPhase("idle", "disconnect");
   }, [clearHumeTurnWatchdog, logTranscript, setRockyPhase, stopRemoteAudioMonitor]);
+
+  const pauseConversation = useCallback(() => {
+    const sessionId = sessionIdRef.current;
+    writeDebugLog("pause:requested");
+    if (sessionId && speechProviderRef.current === "hume") {
+      void window.rocky.cancelHumeSpeech(sessionId).catch(() => undefined);
+    }
+    intentionalPeerCloseRef.current = true;
+    channelRef.current?.close();
+    peerRef.current?.close();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    channelRef.current = null;
+    peerRef.current = null;
+    streamRef.current = null;
+    stopRemoteAudioMonitor();
+    void eridianAudioRef.current?.close();
+    eridianAudioRef.current = null;
+    void humeAudioRef.current?.close();
+    humeAudioRef.current = null;
+    humeTextBufferRef.current = "";
+    humeResponseTextRef.current = "";
+    clearHumeTurnWatchdog();
+    responseInProgressRef.current = false;
+    userTurnPendingRef.current = false;
+    userSpeechActiveRef.current = false;
+    localInitialGreetingPendingRef.current = false;
+    localInitialGreetingInterruptedRef.current = false;
+    localInitialGreetingTextRef.current = "";
+    rockyOutputActiveRef.current = false;
+    ignoreSpeechStartedUntilRef.current = 0;
+    setRockyPhase("paused", "pause");
+  }, [clearHumeTurnWatchdog, setRockyPhase, stopRemoteAudioMonitor, writeDebugLog]);
 
   useEffect(() => window.rocky.onResearchComplete((sessionId, result) => {
     if (sessionId && sessionId !== sessionIdRef.current) return;
@@ -964,8 +1011,16 @@ export function App(): React.JSX.Element {
       message: result.answer.slice(0, 240),
     });
     logTranscript("tool", `Background research ready: ${result.question}`);
-    injectResearchResult(result);
-  }), [injectResearchResult, logTranscript, pushResearchDebug]);
+    if (channelRef.current?.readyState === "open" && phaseRef.current !== "paused") {
+      injectResearchResult(result);
+    } else {
+      pendingResearchResultsRef.current.push(result);
+      writeDebugLog("research:queued-while-paused", {
+        id: result.id,
+        pending: pendingResearchResultsRef.current.length,
+      });
+    }
+  }), [injectResearchResult, logTranscript, pushResearchDebug, writeDebugLog]);
 
   useEffect(() => window.rocky.onResearchError((sessionId, result) => {
     if (sessionId && sessionId !== sessionIdRef.current) return;
@@ -979,10 +1034,12 @@ export function App(): React.JSX.Element {
 
   const connect = useCallback(async () => {
     if (peerRef.current) {
-      disconnect();
+      pauseConversation();
       return;
     }
 
+    const resumeExistingSession = Boolean(sessionIdRef.current);
+    intentionalPeerCloseRef.current = false;
     setRockyPhase("connecting", "connect");
     try {
       const config = await window.rocky.getConfig();
@@ -1008,9 +1065,13 @@ export function App(): React.JSX.Element {
         eridianAudioRef.current ??= new EridianAudio(config.alienVoiceVolume, config.alienVoiceTimeScale);
         await eridianAudioRef.current.resume();
       }
-      const transcriptSession = await window.rocky.startTranscript();
-      sessionIdRef.current = transcriptSession.sessionId;
-      writeDebugLog("connect:transcript-started", { transcriptSession: transcriptSession.sessionId });
+      if (resumeExistingSession) {
+        writeDebugLog("connect:resume-transcript", { transcriptSession: sessionIdRef.current });
+      } else {
+        const transcriptSession = await window.rocky.startTranscript();
+        sessionIdRef.current = transcriptSession.sessionId;
+        writeDebugLog("connect:transcript-started", { transcriptSession: transcriptSession.sessionId });
+      }
       const secret = await window.rocky.createRealtimeSession();
       writeDebugLog("connect:realtime-secret-created", { expiresAt: secret.expires_at ?? null });
       const peer = new RTCPeerConnection();
@@ -1026,6 +1087,8 @@ export function App(): React.JSX.Element {
       };
       peer.onconnectionstatechange = () => {
         writeDebugLog("peer:connection-state", { state: peer.connectionState });
+        if (peer !== peerRef.current) return;
+        if (intentionalPeerCloseRef.current) return;
         if (peer.connectionState === "failed" || peer.connectionState === "disconnected") {
           disconnect();
         }
@@ -1059,8 +1122,15 @@ export function App(): React.JSX.Element {
       };
       channel.onopen = () => {
         writeDebugLog("data-channel:open");
-        ignoreSpeechStartedUntilRef.current = performance.now() + 1_500;
-        startInitialGreeting();
+        if (resumeExistingSession) {
+          initialGreetingDoneRef.current = true;
+          ignoreSpeechStartedUntilRef.current = 0;
+          setRockyPhase("listening", "resume-ready");
+          flushPendingResearchResults();
+        } else {
+          ignoreSpeechStartedUntilRef.current = performance.now() + 1_500;
+          startInitialGreeting();
+        }
       };
 
       const offer = await peer.createOffer();
@@ -1089,15 +1159,18 @@ export function App(): React.JSX.Element {
     clearHumeTurnWatchdog,
     disconnect,
     finishLocalInitialGreeting,
+    flushPendingResearchResults,
     handleRealtimeEvent,
     logTranscript,
     monitorRemoteAudio,
+    pauseConversation,
     setRockyPhase,
     startInitialGreeting,
     writeDebugLog,
   ]);
 
-  const isConnected = phase !== "idle" && phase !== "error";
+  const isPaused = phase === "paused";
+  const isConnected = phase !== "idle" && phase !== "error" && !isPaused;
 
   return (
     <main className="orb-only">
@@ -1106,7 +1179,7 @@ export function App(): React.JSX.Element {
         <button
           className={`rock-orb phase-${phase}`}
           onClick={() => void connect()}
-          aria-label={isConnected ? "End conversation" : "Start conversation"}
+          aria-label={isPaused ? "Resume conversation" : isConnected ? "Pause conversation" : "Start conversation"}
           type="button"
         >
           <span className="facet facet-one" />
