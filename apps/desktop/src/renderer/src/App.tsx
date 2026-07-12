@@ -67,6 +67,17 @@ function friendlyError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function summarizeResearchResultForResume(result: BackgroundResearchResult): string {
+  const names = Array.from(result.answer.matchAll(/\*\*([^*\n]{2,80})\*\*/g))
+    .map((match) => match[1]?.replace(/\s+—.*$/, "").replace(/\s+-.*$/, "").trim())
+    .filter((value): value is string => Boolean(value))
+    .filter((value, index, list) => list.indexOf(value) === index)
+    .slice(0, 5);
+  const prefix = "Research finished.";
+  if (!names.length) return `${prefix} Rocky found useful facts. Best parts saved in research log.`;
+  return `${prefix} Strong picks: ${names.join(", ")}. Details saved.`;
+}
+
 export function App(): React.JSX.Element {
   const [phase, setPhase] = useState<Phase>("idle");
   const [debugSnapshot, setDebugSnapshot] = useState<DebugSnapshot>({
@@ -411,6 +422,22 @@ export function App(): React.JSX.Element {
     armHumeTurnWatchdog(text);
     humeResponseTextRef.current = "";
   }, [armHumeTurnWatchdog, sendHumeChunks, setRockyPhase]);
+
+  const speakLocalResearchResult = useCallback((result: BackgroundResearchResult) => {
+    const text = summarizeResearchResultForResume(result);
+    initialGreetingDoneRef.current = true;
+    humeTextBufferRef.current = "";
+    humeResponseTextRef.current = text;
+    humeAudioRef.current?.beginResponse();
+    rockyOutputActiveRef.current = true;
+    setRockyPhase("speaking", "local-research-result");
+    eridianAudioRef.current?.pushTranscriptDelta(text);
+    eridianAudioRef.current?.flushTranscript();
+    sendHumeChunks(text, true);
+    recordRockyUtterance(text);
+    armHumeTurnWatchdog(text);
+    humeResponseTextRef.current = "";
+  }, [armHumeTurnWatchdog, recordRockyUtterance, sendHumeChunks, setRockyPhase]);
 
   const startInitialGreeting = useCallback(() => {
     if (speechProviderRef.current === "hume") {
@@ -787,6 +814,18 @@ export function App(): React.JSX.Element {
     injectResearchResult(next);
   }, [injectResearchResult, writeDebugLog]);
 
+  const speakPendingResearchResultLocally = useCallback(() => {
+    if (speechProviderRef.current !== "hume") return false;
+    const next = pendingResearchResultsRef.current.shift();
+    if (!next) return false;
+    writeDebugLog("research:speak-pending-on-resume", {
+      id: next.id,
+      remaining: pendingResearchResultsRef.current.length,
+    });
+    speakLocalResearchResult(next);
+    return true;
+  }, [speakLocalResearchResult, writeDebugLog]);
+
   const handleRealtimeEvent = useCallback(
     (event: RealtimeEvent) => {
       writeDebugLog("realtime-event", {
@@ -1038,6 +1077,7 @@ export function App(): React.JSX.Element {
     }
 
     const resumeExistingSession = Boolean(sessionIdRef.current);
+    let spokePendingResearchLocally = false;
     intentionalPeerCloseRef.current = false;
     setRockyPhase("connecting", "connect");
     try {
@@ -1055,14 +1095,22 @@ export function App(): React.JSX.Element {
             clearHumeTurnWatchdog();
             finishLocalInitialGreeting();
           }
-          setRockyPhase(speaking ? "speaking" : responseInProgressRef.current ? "thinking" : "listening", "hume-speaking");
-          if (!speaking && !userSpeechActiveRef.current) answerPendingUserTurn();
+          setRockyPhase(
+            speaking
+              ? "speaking"
+              : responseInProgressRef.current ? "thinking" : peerRef.current ? "listening" : sessionIdRef.current ? "paused" : "idle",
+            "hume-speaking",
+          );
+          if (!speaking && peerRef.current && !userSpeechActiveRef.current) answerPendingUserTurn();
         }, config.humeExtraDelayMs);
         await humeAudioRef.current.resume();
       }
       if (config.alienVoiceEnabled) {
         eridianAudioRef.current ??= new EridianAudio(config.alienVoiceVolume, config.alienVoiceTimeScale);
         await eridianAudioRef.current.resume();
+      }
+      if (resumeExistingSession) {
+        spokePendingResearchLocally = speakPendingResearchResultLocally();
       }
       if (resumeExistingSession) {
         writeDebugLog("connect:resume-transcript", { transcriptSession: sessionIdRef.current });
@@ -1149,6 +1197,33 @@ export function App(): React.JSX.Element {
       writeDebugLog("peer:remote-description-set");
     } catch (caught) {
       writeDebugLog("connect:error", { error: friendlyError(caught) });
+      if (resumeExistingSession) {
+        intentionalPeerCloseRef.current = true;
+        channelRef.current?.close();
+        peerRef.current?.close();
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        channelRef.current = null;
+        peerRef.current = null;
+        streamRef.current = null;
+        stopRemoteAudioMonitor();
+        if (!spokePendingResearchLocally) {
+          void eridianAudioRef.current?.close();
+          eridianAudioRef.current = null;
+          void humeAudioRef.current?.close();
+          humeAudioRef.current = null;
+        }
+        humeTextBufferRef.current = "";
+        humeResponseTextRef.current = "";
+        clearHumeTurnWatchdog();
+        responseInProgressRef.current = false;
+        userTurnPendingRef.current = false;
+        userSpeechActiveRef.current = false;
+        rockyOutputActiveRef.current = spokePendingResearchLocally && rockyOutputActiveRef.current;
+        ignoreSpeechStartedUntilRef.current = 0;
+        intentionalPeerCloseRef.current = false;
+        if (!spokePendingResearchLocally) setRockyPhase("paused", "resume-connect-error");
+        return;
+      }
       logTranscript("system", `Connection failed: ${friendlyError(caught)}`);
       disconnect();
       setRockyPhase("error", "connect-error");
@@ -1164,7 +1239,9 @@ export function App(): React.JSX.Element {
     monitorRemoteAudio,
     pauseConversation,
     setRockyPhase,
+    speakPendingResearchResultLocally,
     startInitialGreeting,
+    stopRemoteAudioMonitor,
     writeDebugLog,
   ]);
 
