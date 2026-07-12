@@ -1,5 +1,7 @@
 import { eridianChordsForToken, splitStreamingTokens } from "../../shared/eridianVoice";
 
+export const MAX_ERIDIAN_UTTERANCE_SECONDS = 7.5;
+
 export class EridianAudio {
   private readonly context = new AudioContext();
   private readonly activeOscillators = new Set<OscillatorNode>();
@@ -27,6 +29,10 @@ export class EridianAudio {
     this.scheduleTokens(split.complete);
   }
 
+  playThinkingPrelude(): void {
+    this.scheduleTokens(["rocky", "thinking", "friend"]);
+  }
+
   stop(): void {
     for (const oscillator of this.activeOscillators) {
       try {
@@ -47,14 +53,20 @@ export class EridianAudio {
 
   private scheduleTokens(tokens: string[]): void {
     let start = Math.max(this.context.currentTime + 0.015, this.nextStart);
+    const latestEnd = this.context.currentTime + MAX_ERIDIAN_UTTERANCE_SECONDS;
     for (const token of tokens) {
       for (const chord of eridianChordsForToken(token)) {
+        if (start >= latestEnd) {
+          this.nextStart = latestEnd;
+          return;
+        }
         const duration = Math.max(0.045, chord.durationSeconds * this.timeScale);
-        const end = start + duration;
+        const end = Math.min(start + duration, latestEnd);
+        const boundedDuration = end - start;
         const gain = this.context.createGain();
         const peak = Math.max(0, Math.min(0.18, this.volume * (chord.emphasis ? 1.35 : 1)));
         gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), start + Math.min(0.018, duration * 0.3));
+        gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak), start + Math.min(0.018, boundedDuration * 0.3));
         gain.gain.exponentialRampToValueAtTime(0.0001, end);
         gain.connect(this.context.destination);
 

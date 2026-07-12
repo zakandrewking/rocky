@@ -927,6 +927,8 @@ export function App(): React.JSX.Element {
           break;
         case "response.created":
           responseInProgressRef.current = true;
+          eridianAudioRef.current?.playThinkingPrelude();
+          writeDebugLog("eridian-thinking-prelude");
           setRockyPhase("thinking", "response-created");
           break;
         case "conversation.item.input_audio_transcription.completed":
