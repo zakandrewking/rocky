@@ -283,6 +283,29 @@ export function App(): React.JSX.Element {
     }
   }, [logTranscript]);
 
+  const speakLocalInitialGreeting = useCallback(() => {
+    const text = "Can hear. Rocky here. First target, question?";
+    initialGreetingDoneRef.current = true;
+    humeTextBufferRef.current = "";
+    humeResponseTextRef.current = text;
+    humeAudioRef.current?.beginResponse();
+    rockyOutputActiveRef.current = true;
+    setRockyPhase("speaking", "local-initial-greeting");
+    eridianAudioRef.current?.pushTranscriptDelta(text);
+    eridianAudioRef.current?.flushTranscript();
+    sendHumeChunks(text, true);
+    recordRockyUtterance(text);
+    humeResponseTextRef.current = "";
+  }, [recordRockyUtterance, sendHumeChunks, setRockyPhase]);
+
+  const startInitialGreeting = useCallback(() => {
+    if (speechProviderRef.current === "hume") {
+      speakLocalInitialGreeting();
+      return;
+    }
+    requestResponse("initial_greeting");
+  }, [requestResponse, speakLocalInitialGreeting]);
+
   const stopRockyOutput = useCallback((reason: string) => {
     const hadResponse = responseInProgressRef.current;
     const hadOutput = rockyOutputActiveRef.current;
@@ -833,7 +856,7 @@ export function App(): React.JSX.Element {
       channel.onopen = () => {
         writeDebugLog("data-channel:open");
         ignoreSpeechStartedUntilRef.current = performance.now() + 1_500;
-        requestResponse("initial_greeting");
+        startInitialGreeting();
       };
 
       const offer = await peer.createOffer();
@@ -863,8 +886,8 @@ export function App(): React.JSX.Element {
     handleRealtimeEvent,
     logTranscript,
     monitorRemoteAudio,
-    requestResponse,
     setRockyPhase,
+    startInitialGreeting,
     writeDebugLog,
   ]);
 

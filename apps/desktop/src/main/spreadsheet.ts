@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -32,6 +32,30 @@ export function nextSpreadsheetPath(outputDirectory: string, filename: string): 
     if (!existsSync(candidate)) return candidate;
   }
   throw new Error(`Too many revisions of ${filename}`);
+}
+
+export async function latestSpreadsheetPath(outputDirectory: string): Promise<string | null> {
+  let entries: string[];
+  try {
+    entries = await readdir(outputDirectory);
+  } catch {
+    return null;
+  }
+  const candidates = await Promise.all(entries
+    .filter((entry) => /\.xlsx$/i.test(entry) && !entry.startsWith("~$"))
+    .map(async (entry) => {
+      const filePath = path.join(outputDirectory, entry);
+      try {
+        const info = await stat(filePath);
+        return info.isFile() ? { filePath, mtimeMs: info.mtimeMs } : null;
+      } catch {
+        return null;
+      }
+    }));
+  const newest = candidates
+    .filter((candidate): candidate is { filePath: string; mtimeMs: number } => Boolean(candidate))
+    .sort((left, right) => right.mtimeMs - left.mtimeMs)[0];
+  return newest?.filePath ?? null;
 }
 
 function cleanText(value: unknown, fallback: string, maxLength: number): string {

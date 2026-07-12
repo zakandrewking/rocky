@@ -16,7 +16,13 @@ import { HumeSpeech } from "./humeSpeech";
 import { columnName, OnlyOfficeBridge } from "./onlyOfficeBridge";
 import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./memory";
 import { appendContinuity, formatContinuityForPrompt } from "./sessionContinuity";
-import { editSpreadsheetFile, inspectSpreadsheetFile, normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
+import {
+  editSpreadsheetFile,
+  inspectSpreadsheetFile,
+  latestSpreadsheetPath,
+  normalizeSpreadsheetSpec,
+  writeSpreadsheet,
+} from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
 import type { DebugLogEntry, MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
 
@@ -78,6 +84,14 @@ function continuityFilePath(): string {
 
 function researchDirectory(): string {
   return path.join(localDataDirectory(), "research");
+}
+
+async function resolveCurrentSpreadsheetPath(): Promise<string> {
+  if (currentSpreadsheetPath && existsSync(currentSpreadsheetPath)) return currentSpreadsheetPath;
+  const latest = await latestSpreadsheetPath(spreadsheetDirectory());
+  if (!latest) throw new Error("Rocky has no local spreadsheet workbook yet. Create a spreadsheet first.");
+  currentSpreadsheetPath = latest;
+  return latest;
 }
 
 async function readHumeSettings(): Promise<HumeSettings | null> {
@@ -283,8 +297,8 @@ function registerIpc(): void {
     return result;
   });
   ipcMain.handle("rocky:inspect-current-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
-    if (!currentSpreadsheetPath) throw new Error("Rocky has no current spreadsheet workbook to inspect.");
-    const result = await inspectSpreadsheetFile(currentSpreadsheetPath, spec);
+    const filePath = await resolveCurrentSpreadsheetPath();
+    const result = await inspectSpreadsheetFile(filePath, spec);
     if (sessionId) {
       await appendTranscript({
         sessionId,
@@ -295,8 +309,8 @@ function registerIpc(): void {
     return result;
   });
   ipcMain.handle("rocky:edit-current-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
-    if (!currentSpreadsheetPath) throw new Error("Rocky has no current spreadsheet workbook to edit.");
-    const result = await editSpreadsheetFile(currentSpreadsheetPath, spec);
+    const filePath = await resolveCurrentSpreadsheetPath();
+    const result = await editSpreadsheetFile(filePath, spec);
     const cells = result.setCells.map((edit) => ({ address: edit.cell, value: edit.value }));
     const ranges = result.appendedRows.map((edit) => ({
       targetRange: `A${edit.startRow}:${columnName(Math.max(...edit.rows.map((row) => row.length), 1) - 1)}${edit.startRow + edit.rows.length - 1}`,
