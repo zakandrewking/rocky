@@ -110,6 +110,10 @@ export function App(): React.JSX.Element {
   const humeTextBufferRef = useRef("");
   const humeResponseTextRef = useRef("");
   const humeTurnWatchdogRef = useRef<number | null>(null);
+  const humeFirstAudioWatchdogRef = useRef<number | null>(null);
+  const humeAwaitingAudioRef = useRef(false);
+  const humeRetryTextRef = useRef("");
+  const humeRetryUsedRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
   const responseInProgressRef = useRef(false);
   const userTurnPendingRef = useRef(false);
@@ -218,6 +222,7 @@ export function App(): React.JSX.Element {
       void eridianAudioRef.current?.close();
       void humeAudioRef.current?.close();
       if (humeTurnWatchdogRef.current !== null) window.clearTimeout(humeTurnWatchdogRef.current);
+      if (humeFirstAudioWatchdogRef.current !== null) window.clearTimeout(humeFirstAudioWatchdogRef.current);
     };
   }, [writeDebugLog]);
 
@@ -229,6 +234,15 @@ export function App(): React.JSX.Element {
   useEffect(() => window.rocky.onHumeAudio((sessionId, event) => {
     if (sessionId !== sessionIdRef.current) return;
     if (event.type === "audio") {
+      if (humeAwaitingAudioRef.current) {
+        humeAwaitingAudioRef.current = false;
+        humeRetryTextRef.current = "";
+        humeRetryUsedRef.current = false;
+        if (humeFirstAudioWatchdogRef.current !== null) {
+          window.clearTimeout(humeFirstAudioWatchdogRef.current);
+          humeFirstAudioWatchdogRef.current = null;
+        }
+      }
       writeDebugLog("hume-audio", {
         sampleRate: event.sampleRate,
         bytesApprox: event.audio.length,
@@ -357,6 +371,41 @@ export function App(): React.JSX.Element {
     writeDebugLog("local-initial-greeting-finished");
   }, [recordRockyUtterance, writeDebugLog]);
 
+  const clearHumeFirstAudioWatchdog = useCallback(() => {
+    if (humeFirstAudioWatchdogRef.current !== null) {
+      window.clearTimeout(humeFirstAudioWatchdogRef.current);
+      humeFirstAudioWatchdogRef.current = null;
+    }
+  }, []);
+
+  const armHumeFirstAudioWatchdog = useCallback((text: string) => {
+    clearHumeFirstAudioWatchdog();
+    if (speechProviderRef.current !== "hume") return;
+    const sessionId = sessionIdRef.current;
+    if (!sessionId || !text.trim()) return;
+    humeRetryTextRef.current = text;
+    humeAwaitingAudioRef.current = true;
+    const schedule = (): void => {
+      humeFirstAudioWatchdogRef.current = window.setTimeout(() => {
+      humeFirstAudioWatchdogRef.current = null;
+      if (sessionId !== sessionIdRef.current || !humeAwaitingAudioRef.current) return;
+      if (humeRetryUsedRef.current) {
+        writeDebugLog("hume-first-audio-missing-after-retry", { textLength: humeRetryTextRef.current.length });
+        return;
+      }
+      humeRetryUsedRef.current = true;
+      const retryText = humeRetryTextRef.current;
+      writeDebugLog("hume-first-audio-retry", { textLength: retryText.length });
+      humeAudioRef.current?.beginResponse();
+      void window.rocky.speakWithHume(sessionId, retryText, true).catch((error) => {
+        logTranscript("system", `Hume speech retry failed: ${friendlyError(error)}`);
+      });
+      schedule();
+      }, 2_500);
+    };
+    schedule();
+  }, [clearHumeFirstAudioWatchdog, logTranscript, writeDebugLog]);
+
   const sendHumeChunks = useCallback((delta: string, flush = false) => {
     const sessionId = sessionIdRef.current;
     if (!sessionId || speechProviderRef.current !== "hume") return;
@@ -420,9 +469,10 @@ export function App(): React.JSX.Element {
     eridianAudioRef.current?.pushTranscriptDelta(text);
     eridianAudioRef.current?.flushTranscript();
     sendHumeChunks(text, true);
+    armHumeFirstAudioWatchdog(text);
     armHumeTurnWatchdog(text);
     humeResponseTextRef.current = "";
-  }, [armHumeTurnWatchdog, sendHumeChunks, setRockyPhase]);
+  }, [armHumeFirstAudioWatchdog, armHumeTurnWatchdog, sendHumeChunks, setRockyPhase]);
 
   const speakLocalResearchResult = useCallback((result: BackgroundResearchResult) => {
     const text = summarizeResearchResultForResume(result);
@@ -436,9 +486,10 @@ export function App(): React.JSX.Element {
     eridianAudioRef.current?.flushTranscript();
     sendHumeChunks(text, true);
     recordRockyUtterance(text);
+    armHumeFirstAudioWatchdog(text);
     armHumeTurnWatchdog(text);
     humeResponseTextRef.current = "";
-  }, [armHumeTurnWatchdog, recordRockyUtterance, sendHumeChunks, setRockyPhase]);
+  }, [armHumeFirstAudioWatchdog, armHumeTurnWatchdog, recordRockyUtterance, sendHumeChunks, setRockyPhase]);
 
   const startInitialGreeting = useCallback(() => {
     if (speechProviderRef.current === "hume") {
@@ -458,6 +509,10 @@ export function App(): React.JSX.Element {
     eridianAudioRef.current?.stop();
     humeAudioRef.current?.stop();
     clearHumeTurnWatchdog();
+    clearHumeFirstAudioWatchdog();
+    humeAwaitingAudioRef.current = false;
+    humeRetryTextRef.current = "";
+    humeRetryUsedRef.current = false;
     humeTextBufferRef.current = "";
     humeResponseTextRef.current = "";
     rockyOutputActiveRef.current = false;
@@ -473,7 +528,7 @@ export function App(): React.JSX.Element {
     }
     responseInProgressRef.current = false;
     writeDebugLog("rocky-output-stopped", { reason, hadResponse, hadOutput });
-  }, [clearHumeTurnWatchdog, sendEvent, writeDebugLog]);
+  }, [clearHumeFirstAudioWatchdog, clearHumeTurnWatchdog, sendEvent, writeDebugLog]);
 
   const handleSpreadsheetTool = useCallback(
     async (callId: string, argumentText: string) => {
@@ -908,6 +963,7 @@ export function App(): React.JSX.Element {
           const text = event.text ?? humeResponseTextRef.current;
           humeResponseTextRef.current = "";
           recordRockyUtterance(text);
+          armHumeFirstAudioWatchdog(text);
           armHumeTurnWatchdog(text);
           break;
         }
@@ -961,6 +1017,7 @@ export function App(): React.JSX.Element {
     },
     [
       answerPendingUserTurn,
+      armHumeFirstAudioWatchdog,
       armHumeTurnWatchdog,
       handleActiveSpreadsheetTool,
       handleBackgroundResearchTool,
@@ -1001,6 +1058,10 @@ export function App(): React.JSX.Element {
     humeTextBufferRef.current = "";
     humeResponseTextRef.current = "";
     clearHumeTurnWatchdog();
+    clearHumeFirstAudioWatchdog();
+    humeAwaitingAudioRef.current = false;
+    humeRetryTextRef.current = "";
+    humeRetryUsedRef.current = false;
     sessionIdRef.current = null;
     responseInProgressRef.current = false;
     userTurnPendingRef.current = false;
@@ -1015,7 +1076,7 @@ export function App(): React.JSX.Element {
     userSpokeBeforeFirstRockyRef.current = false;
     intentionalPeerCloseRef.current = false;
     setRockyPhase("idle", "disconnect");
-  }, [clearHumeTurnWatchdog, logTranscript, setRockyPhase, stopRemoteAudioMonitor]);
+  }, [clearHumeFirstAudioWatchdog, clearHumeTurnWatchdog, logTranscript, setRockyPhase, stopRemoteAudioMonitor]);
 
   const pauseConversation = useCallback(() => {
     const sessionId = sessionIdRef.current;
@@ -1038,6 +1099,10 @@ export function App(): React.JSX.Element {
     humeTextBufferRef.current = "";
     humeResponseTextRef.current = "";
     clearHumeTurnWatchdog();
+    clearHumeFirstAudioWatchdog();
+    humeAwaitingAudioRef.current = false;
+    humeRetryTextRef.current = "";
+    humeRetryUsedRef.current = false;
     responseInProgressRef.current = false;
     userTurnPendingRef.current = false;
     userSpeechActiveRef.current = false;
@@ -1047,7 +1112,7 @@ export function App(): React.JSX.Element {
     rockyOutputActiveRef.current = false;
     ignoreSpeechStartedUntilRef.current = 0;
     setRockyPhase("paused", "pause");
-  }, [clearHumeTurnWatchdog, setRockyPhase, stopRemoteAudioMonitor, writeDebugLog]);
+  }, [clearHumeFirstAudioWatchdog, clearHumeTurnWatchdog, setRockyPhase, stopRemoteAudioMonitor, writeDebugLog]);
 
   useEffect(() => window.rocky.onResearchComplete((sessionId, result) => {
     if (sessionId && sessionId !== sessionIdRef.current) return;
@@ -1223,6 +1288,10 @@ export function App(): React.JSX.Element {
         humeTextBufferRef.current = "";
         humeResponseTextRef.current = "";
         clearHumeTurnWatchdog();
+        clearHumeFirstAudioWatchdog();
+        humeAwaitingAudioRef.current = false;
+        humeRetryTextRef.current = "";
+        humeRetryUsedRef.current = false;
         responseInProgressRef.current = false;
         userTurnPendingRef.current = false;
         userSpeechActiveRef.current = false;
@@ -1238,6 +1307,7 @@ export function App(): React.JSX.Element {
     }
   }, [
     answerPendingUserTurn,
+    clearHumeFirstAudioWatchdog,
     clearHumeTurnWatchdog,
     disconnect,
     finishLocalInitialGreeting,
