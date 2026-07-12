@@ -346,15 +346,29 @@ export function App(): React.JSX.Element {
     if (speechProviderRef.current !== "hume") return;
     const timeoutMs = humeTurnWatchdogMs(text);
     const sessionId = sessionIdRef.current;
-    humeTurnWatchdogRef.current = window.setTimeout(() => {
+    const checkPlayback = (): void => {
+      humeTurnWatchdogRef.current = null;
       if (sessionId !== sessionIdRef.current) return;
       if (!rockyOutputActiveRef.current || userSpeechActiveRef.current || responseInProgressRef.current) return;
+      const queuedAudioMs = humeAudioRef.current?.msUntilPlaybackEnd() ?? 0;
+      if (queuedAudioMs > 750) {
+        const extensionMs = Math.min(8_000, queuedAudioMs + 1_000);
+        writeDebugLog("hume-playback-watchdog-extended", {
+          timeoutMs,
+          extensionMs,
+          queuedAudioMs,
+          textLength: text.length,
+        });
+        humeTurnWatchdogRef.current = window.setTimeout(checkPlayback, extensionMs);
+        return;
+      }
       writeDebugLog("hume-playback-watchdog", { timeoutMs, textLength: text.length });
       humeAudioRef.current?.stop();
       if (sessionId) void window.rocky.cancelHumeSpeech(sessionId).catch(() => undefined);
       rockyOutputActiveRef.current = false;
       setRockyPhase("listening", "hume-playback-watchdog");
-    }, timeoutMs);
+    };
+    humeTurnWatchdogRef.current = window.setTimeout(checkPlayback, timeoutMs);
   }, [clearHumeTurnWatchdog, setRockyPhase, writeDebugLog]);
 
   const speakLocalInitialGreeting = useCallback(() => {

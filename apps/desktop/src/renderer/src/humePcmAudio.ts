@@ -33,6 +33,10 @@ export class HumePcmAudio {
     this.delayNextChunk = true;
   }
 
+  msUntilPlaybackEnd(): number {
+    return Math.max(0, (this.nextStart - this.context.currentTime) * 1_000);
+  }
+
   push(base64: string, sampleRate: number): void {
     const samples = pcm16LeToFloat32(base64);
     if (!samples.length) return;
