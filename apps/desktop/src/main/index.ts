@@ -10,7 +10,12 @@ import { config as loadEnv } from "dotenv";
 import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron";
 
 import { createRealtimeSessionConfig } from "./realtimeSession";
-import { formatRecentResearchForPrompt, normalizeResearchInput, runBackgroundResearch } from "./backgroundResearch";
+import {
+  formatRecentResearchForPrompt,
+  listRecentResearchStatuses,
+  normalizeResearchInput,
+  runBackgroundResearch,
+} from "./backgroundResearch";
 import { writeHowToDoc } from "./howToDocument";
 import { HumeSpeech } from "./humeSpeech";
 import { columnName, OnlyOfficeBridge } from "./onlyOfficeBridge";
@@ -427,9 +432,10 @@ function registerIpc(): void {
             .catch(() => undefined);
         }
         if (!sender.isDestroyed()) sender.send("rocky:research-error", sessionId ?? "", { id, message });
-      });
+    });
     return { id, question: normalized.question, message: "Background research started." };
   });
+  ipcMain.handle("rocky:list-background-research", () => listRecentResearchStatuses(researchDirectory(), 20));
   ipcMain.handle("rocky:create-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
     const result = await writeSpreadsheet(spec, spreadsheetDirectory());
     currentSpreadsheetPath = result.path;

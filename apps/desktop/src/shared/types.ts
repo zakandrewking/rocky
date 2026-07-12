@@ -174,6 +174,15 @@ export interface BackgroundResearchResult {
   completedAt: string;
 }
 
+export interface BackgroundResearchStatus {
+  id: string;
+  status: "started" | "complete" | "error";
+  updatedAt: string;
+  question?: string;
+  path?: string;
+  message?: string;
+}
+
 export type TranscriptRole = "user" | "rocky" | "tool" | "system";
 
 export interface TranscriptEntry {
@@ -206,6 +215,7 @@ export interface RockyApi {
     input: BackgroundResearchInput,
     sessionId?: string,
   ) => Promise<BackgroundResearchStarted>;
+  listBackgroundResearch: () => Promise<BackgroundResearchStatus[]>;
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<void>;
   inspectCurrentSpreadsheet: (spec: SpreadsheetInspectSpec, sessionId?: string) => Promise<SpreadsheetInspectResult>;

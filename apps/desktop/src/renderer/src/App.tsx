@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type SetStateAction } from "r
 import type {
   BackgroundResearchInput,
   BackgroundResearchResult,
+  BackgroundResearchStatus,
   DebugLogEntry,
   HowToDocSpec,
   MemoryFactInput,
@@ -143,6 +144,34 @@ export function App(): React.JSX.Element {
       ...current,
     ].slice(0, 8));
   }, []);
+
+  const loadPersistedResearchDebug = useCallback(async () => {
+    try {
+      const statuses: BackgroundResearchStatus[] = await window.rocky.listBackgroundResearch();
+      setResearchDebug((current) => {
+        const existing = new Set(current.map((item) => item.id));
+        const persisted = statuses
+          .filter((status) => !existing.has(status.id))
+          .map((status): ResearchDebugItem => ({
+            id: status.id,
+            status: status.status,
+            ...(status.question ? { question: status.question } : {}),
+            message: status.message ?? status.path ?? status.status,
+            at: new Date(status.updatedAt).toLocaleTimeString(),
+          }));
+        return [...current, ...persisted].slice(0, 12);
+      });
+    } catch {
+      // Debug detail loading must never affect the voice loop.
+    }
+  }, []);
+
+  const toggleDebugOpen = useCallback(() => {
+    setDebugOpen((open) => {
+      if (!open) void loadPersistedResearchDebug();
+      return !open;
+    });
+  }, [loadPersistedResearchDebug]);
 
   useEffect(() => {
     return () => {
@@ -989,11 +1018,11 @@ export function App(): React.JSX.Element {
         <aside
           className={`debug-state ${debugOpen ? "debug-state-open" : ""}`}
           aria-label="Rocky state"
-          onClick={() => setDebugOpen((open) => !open)}
+          onClick={toggleDebugOpen}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
-              setDebugOpen((open) => !open);
+              toggleDebugOpen();
             }
           }}
           role="button"

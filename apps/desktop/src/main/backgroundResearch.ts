@@ -15,6 +15,15 @@ export interface BackgroundResearchResult {
   completedAt: string;
 }
 
+export interface BackgroundResearchStatus {
+  id: string;
+  status: "started" | "complete" | "error";
+  updatedAt: string;
+  question?: string;
+  path?: string;
+  message?: string;
+}
+
 interface ResearchStatusRecord {
   id?: unknown;
   status?: unknown;
@@ -86,6 +95,34 @@ async function readStatusRecords(outputDirectory: string): Promise<ResearchStatu
   return records
     .filter((record): record is ResearchStatusRecord => Boolean(record))
     .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
+}
+
+function normalizeStatusRecord(record: ResearchStatusRecord): BackgroundResearchStatus | null {
+  const id = shortLine(record.id, 80);
+  const status = shortLine(record.status, 20);
+  const updatedAt = shortLine(record.updatedAt, 40);
+  if (!id || !updatedAt || (status !== "started" && status !== "complete" && status !== "error")) return null;
+  const question = shortLine(record.question, 500);
+  const resultPath = shortLine(record.path, 500);
+  const message = shortLine(record.message, 500);
+  return {
+    id,
+    status,
+    updatedAt,
+    ...(question ? { question } : {}),
+    ...(resultPath ? { path: resultPath } : {}),
+    ...(message ? { message } : {}),
+  };
+}
+
+export async function listRecentResearchStatuses(
+  outputDirectory: string,
+  limit = 10,
+): Promise<BackgroundResearchStatus[]> {
+  return (await readStatusRecords(outputDirectory))
+    .map(normalizeStatusRecord)
+    .filter((record): record is BackgroundResearchStatus => Boolean(record))
+    .slice(0, Math.max(1, Math.min(30, limit)));
 }
 
 async function readRecentResultFiles(outputDirectory: string): Promise<Array<{ path: string; mtimeMs: number; text: string }>> {
