@@ -4,9 +4,13 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { formatRecentResearchForPrompt, normalizeResearchInput } from "./backgroundResearch";
+import { DEFAULT_RESEARCH_TIMEOUT_MS, formatRecentResearchForPrompt, normalizeResearchInput } from "./backgroundResearch";
 
 describe("background research", () => {
+  it("uses a pause-friendly default timeout", () => {
+    expect(DEFAULT_RESEARCH_TIMEOUT_MS).toBe(60_000);
+  });
+
   it("normalizes a research request", () => {
     expect(normalizeResearchInput({ question: "  Which Minecraft version is current?  ", context: "biomes" }))
       .toEqual({ question: "Which Minecraft version is current?", context: "biomes" });

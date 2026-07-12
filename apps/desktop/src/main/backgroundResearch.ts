@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+export const DEFAULT_RESEARCH_TIMEOUT_MS = 60_000;
+
 export interface BackgroundResearchInput {
   question: string;
   context?: string;
@@ -179,7 +181,7 @@ export async function runBackgroundResearch(
   id = randomUUID(),
 ): Promise<BackgroundResearchResult> {
   const model = process.env.ROCKY_RESEARCH_MODEL ?? "gpt-5.5";
-  const timeoutMs = Math.max(10_000, Math.min(180_000, Number(process.env.ROCKY_RESEARCH_TIMEOUT_MS) || 20_000));
+  const timeoutMs = Math.max(10_000, Math.min(180_000, Number(process.env.ROCKY_RESEARCH_TIMEOUT_MS) || DEFAULT_RESEARCH_TIMEOUT_MS));
   const maxOutputTokens = Math.max(300, Math.min(4_000, Number(process.env.ROCKY_RESEARCH_MAX_OUTPUT_TOKENS) || 900));
   const reasoningEffort = process.env.ROCKY_RESEARCH_REASONING_EFFORT ?? "low";
   const prompt = [

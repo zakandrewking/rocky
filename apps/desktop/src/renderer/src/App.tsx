@@ -1029,8 +1029,7 @@ export function App(): React.JSX.Element {
       status: "error",
       message: result.message,
     });
-    logTranscript("system", `Background research failed: ${result.message}`);
-  }), [logTranscript, pushResearchDebug]);
+  }), [pushResearchDebug]);
 
   const connect = useCallback(async () => {
     if (peerRef.current) {
