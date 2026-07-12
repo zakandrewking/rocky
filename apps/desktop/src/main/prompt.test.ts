@@ -61,7 +61,7 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("do not ask permission first");
     expect(SPREADSHEET_TOOL.description).toContain("Use proactively for complete lists");
     expect(UPDATE_SPREADSHEET_TOOL.description).toContain("currently onscreen");
-    expect(ROCKY_INSTRUCTIONS).toContain("Change the active sheet in place");
+    expect(ROCKY_INSTRUCTIONS).toContain("edit_current_spreadsheet for targeted cell edits");
   });
 
   it("lets Rocky dispatch slower research instead of inventing unstable facts", () => {

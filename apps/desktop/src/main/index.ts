@@ -11,11 +11,12 @@ import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron"
 
 import { createRealtimeSessionConfig } from "./realtimeSession";
 import { normalizeResearchInput, runBackgroundResearch } from "./backgroundResearch";
+import { writeHowToDoc } from "./howToDocument";
 import { HumeSpeech } from "./humeSpeech";
-import { OnlyOfficeBridge } from "./onlyOfficeBridge";
+import { columnName, OnlyOfficeBridge } from "./onlyOfficeBridge";
 import { formatMemoryForPrompt, readFamilyMemory, rememberFamilyFact } from "./memory";
 import { appendContinuity, formatContinuityForPrompt } from "./sessionContinuity";
-import { normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
+import { editSpreadsheetFile, normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
 import type { RockyStyleFailure } from "../shared/rockyStyle";
 import type { DebugLogEntry, MemoryFactInput, TranscriptEntry, TranscriptRole } from "../shared/types";
 
@@ -25,6 +26,7 @@ const execFileAsync = promisify(execFile);
 const ONLYOFFICE_APP = "/Applications/ONLYOFFICE.app";
 const humeSpeechSessions = new Map<string, { ownerId: number; speech: HumeSpeech }>();
 let onlyOfficeBridge: OnlyOfficeBridge | null = null;
+let currentSpreadsheetPath: string | null = null;
 
 interface HumeSettings {
   apiKey: string;
@@ -52,6 +54,10 @@ function localDataDirectory(): string {
 
 function spreadsheetDirectory(): string {
   return path.join(localDataDirectory(), "spreadsheets");
+}
+
+function documentDirectory(): string {
+  return path.join(localDataDirectory(), "documents");
 }
 
 function transcriptDirectory(): string {
@@ -168,6 +174,11 @@ async function openSpreadsheetInOnlyOffice(filePath: string): Promise<void> {
   if (openError) throw new Error(openError);
 }
 
+async function openDocument(filePath: string): Promise<void> {
+  const openError = await shell.openPath(filePath);
+  if (openError) throw new Error(openError);
+}
+
 async function createRealtimeSession(): Promise<unknown> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -260,12 +271,47 @@ function registerIpc(): void {
   });
   ipcMain.handle("rocky:create-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
     const result = await writeSpreadsheet(spec, spreadsheetDirectory());
+    currentSpreadsheetPath = result.path;
     await openSpreadsheetInOnlyOffice(result.path);
     if (sessionId) {
       await appendTranscript({
         sessionId,
         role: "tool",
         text: `Created and opened spreadsheet: ${result.filename}`,
+      });
+    }
+    return result;
+  });
+  ipcMain.handle("rocky:edit-current-spreadsheet", async (_event, spec: unknown, sessionId?: string) => {
+    if (!currentSpreadsheetPath) throw new Error("Rocky has no current spreadsheet workbook to edit.");
+    const result = await editSpreadsheetFile(currentSpreadsheetPath, spec);
+    const cells = result.setCells.map((edit) => ({ address: edit.cell, value: edit.value }));
+    const ranges = result.appendedRows.map((edit) => ({
+      targetRange: `A${edit.startRow}:${columnName(Math.max(...edit.rows.map((row) => row.length), 1) - 1)}${edit.startRow + edit.rows.length - 1}`,
+      values: edit.rows,
+    }));
+    if (onlyOfficeBridge?.isConnected()) {
+      await onlyOfficeBridge.editActiveSheet(cells, ranges);
+    } else {
+      await openSpreadsheetInOnlyOffice(result.path);
+    }
+    if (sessionId) {
+      await appendTranscript({
+        sessionId,
+        role: "tool",
+        text: `Edited current spreadsheet: ${result.filename}`,
+      });
+    }
+    return result;
+  });
+  ipcMain.handle("rocky:create-how-to-doc", async (_event, spec: unknown, sessionId?: string) => {
+    const result = await writeHowToDoc(spec, documentDirectory());
+    await openDocument(result.path);
+    if (sessionId) {
+      await appendTranscript({
+        sessionId,
+        role: "tool",
+        text: `Created and opened how-to document: ${result.filename}`,
       });
     }
     return result;
@@ -283,6 +329,7 @@ function registerIpc(): void {
     }
   });
   ipcMain.handle("rocky:open-spreadsheet", async (_event, filePath: string) => {
+    currentSpreadsheetPath = filePath;
     await openSpreadsheetInOnlyOffice(filePath);
   });
   ipcMain.handle("rocky:reveal-spreadsheet", (_event, filePath: string) => {

@@ -15,12 +15,11 @@ const text = process.argv.slice(2).filter((argument) => argument !== "--").join(
   || "Amaze. Amaze. Amaze. The ship is safe. Fist my bump.";
 const description = readEnvValue(env, "HUME_VOICE_DESCRIPTION")
   || [
-    "An original adult male alien engineer: compact, resonant, warm, and unmistakably nonhuman.",
-    "Accent should not read as British, RP, posh, theatrical, or polite narrator; keep it more neutral and alien.",
-    "Performance should feel like a calm alien observer: steady, dry, precise, faintly amused, and quietly certain.",
-    "Bright curiosity and gentle humor, with clipped declarative phrases and small musical rises.",
-    "Never a movie-trailer narrator, announcer, customer-service agent, or cartoon monster.",
-    "Speak briskly and intimately, as if solving a hard problem beside one trusted friend.",
+    "Original adult male alien observer with neutral North American vowels and no British, RP, posh, or theatrical accent.",
+    "Flat, dry, precise, faintly amused, and quietly certain; more clinical visitor than audiobook narrator.",
+    "Avoid polished narrator warmth, rounded UK vowels, stage diction, fantasy creature acting, and grand resonance.",
+    "Short clipped phrases. Low emotional volume. Curiosity leaks through as tiny surprise, not bouncy enthusiasm.",
+    "Speak as if calmly evaluating evidence beside one trusted friend.",
   ].join(" ");
 
 const response = await fetch("https://api.hume.ai/v0/tts", {

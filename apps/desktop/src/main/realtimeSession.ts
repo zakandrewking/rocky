@@ -1,5 +1,7 @@
 import {
   BACKGROUND_RESEARCH_TOOL,
+  EDIT_SPREADSHEET_TOOL,
+  HOW_TO_DOC_TOOL,
   MEMORY_TOOL,
   ROCKY_INSTRUCTIONS,
   SPREADSHEET_TOOL,
@@ -37,7 +39,14 @@ export function createRealtimeSessionConfig(
       },
       output: { voice },
     },
-    tools: [SPREADSHEET_TOOL, UPDATE_SPREADSHEET_TOOL, MEMORY_TOOL, BACKGROUND_RESEARCH_TOOL],
+    tools: [
+      SPREADSHEET_TOOL,
+      UPDATE_SPREADSHEET_TOOL,
+      EDIT_SPREADSHEET_TOOL,
+      HOW_TO_DOC_TOOL,
+      MEMORY_TOOL,
+      BACKGROUND_RESEARCH_TOOL,
+    ],
     tool_choice: "auto",
   };
 }

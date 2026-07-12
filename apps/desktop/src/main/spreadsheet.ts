@@ -5,6 +5,10 @@ import path from "node:path";
 
 import type {
   CellValue,
+  SpreadsheetAppendRowsEdit,
+  SpreadsheetCellEdit,
+  SpreadsheetEditResult,
+  SpreadsheetEditSpec,
   SpreadsheetResult,
   SpreadsheetSheet,
   SpreadsheetSpec,
@@ -13,6 +17,7 @@ import type {
 const MAX_SHEETS = 6;
 const MAX_COLUMNS = 20;
 const MAX_ROWS = 200;
+const CELL_ADDRESS = /^[A-Z]{1,3}[1-9][0-9]{0,6}$/i;
 
 export function nextSpreadsheetPath(outputDirectory: string, filename: string): string {
   const initialPath = path.join(outputDirectory, filename);
@@ -43,6 +48,49 @@ function cleanCell(value: unknown): CellValue {
     return typeof value === "string" ? value.slice(0, 500) : value;
   }
   return String(value).slice(0, 500);
+}
+
+function normalizeCellAddress(value: unknown): string {
+  const address = cleanText(value, "", 20).toUpperCase();
+  if (!CELL_ADDRESS.test(address)) throw new Error(`Invalid cell address: ${address || String(value)}`);
+  return address;
+}
+
+function normalizeCellEdits(value: unknown): SpreadsheetCellEdit[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 80).map((item) => {
+    const source = typeof item === "object" && item !== null ? item as Record<string, unknown> : {};
+    const edit: SpreadsheetCellEdit = {
+      cell: normalizeCellAddress(source.cell),
+      value: cleanCell(source.value),
+    };
+    if (typeof source.sheet === "string") edit.sheet = cleanText(source.sheet, "", 31).replace(/[\\/*?:[\]]/g, "-");
+    return edit;
+  });
+}
+
+function normalizeAppendRows(value: unknown): SpreadsheetAppendRowsEdit[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).map((item) => {
+    const source = typeof item === "object" && item !== null ? item as Record<string, unknown> : {};
+    const rows = Array.isArray(source.rows) ? source.rows : [];
+    const edit: SpreadsheetAppendRowsEdit = {
+      rows: rows.slice(0, 80).map((row) => {
+        const values = Array.isArray(row) ? row : [row];
+        return values.slice(0, MAX_COLUMNS).map(cleanCell);
+      }),
+    };
+    if (typeof source.sheet === "string") edit.sheet = cleanText(source.sheet, "", 31).replace(/[\\/*?:[\]]/g, "-");
+    return edit;
+  }).filter((edit) => edit.rows.length);
+}
+
+export function normalizeSpreadsheetEditSpec(value: unknown): SpreadsheetEditSpec {
+  const source = typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+  return {
+    setCells: normalizeCellEdits(source.setCells),
+    appendRows: normalizeAppendRows(source.appendRows),
+  };
 }
 
 function normalizeSheet(value: unknown, index: number): SpreadsheetSheet {
@@ -145,5 +193,46 @@ export async function writeSpreadsheet(
     filename,
     title: spec.title,
     sheets: spec.sheets,
+  };
+}
+
+export async function editSpreadsheetFile(
+  filePath: string,
+  value: unknown,
+): Promise<SpreadsheetEditResult> {
+  const spec = normalizeSpreadsheetEditSpec(value);
+  if (!spec.setCells?.length && !spec.appendRows?.length) {
+    throw new Error("No spreadsheet edits were requested.");
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const firstSheet = workbook.worksheets[0];
+  if (!firstSheet) throw new Error("Workbook has no worksheets.");
+
+  const setCells: SpreadsheetCellEdit[] = [];
+  const appendedRows: SpreadsheetEditResult["appendedRows"] = [];
+
+  for (const edit of spec.setCells ?? []) {
+    const worksheet = edit.sheet ? workbook.getWorksheet(edit.sheet) : firstSheet;
+    if (!worksheet) throw new Error(`Sheet not found: ${edit.sheet}`);
+    worksheet.getCell(edit.cell).value = edit.value;
+    setCells.push({ ...edit, sheet: worksheet.name });
+  }
+
+  for (const edit of spec.appendRows ?? []) {
+    const worksheet = edit.sheet ? workbook.getWorksheet(edit.sheet) : firstSheet;
+    if (!worksheet) throw new Error(`Sheet not found: ${edit.sheet}`);
+    const startRow = worksheet.rowCount + 1;
+    for (const row of edit.rows) worksheet.addRow(row);
+    appendedRows.push({ sheet: worksheet.name, startRow, rows: edit.rows });
+  }
+
+  await workbook.xlsx.writeFile(filePath);
+  return {
+    path: filePath,
+    filename: path.basename(filePath),
+    setCells,
+    appendedRows,
   };
 }

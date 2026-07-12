@@ -4,7 +4,9 @@ import type {
   BackgroundResearchInput,
   BackgroundResearchResult,
   DebugLogEntry,
+  HowToDocSpec,
   MemoryFactInput,
+  SpreadsheetEditSpec,
   SpreadsheetSpec,
 } from "../../shared/types";
 import {
@@ -47,6 +49,14 @@ interface RealtimeEvent {
   error?: { message?: string };
 }
 
+interface ResearchDebugItem {
+  id: string;
+  status: "started" | "complete" | "error";
+  question?: string;
+  message: string;
+  at: string;
+}
+
 function friendlyError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -64,6 +74,8 @@ export function App(): React.JSX.Element {
     greeting: "no",
     last: "boot",
   });
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [researchDebug, setResearchDebug] = useState<ResearchDebugItem[]>([]);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<RTCDataChannel | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -121,6 +133,13 @@ export function App(): React.JSX.Element {
     setPhase(resolved);
     writeDebugLog(`phase:${reason}`);
   }, [writeDebugLog]);
+
+  const pushResearchDebug = useCallback((item: Omit<ResearchDebugItem, "at">) => {
+    setResearchDebug((current) => [
+      { ...item, at: new Date().toLocaleTimeString() },
+      ...current,
+    ].slice(0, 8));
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -384,11 +403,12 @@ export function App(): React.JSX.Element {
     [requestResponse, sendEvent, setRockyPhase],
   );
 
-  const handleBackgroundResearchTool = useCallback(
+  const handleEditSpreadsheetTool = useCallback(
     async (callId: string, argumentText: string) => {
+      setRockyPhase("thinking", "edit-spreadsheet-tool");
       try {
-        const input = JSON.parse(argumentText) as BackgroundResearchInput;
-        const result = await window.rocky.startBackgroundResearch(input, sessionIdRef.current ?? undefined);
+        const spec = JSON.parse(argumentText) as SpreadsheetEditSpec;
+        const result = await window.rocky.editCurrentSpreadsheet(spec, sessionIdRef.current ?? undefined);
         sendEvent({
           type: "conversation.item.create",
           item: {
@@ -396,8 +416,9 @@ export function App(): React.JSX.Element {
             call_id: callId,
             output: JSON.stringify({
               success: true,
-              id: result.id,
-              message: "Background research started. A short result will return later.",
+              filename: result.filename,
+              path: result.path,
+              message: "Current workbook edited and visible sheet refreshed.",
             }),
           },
         });
@@ -413,7 +434,84 @@ export function App(): React.JSX.Element {
       }
       requestResponse("tool_result");
     },
-    [requestResponse, sendEvent],
+    [requestResponse, sendEvent, setRockyPhase],
+  );
+
+  const handleHowToDocTool = useCallback(
+    async (callId: string, argumentText: string) => {
+      setRockyPhase("thinking", "how-to-doc-tool");
+      try {
+        const spec = JSON.parse(argumentText) as HowToDocSpec;
+        const result = await window.rocky.createHowToDoc(spec, sessionIdRef.current ?? undefined);
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({
+              success: true,
+              filename: result.filename,
+              path: result.path,
+              message: "How-to DOCX created and opened in the local document app.",
+            }),
+          },
+        });
+      } catch (caught) {
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: false, error: friendlyError(caught) }),
+          },
+        });
+      }
+      requestResponse("tool_result");
+    },
+    [requestResponse, sendEvent, setRockyPhase],
+  );
+
+  const handleBackgroundResearchTool = useCallback(
+    async (callId: string, argumentText: string) => {
+      try {
+        const input = JSON.parse(argumentText) as BackgroundResearchInput;
+        const result = await window.rocky.startBackgroundResearch(input, sessionIdRef.current ?? undefined);
+        pushResearchDebug({
+          id: result.id,
+          status: "started",
+          question: result.question,
+          message: result.message,
+        });
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({
+              success: true,
+              id: result.id,
+              message: "Background research started. A short result will return later.",
+            }),
+          },
+        });
+      } catch (caught) {
+        pushResearchDebug({
+          id: "request",
+          status: "error",
+          message: friendlyError(caught),
+        });
+        sendEvent({
+          type: "conversation.item.create",
+          item: {
+            type: "function_call_output",
+            call_id: callId,
+            output: JSON.stringify({ success: false, error: friendlyError(caught) }),
+          },
+        });
+      }
+      requestResponse("tool_result");
+    },
+    [pushResearchDebug, requestResponse, sendEvent],
   );
 
   const injectResearchResult = useCallback((result: BackgroundResearchResult) => {
@@ -528,6 +626,12 @@ export function App(): React.JSX.Element {
             if (item.type === "function_call" && item.name === "update_active_spreadsheet" && item.call_id) {
               void handleActiveSpreadsheetTool(item.call_id, item.arguments ?? "{}");
             }
+            if (item.type === "function_call" && item.name === "edit_current_spreadsheet" && item.call_id) {
+              void handleEditSpreadsheetTool(item.call_id, item.arguments ?? "{}");
+            }
+            if (item.type === "function_call" && item.name === "create_how_to_doc" && item.call_id) {
+              void handleHowToDocTool(item.call_id, item.arguments ?? "{}");
+            }
             if (item.type === "function_call" && item.name === "start_background_research" && item.call_id) {
               void handleBackgroundResearchTool(item.call_id, item.arguments ?? "{}");
             }
@@ -545,6 +649,8 @@ export function App(): React.JSX.Element {
       answerPendingUserTurn,
       handleActiveSpreadsheetTool,
       handleBackgroundResearchTool,
+      handleEditSpreadsheetTool,
+      handleHowToDocTool,
       handleMemoryTool,
       handleSpreadsheetTool,
       logTranscript,
@@ -589,14 +695,25 @@ export function App(): React.JSX.Element {
 
   useEffect(() => window.rocky.onResearchComplete((sessionId, result) => {
     if (sessionId && sessionId !== sessionIdRef.current) return;
+    pushResearchDebug({
+      id: result.id,
+      status: "complete",
+      question: result.question,
+      message: result.answer.slice(0, 240),
+    });
     logTranscript("tool", `Background research ready: ${result.question}`);
     injectResearchResult(result);
-  }), [injectResearchResult, logTranscript]);
+  }), [injectResearchResult, logTranscript, pushResearchDebug]);
 
   useEffect(() => window.rocky.onResearchError((sessionId, result) => {
     if (sessionId && sessionId !== sessionIdRef.current) return;
+    pushResearchDebug({
+      id: result.id,
+      status: "error",
+      message: result.message,
+    });
     logTranscript("system", `Background research failed: ${result.message}`);
-  }), [logTranscript]);
+  }), [logTranscript, pushResearchDebug]);
 
   const connect = useCallback(async () => {
     if (peerRef.current) {
@@ -735,12 +852,37 @@ export function App(): React.JSX.Element {
             <span className="wave wave-e" />
           </span>
         </button>
-        <aside className="debug-state" aria-label="Rocky state">
+        <aside
+          className={`debug-state ${debugOpen ? "debug-state-open" : ""}`}
+          aria-label="Rocky state"
+          onClick={() => setDebugOpen((open) => !open)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setDebugOpen((open) => !open);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
           <span>{debugSnapshot.phase}</span>
           <small>
             p:{debugSnapshot.peer} c:{debugSnapshot.channel} r:{debugSnapshot.response} u:{debugSnapshot.pending} o:{debugSnapshot.output}
           </small>
           <small>{debugSnapshot.last}</small>
+          {debugOpen ? (
+            <div className="debug-details">
+              <strong>background research</strong>
+              {researchDebug.length ? researchDebug.map((item) => (
+                <div className={`research-debug research-${item.status}`} key={`${item.id}-${item.at}`}>
+                  <b>{item.status}</b>
+                  <em>{item.at} · {item.id.slice(0, 8)}</em>
+                  {item.question ? <span>{item.question}</span> : null}
+                  <p>{item.message}</p>
+                </div>
+              )) : <p>No research agents yet.</p>}
+            </div>
+          ) : null}
         </aside>
       </section>
     </main>

@@ -11,7 +11,9 @@ const env = await readFile(new URL(".env", root), "utf8");
 const apiKey = readEnvValue(env, "HUME_API_KEY");
 if (!apiKey) throw new Error("HUME_API_KEY is missing from .env.");
 
-const rawIndex = process.argv.slice(2).find((argument) => argument !== "--") ?? "3";
+const args = process.argv.slice(2).filter((argument) => argument !== "--");
+const replaceExisting = args.includes("--replace");
+const rawIndex = args.find((argument) => argument !== "--replace") ?? "3";
 const candidateIndex = Number.parseInt(rawIndex, 10);
 if (!Number.isInteger(candidateIndex) || candidateIndex < 1) {
   throw new Error("Candidate index must be a positive integer, for example: pnpm voice:hume:save -- 3");
@@ -21,8 +23,9 @@ const outputDirectory = new URL("local-data/voice-clone/hume/", root);
 const savedVoiceUrl = new URL("saved-voice.json", outputDirectory);
 try {
   const existing = JSON.parse(await readFile(savedVoiceUrl, "utf8"));
-  if (existing?.id) {
+  if (existing?.id && !replaceExisting) {
     console.log("A private Hume voice is already saved locally. Delete saved-voice.json only if replacing it intentionally.");
+    console.log("Or run: pnpm voice:hume:save -- <candidate> --replace");
     process.exit(0);
   }
 } catch (error) {

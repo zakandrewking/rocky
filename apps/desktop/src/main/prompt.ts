@@ -177,12 +177,18 @@ SPREADSHEETS — IMPORTANT BEHAVIOR
 - Call the tool without any spoken preamble. Do not say that a catalog, pass, update, list, or sheet is coming.
 - When rows and columns would help, call create_spreadsheet immediately and let the sudden spreadsheet app
   appearing on the Mac be the joke. Do first; speak second.
+- When the person asks how to do, make, build, fix, learn, practice, cook, set up, or safely try something,
+  prefer create_how_to_doc instead of create_spreadsheet. Procedure belongs in a DOCX guide, not an XLSX table.
+- Use DOCX for step-by-step instructions, checklists, safety notes, recipes, activity guides, and project plans.
+  Use XLSX for catalogs, comparisons, rankings, schedules, trackers, and repeated row/column data.
 - Treat requests for a complete list, catalog, comparison, ranking, schedule, tracker, or many named items as a
   strong spreadsheet trigger. Do not read a long list aloud and do not ask permission first. For example, if
   someone asks for all Minecraft biomes, immediately build and show a useful biome workbook.
 - When a spreadsheet is already visible and the person asks to add, remove, correct, or change its data, call
-  update_active_spreadsheet with the complete updated table. Change the active sheet in place. Do not create a
-  new workbook or revision for an ordinary follow-up edit.
+  edit_current_spreadsheet for targeted cell edits or appended rows. Do not say Rocky can only replace the
+  whole sheet. If the user requests a broad reshape of all columns/rows, update_active_spreadsheet may still
+  replace the active sheet with the complete updated table. Do not create a new workbook or revision for an
+  ordinary follow-up edit.
 - For changing or version-specific catalogs, include the relevant edition/version or an honest scope note in the
   workbook. Never call a list exhaustive when uncertain; still create the useful best-known list without stalling.
 - While the tool runs, remain silent or make one brief nonverbal chord. Do not announce or summarize a workflow.
@@ -260,6 +266,141 @@ export const UPDATE_SPREADSHEET_TOOL = {
   description:
     "Silently replace the visible active ONLYOFFICE sheet in place. Use when the person asks to add, remove, correct, or change data in the spreadsheet currently onscreen. Send the complete updated table for the active sheet; do not create a new workbook revision.",
   parameters: SPREADSHEET_TOOL.parameters,
+} as const;
+
+export const EDIT_SPREADSHEET_TOOL = {
+  type: "function",
+  name: "edit_current_spreadsheet",
+  description:
+    "Silently edit Rocky's current local XLSX workbook with targeted operations, then refresh the visible ONLYOFFICE sheet. Use for follow-up spreadsheet changes such as changing individual cells or appending rows. Prefer this over replacing the whole sheet when the requested edit is local.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      setCells: {
+        type: "array",
+        maxItems: 80,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sheet: {
+              type: "string",
+              description: "Optional worksheet name. Omit for the first/current sheet.",
+            },
+            cell: {
+              type: "string",
+              description: "A1-style cell address, for example B3.",
+            },
+            value: {
+              anyOf: [
+                { type: "string" },
+                { type: "number" },
+                { type: "boolean" },
+                { type: "null" },
+              ],
+            },
+          },
+          required: ["cell", "value"],
+        },
+      },
+      appendRows: {
+        type: "array",
+        maxItems: 20,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sheet: {
+              type: "string",
+              description: "Optional worksheet name. Omit for the first/current sheet.",
+            },
+            rows: {
+              type: "array",
+              minItems: 1,
+              maxItems: 80,
+              items: {
+                type: "array",
+                items: {
+                  anyOf: [
+                    { type: "string" },
+                    { type: "number" },
+                    { type: "boolean" },
+                    { type: "null" },
+                  ],
+                },
+              },
+            },
+          },
+          required: ["rows"],
+        },
+      },
+    },
+  },
+} as const;
+
+export const HOW_TO_DOC_TOOL = {
+  type: "function",
+  name: "create_how_to_doc",
+  description:
+    "Silently create and open a local DOCX how-to guide. Use for how-to questions, step-by-step procedures, recipes, project instructions, safety checklists, learning plans, and activity guides. Prefer this over spreadsheets when the answer is a sequence of actions rather than row/column data.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      title: {
+        type: "string",
+        description: "Friendly document title.",
+      },
+      filename: {
+        type: "string",
+        description: "Optional short filename without a directory. The .docx extension is optional.",
+      },
+      purpose: {
+        type: "string",
+        description: "One concise paragraph describing the goal.",
+      },
+      materials: {
+        type: "array",
+        maxItems: 30,
+        items: { type: "string" },
+      },
+      steps: {
+        type: "array",
+        minItems: 1,
+        maxItems: 30,
+        items: { type: "string" },
+      },
+      safetyNotes: {
+        type: "array",
+        maxItems: 12,
+        items: { type: "string" },
+      },
+      tips: {
+        type: "array",
+        maxItems: 16,
+        items: { type: "string" },
+      },
+      sections: {
+        type: "array",
+        maxItems: 8,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            heading: { type: "string" },
+            bullets: {
+              type: "array",
+              maxItems: 12,
+              items: { type: "string" },
+            },
+          },
+          required: ["heading", "bullets"],
+        },
+      },
+    },
+    required: ["title", "steps"],
+  },
 } as const;
 
 export const MEMORY_TOOL = {

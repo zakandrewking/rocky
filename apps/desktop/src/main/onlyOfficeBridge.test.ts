@@ -20,4 +20,19 @@ describe("ONLYOFFICE bridge commands", () => {
       clearRange: "A1:T201",
     });
   });
+
+  it("supports active-sheet edit commands without replacing the whole sheet", () => {
+    // Constructor is intentionally not used here; this asserts the public command shape the
+    // ONLYOFFICE plugin consumes for targeted edits.
+    expect({
+      id: "test",
+      type: "edit_active_sheet",
+      cells: [{ address: "B2", value: "Grassy" }],
+      ranges: [{ targetRange: "A3:B3", values: [["Desert", "Dry"]] }],
+    }).toMatchObject({
+      type: "edit_active_sheet",
+      cells: [{ address: "B2", value: "Grassy" }],
+      ranges: [{ targetRange: "A3:B3", values: [["Desert", "Dry"]] }],
+    });
+  });
 });

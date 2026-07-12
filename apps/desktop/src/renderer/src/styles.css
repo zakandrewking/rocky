@@ -210,7 +210,25 @@ tbody tr:nth-child(even) { background: #f2f8f5; }
   font: 9px "DM Mono", monospace;
   letter-spacing: .02em;
   -webkit-app-region: no-drag;
-  pointer-events: none;
+  cursor: default;
+  pointer-events: auto;
+  user-select: none;
+}
+
+.debug-state:hover {
+  border-color: rgba(255, 195, 125, .18);
+  background: rgba(8, 11, 10, .58);
+  color: rgba(224, 230, 202, .76);
+}
+
+.debug-state-open {
+  display: grid;
+  align-items: start;
+  gap: 5px;
+  width: min(520px, calc(100vw - 28px));
+  padding: 8px;
+  background: rgba(8, 11, 10, .86);
+  backdrop-filter: blur(8px);
 }
 
 .debug-state span {
@@ -220,6 +238,56 @@ tbody tr:nth-child(even) { background: #f2f8f5; }
 .debug-state small {
   color: rgba(155, 180, 155, .46);
   white-space: nowrap;
+}
+
+.debug-details {
+  display: grid;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(155, 180, 155, .12);
+  color: rgba(218, 225, 201, .72);
+  line-height: 1.35;
+}
+
+.debug-details strong {
+  color: rgba(255, 195, 125, .76);
+  font-weight: 600;
+}
+
+.debug-details p {
+  margin: 0;
+  white-space: normal;
+}
+
+.research-debug {
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid rgba(155, 180, 155, .1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.research-debug b {
+  color: rgba(200, 215, 181, .8);
+  font-weight: 600;
+}
+
+.research-debug em {
+  color: rgba(155, 180, 155, .5);
+  font-style: normal;
+}
+
+.research-debug span {
+  color: rgba(255, 195, 125, .66);
+}
+
+.research-error {
+  border-color: rgba(255, 118, 96, .25);
+}
+
+.research-error b {
+  color: rgba(255, 148, 128, .86);
 }
 
 @media (prefers-reduced-motion: reduce) {

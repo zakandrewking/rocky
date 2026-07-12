@@ -5,8 +5,10 @@ import type {
   BackgroundResearchResult,
   DebugLogEntry,
   HumeAudioEvent,
+  HowToDocSpec,
   MemoryFactInput,
   RockyApi,
+  SpreadsheetEditSpec,
   SpreadsheetSpec,
   TranscriptEntry,
 } from "../shared/types";
@@ -26,6 +28,10 @@ const rockyApi: RockyApi = {
     ipcRenderer.invoke("rocky:create-spreadsheet", spec, sessionId),
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) =>
     ipcRenderer.invoke("rocky:update-active-spreadsheet", spec, sessionId),
+  editCurrentSpreadsheet: (spec: SpreadsheetEditSpec, sessionId?: string) =>
+    ipcRenderer.invoke("rocky:edit-current-spreadsheet", spec, sessionId),
+  createHowToDoc: (spec: HowToDocSpec, sessionId?: string) =>
+    ipcRenderer.invoke("rocky:create-how-to-doc", spec, sessionId),
   openSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:open-spreadsheet", filePath),
   revealSpreadsheet: (filePath: string) => ipcRenderer.invoke("rocky:reveal-spreadsheet", filePath),
   speakWithHume: (sessionId: string, text: string, flush?: boolean) => ipcRenderer.invoke(

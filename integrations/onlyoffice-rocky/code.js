@@ -16,16 +16,32 @@
       window.Asc.plugin.callCommand(function () {
         const update = Asc.scope.rockyCommand;
         const sheet = Api.GetActiveSheet();
-        sheet.GetRange(update.clearRange).Clear();
-        const range = sheet.GetRange(update.targetRange);
-        range.SetValue(update.values);
-        range.SetWrap(true);
-        range.SetAlignVertical("top");
-        const header = sheet.GetRange(`A1:${update.targetRange.split(":")[1].replace(/\d+$/, "")}1`);
-        header.SetBold(true);
-        header.SetFontColor(Api.CreateColorFromRGB(247, 251, 255));
-        header.SetFillColor(Api.CreateColorFromRGB(40, 71, 92));
-        range.AutoFit(false, true);
+        if (update.type === "replace_active_sheet") {
+          sheet.GetRange(update.clearRange).Clear();
+          const range = sheet.GetRange(update.targetRange);
+          range.SetValue(update.values);
+          range.SetWrap(true);
+          range.SetAlignVertical("top");
+          const header = sheet.GetRange(`A1:${update.targetRange.split(":")[1].replace(/\d+$/, "")}1`);
+          header.SetBold(true);
+          header.SetFontColor(Api.CreateColorFromRGB(247, 251, 255));
+          header.SetFillColor(Api.CreateColorFromRGB(40, 71, 92));
+          range.AutoFit(false, true);
+        }
+        if (update.type === "edit_active_sheet") {
+          for (const cell of update.cells || []) {
+            const range = sheet.GetRange(cell.address);
+            range.SetValue(cell.value);
+            range.SetWrap(true);
+          }
+          for (const item of update.ranges || []) {
+            const range = sheet.GetRange(item.targetRange);
+            range.SetValue(item.values);
+            range.SetWrap(true);
+            range.SetAlignVertical("top");
+            range.AutoFit(false, true);
+          }
+        }
       }, false, true, resolve);
     });
     await complete(command.id);

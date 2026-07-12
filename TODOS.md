@@ -92,6 +92,26 @@ in approximate priority order
   so agent/debug work can edit Excel files without driving ONLYOFFICE UI.
 - [ ] Extend the Rocky `.xlsx` CLI toward the richer Claude spreadsheet skill pattern:
   /var/folders/6w/1gtm6b0n6s16j6p_fvlqbrfm0000gn/T/claude-hostloop-plugins/ccb68a6b8377b360/skills/xlsx/SKILL.md
+- [ ] Rework live spreadsheet edits to operate more like Claude's spreadsheet skill: inspect/read
+  the existing workbook, apply targeted cell/range/table operations with dedicated Excel tools,
+  save the `.xlsx`, and use ONLYOFFICE only as the final visual refresh/control layer. Rocky
+  should not tell users he can only replace a whole sheet.
+  - [ ] Add voice tools for reading current workbook structure/ranges and applying targeted edits.
+  - [ ] Preserve existing formulas, styles, sheet names, and user conventions when editing a
+    workbook; never flatten formulas by accidentally saving a value-only read.
+  - [ ] Add formula-aware verification: detect formulas, recalculate with LibreOffice when needed,
+    report formula errors, and avoid shipping changed workbooks with new calculation failures.
+  - [ ] Add clear assumptions/comments for hardcoded values in generated spreadsheets where useful.
+  - [ ] Extend the ONLYOFFICE bridge beyond whole-sheet replacement to ranged cell updates, append
+    rows, sheet selection, and refresh/reopen behavior.
+  - [ ] Make prompts prefer targeted workbook edits for follow-up spreadsheet changes, falling
+    back to whole-sheet replacement only when the requested edit genuinely changes the full table.
+- [ ] Rework DOCX generation to match the Claude docx skill pattern for production-quality output:
+  `docx` npm generation with explicit US Letter geometry, real headings/lists, no literal bullets
+  or newline hacks, and a render-to-PDF/image verification loop where practical.
+  - [ ] Add a DOCX render smoke/QA script using LibreOffice and Poppler for generated how-to docs.
+  - [ ] If Rocky edits existing DOCX files later, unzip/edit XML/validate instead of using
+    `docx` as if it could safely round-trip existing documents.
 - [ ] Test a spoken spreadsheet tool call end to end.
 - [ ] Test a spoken visible-spreadsheet update end to end.
 - [ ] Verify that asking for all Minecraft biomes proactively opens a scoped biome workbook.

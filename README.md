@@ -155,6 +155,8 @@ engineer voice instead of requesting an actor impersonation. Override `HUME_VOIC
 locally to iterate; no key, private voice ID, candidate audio, or generation manifest is committed.
 After ranking the candidates, `pnpm voice:hume:save -- 3` saves the selected generation to the Hume
 account and records its private metadata only in ignored `local-data/voice-clone/hume/saved-voice.json`.
+To replace an existing saved Hume voice after a new audition, run
+`pnpm voice:hume:save -- 2 --replace`, then restart Rocky so the app reads the new private voice ID.
 
 ### Persona prompt iteration
 

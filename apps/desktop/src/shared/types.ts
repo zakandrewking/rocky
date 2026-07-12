@@ -21,6 +21,52 @@ export interface SpreadsheetResult {
   sheets: SpreadsheetSheet[];
 }
 
+export interface SpreadsheetCellEdit {
+  cell: string;
+  value: CellValue;
+  sheet?: string;
+}
+
+export interface SpreadsheetAppendRowsEdit {
+  sheet?: string;
+  rows: CellValue[][];
+}
+
+export interface SpreadsheetEditSpec {
+  setCells?: SpreadsheetCellEdit[];
+  appendRows?: SpreadsheetAppendRowsEdit[];
+}
+
+export interface SpreadsheetEditResult {
+  path: string;
+  filename: string;
+  setCells: SpreadsheetCellEdit[];
+  appendedRows: Array<{ sheet: string; startRow: number; rows: CellValue[][] }>;
+}
+
+export interface HowToDocSection {
+  heading: string;
+  bullets: string[];
+}
+
+export interface HowToDocSpec {
+  title: string;
+  filename?: string;
+  purpose?: string;
+  materials?: string[];
+  steps: string[];
+  safetyNotes?: string[];
+  tips?: string[];
+  sections?: HowToDocSection[];
+}
+
+export interface HowToDocResult {
+  path: string;
+  filename: string;
+  title: string;
+  steps: string[];
+}
+
 export interface RealtimeSessionSecret {
   value: string;
   expires_at?: number;
@@ -122,6 +168,8 @@ export interface RockyApi {
   ) => Promise<BackgroundResearchStarted>;
   createSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<SpreadsheetResult>;
   updateActiveSpreadsheet: (spec: SpreadsheetSpec, sessionId?: string) => Promise<void>;
+  editCurrentSpreadsheet: (spec: SpreadsheetEditSpec, sessionId?: string) => Promise<SpreadsheetEditResult>;
+  createHowToDoc: (spec: HowToDocSpec, sessionId?: string) => Promise<HowToDocResult>;
   openSpreadsheet: (filePath: string) => Promise<void>;
   revealSpreadsheet: (filePath: string) => Promise<void>;
   speakWithHume: (sessionId: string, text: string, flush?: boolean) => Promise<void>;

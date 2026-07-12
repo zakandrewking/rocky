@@ -42,6 +42,8 @@ describe("Realtime session configuration", () => {
     });
     expect(config.tools.map((tool) => tool.name)).toContain("create_spreadsheet");
     expect(config.tools.map((tool) => tool.name)).toContain("update_active_spreadsheet");
+    expect(config.tools.map((tool) => tool.name)).toContain("edit_current_spreadsheet");
+    expect(config.tools.map((tool) => tool.name)).toContain("create_how_to_doc");
     expect(config.tools.map((tool) => tool.name)).toContain("start_background_research");
   });
 

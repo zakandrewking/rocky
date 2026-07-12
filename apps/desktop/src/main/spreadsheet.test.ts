@@ -4,7 +4,13 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { nextSpreadsheetPath, normalizeSpreadsheetSpec, writeSpreadsheet } from "./spreadsheet";
+import {
+  editSpreadsheetFile,
+  nextSpreadsheetPath,
+  normalizeSpreadsheetEditSpec,
+  normalizeSpreadsheetSpec,
+  writeSpreadsheet,
+} from "./spreadsheet";
 
 describe("spreadsheet writer", () => {
   it("normalizes filenames and uneven rows", () => {
@@ -46,5 +52,32 @@ describe("spreadsheet writer", () => {
     expect(first.filename).toBe("minecraft_biomes.xlsx");
     expect(second.filename).toBe("minecraft_biomes-2.xlsx");
     expect(second.path).not.toBe(first.path);
+  });
+
+  it("normalizes targeted spreadsheet edits", () => {
+    const spec = normalizeSpreadsheetEditSpec({
+      setCells: [{ cell: "b2", value: "Mushroom island" }],
+      appendRows: [{ rows: [["Desert", "Dry"]] }],
+    });
+
+    expect(spec.setCells).toEqual([{ cell: "B2", value: "Mushroom island" }]);
+    expect(spec.appendRows).toEqual([{ rows: [["Desert", "Dry"]] }]);
+  });
+
+  it("edits cells and appends rows in an existing workbook", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "rocky-sheet-edit-"));
+    const created = await writeSpreadsheet(
+      { title: "Biomes", sheets: [{ name: "Biomes", columns: ["Biome", "Note"], rows: [["Plains", "Flat"]] }] },
+      directory,
+    );
+
+    const result = await editSpreadsheetFile(created.path, {
+      setCells: [{ cell: "B2", value: "Grassy" }],
+      appendRows: [{ rows: [["Desert", "Dry"]] }],
+    });
+
+    expect(result.filename).toBe("Biomes.xlsx");
+    expect(result.setCells).toEqual([{ cell: "B2", value: "Grassy", sheet: "Biomes" }]);
+    expect(result.appendedRows).toEqual([{ sheet: "Biomes", startRow: 3, rows: [["Desert", "Dry"]] }]);
   });
 });
