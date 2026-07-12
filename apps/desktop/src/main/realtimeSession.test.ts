@@ -10,6 +10,10 @@ describe("Realtime session configuration", () => {
       "test-voice",
       "Maya: Loves volcanoes",
       "Human: We were fixing a spreadsheet.\nRocky: Can hear.",
+      {
+        researchContext: "- complete: Cobblemon setup",
+        localFileContext: "documents:\n- Cobblemon_on_Java_Mac.docx",
+      },
     );
     expect(config).toMatchObject({
       type: "realtime",
@@ -20,6 +24,10 @@ describe("Realtime session configuration", () => {
     });
     expect((config as { instructions: string }).instructions).toContain("RECENT CONVERSATION CONTINUITY");
     expect((config as { instructions: string }).instructions).toContain("We were fixing a spreadsheet");
+    expect((config as { instructions: string }).instructions).toContain("RECENT BACKGROUND RESEARCH STATUS");
+    expect((config as { instructions: string }).instructions).toContain("Cobblemon setup");
+    expect((config as { instructions: string }).instructions).toContain("RECENT ROCKY FILES");
+    expect((config as { instructions: string }).instructions).toContain("Cobblemon_on_Java_Mac.docx");
   });
 
   it("keeps transcription, semantic turn detection, and spreadsheet tool calling", () => {
@@ -56,7 +64,7 @@ describe("Realtime session configuration", () => {
   });
 
   it("supports text-only output for an external speech provider", () => {
-    const config = createRealtimeSessionConfig("voice-model", "test-voice", "", "", "text");
+    const config = createRealtimeSessionConfig("voice-model", "test-voice", "", "", {}, "text");
     expect(config).toMatchObject({ output_modalities: ["text"] });
   });
 });

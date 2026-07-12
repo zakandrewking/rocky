@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -10,7 +10,7 @@ import { config as loadEnv } from "dotenv";
 import { app, BrowserWindow, ipcMain, shell, systemPreferences } from "electron";
 
 import { createRealtimeSessionConfig } from "./realtimeSession";
-import { normalizeResearchInput, runBackgroundResearch } from "./backgroundResearch";
+import { formatRecentResearchForPrompt, normalizeResearchInput, runBackgroundResearch } from "./backgroundResearch";
 import { writeHowToDoc } from "./howToDocument";
 import { HumeSpeech } from "./humeSpeech";
 import { columnName, OnlyOfficeBridge } from "./onlyOfficeBridge";
@@ -86,12 +86,66 @@ function researchDirectory(): string {
   return path.join(localDataDirectory(), "research");
 }
 
+function researchStatusDirectory(): string {
+  return path.join(researchDirectory(), "status");
+}
+
+async function writeResearchStatus(
+  id: string,
+  status: "started" | "complete" | "error",
+  detail: Record<string, unknown>,
+): Promise<void> {
+  await mkdir(researchStatusDirectory(), { recursive: true });
+  await writeFile(
+    path.join(researchStatusDirectory(), `${id}.json`),
+    `${JSON.stringify({ id, status, updatedAt: new Date().toISOString(), ...detail }, null, 2)}\n`,
+    "utf8",
+  );
+  await appendDebugLog({
+    event: `research:${status}`,
+    detail: { id, ...detail },
+  });
+}
+
 async function resolveCurrentSpreadsheetPath(): Promise<string> {
   if (currentSpreadsheetPath && existsSync(currentSpreadsheetPath)) return currentSpreadsheetPath;
   const latest = await latestSpreadsheetPath(spreadsheetDirectory());
   if (!latest) throw new Error("Rocky has no local spreadsheet workbook yet. Create a spreadsheet first.");
   currentSpreadsheetPath = latest;
   return latest;
+}
+
+async function recentFilesForPrompt(): Promise<string> {
+  const groups = [
+    { label: "spreadsheets", directory: spreadsheetDirectory(), extension: ".xlsx" },
+    { label: "documents", directory: documentDirectory(), extension: ".docx" },
+  ];
+  const lines: string[] = [];
+  for (const group of groups) {
+    const filenames = await readdir(group.directory).catch(() => []);
+    const files = await Promise.all(
+      filenames
+        .filter((filename) => filename.toLowerCase().endsWith(group.extension) && !filename.startsWith("~$"))
+        .map(async (filename) => {
+          const filePath = path.join(group.directory, filename);
+          try {
+            const metadata = await stat(filePath);
+            return metadata.isFile() ? { filename, filePath, mtimeMs: metadata.mtimeMs } : null;
+          } catch {
+            return null;
+          }
+        }),
+    );
+    const recent = files
+      .filter((file): file is { filename: string; filePath: string; mtimeMs: number } => Boolean(file))
+      .sort((left, right) => right.mtimeMs - left.mtimeMs)
+      .slice(0, 5);
+    if (recent.length) {
+      lines.push(`${group.label}:`);
+      for (const file of recent) lines.push(`- ${file.filename} (${file.filePath})`);
+    }
+  }
+  return lines.join("\n");
 }
 
 async function readHumeSettings(): Promise<HumeSettings | null> {
@@ -170,7 +224,7 @@ async function recordStyleFailure(failure: RockyStyleFailure): Promise<void> {
   );
 }
 
-async function openSpreadsheetInOnlyOffice(filePath: string): Promise<void> {
+async function openFileInOnlyOffice(filePath: string): Promise<void> {
   if (process.platform === "darwin") {
     if (!existsSync(ONLYOFFICE_APP)) {
       throw new Error("ONLYOFFICE is not installed in /Applications. Run: brew install --cask onlyoffice");
@@ -188,9 +242,12 @@ async function openSpreadsheetInOnlyOffice(filePath: string): Promise<void> {
   if (openError) throw new Error(openError);
 }
 
-async function openDocument(filePath: string): Promise<void> {
-  const openError = await shell.openPath(filePath);
-  if (openError) throw new Error(openError);
+async function openSpreadsheetInOnlyOffice(filePath: string): Promise<void> {
+  await openFileInOnlyOffice(filePath);
+}
+
+async function openDocumentInOnlyOffice(filePath: string): Promise<void> {
+  await openFileInOnlyOffice(filePath);
 }
 
 async function createRealtimeSession(): Promise<unknown> {
@@ -206,6 +263,8 @@ async function createRealtimeSession(): Promise<unknown> {
     .digest("hex");
   const memoryContext = formatMemoryForPrompt(await readFamilyMemory(memoryFilePath()));
   const continuityContext = await formatContinuityForPrompt(continuityFilePath());
+  const researchContext = await formatRecentResearchForPrompt(researchDirectory());
+  const localFileContext = await recentFilesForPrompt();
   const hume = await readHumeSettings();
   const response = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
     method: "POST",
@@ -220,6 +279,7 @@ async function createRealtimeSession(): Promise<unknown> {
         process.env.ROCKY_VOICE ?? VOICE,
         memoryContext,
         continuityContext,
+        { researchContext, localFileContext },
         hume ? "text" : "audio",
       ),
     }),
@@ -261,9 +321,17 @@ function registerIpc(): void {
     if (sessionId) {
       await appendTranscript({ sessionId, role: "tool", text: `Started background research: ${normalized.question}` });
     }
+    await writeResearchStatus(id, "started", {
+      question: normalized.question,
+      sessionId: sessionId ?? "",
+    });
     const sender = event.sender;
     void runBackgroundResearch(normalized, researchDirectory(), apiKey, id)
       .then(async (result) => {
+        await writeResearchStatus(id, "complete", {
+          question: result.question,
+          path: result.path,
+        }).catch(() => undefined);
         if (sessionId) {
           await appendTranscript({
             sessionId,
@@ -274,7 +342,13 @@ function registerIpc(): void {
         if (!sender.isDestroyed()) sender.send("rocky:research-complete", sessionId ?? "", result);
       })
       .catch(async (error) => {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error && error.name === "AbortError"
+          ? "Background research timed out before OpenAI returned a result."
+          : error instanceof Error ? error.message : String(error);
+        await writeResearchStatus(id, "error", {
+          question: normalized.question,
+          message,
+        }).catch(() => undefined);
         if (sessionId) {
           await appendTranscript({ sessionId, role: "system", text: `Background research failed: ${message}` })
             .catch(() => undefined);
@@ -332,7 +406,7 @@ function registerIpc(): void {
   });
   ipcMain.handle("rocky:create-how-to-doc", async (_event, spec: unknown, sessionId?: string) => {
     const result = await writeHowToDoc(spec, documentDirectory());
-    await openDocument(result.path);
+    await openDocumentInOnlyOffice(result.path);
     if (sessionId) {
       await appendTranscript({
         sessionId,

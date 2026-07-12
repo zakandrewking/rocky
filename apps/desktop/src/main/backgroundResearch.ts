@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface BackgroundResearchInput {
@@ -13,6 +13,15 @@ export interface BackgroundResearchResult {
   answer: string;
   path: string;
   completedAt: string;
+}
+
+interface ResearchStatusRecord {
+  id?: unknown;
+  status?: unknown;
+  updatedAt?: unknown;
+  question?: unknown;
+  path?: unknown;
+  message?: unknown;
 }
 
 function cleanText(value: unknown, fallback = ""): string {
@@ -45,6 +54,87 @@ function outputText(response: unknown): string {
     .trim();
 }
 
+function shortLine(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function markdownExcerpt(markdown: string, maxLength: number): string {
+  return markdown
+    .replace(/^# .+$/gm, "")
+    .replace(/^Question:.+$/gm, "")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1 ($2)")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+async function readStatusRecords(outputDirectory: string): Promise<ResearchStatusRecord[]> {
+  const statusDirectory = path.join(outputDirectory, "status");
+  const filenames = await readdir(statusDirectory).catch(() => []);
+  const records = await Promise.all(
+    filenames
+      .filter((filename) => filename.endsWith(".json"))
+      .map(async (filename) => {
+        try {
+          return JSON.parse(await readFile(path.join(statusDirectory, filename), "utf8")) as ResearchStatusRecord;
+        } catch {
+          return null;
+        }
+      }),
+  );
+  return records
+    .filter((record): record is ResearchStatusRecord => Boolean(record))
+    .sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")));
+}
+
+async function readRecentResultFiles(outputDirectory: string): Promise<Array<{ path: string; mtimeMs: number; text: string }>> {
+  const filenames = await readdir(outputDirectory).catch(() => []);
+  const files = await Promise.all(
+    filenames
+      .filter((filename) => filename.endsWith(".md"))
+      .map(async (filename) => {
+        const filePath = path.join(outputDirectory, filename);
+        try {
+          const metadata = await stat(filePath);
+          return { path: filePath, mtimeMs: metadata.mtimeMs, text: await readFile(filePath, "utf8") };
+        } catch {
+          return null;
+        }
+      }),
+  );
+  return files
+    .filter((file): file is { path: string; mtimeMs: number; text: string } => Boolean(file))
+    .sort((left, right) => right.mtimeMs - left.mtimeMs)
+    .slice(0, 3);
+}
+
+export async function formatRecentResearchForPrompt(outputDirectory: string): Promise<string> {
+  const [records, resultFiles] = await Promise.all([
+    readStatusRecords(outputDirectory),
+    readRecentResultFiles(outputDirectory),
+  ]);
+  const lines: string[] = [];
+  for (const record of records.slice(0, 5)) {
+    const status = shortLine(record.status, 20) || "unknown";
+    const question = shortLine(record.question, 240) || "unknown question";
+    const updatedAt = shortLine(record.updatedAt, 40);
+    const message = shortLine(record.message, 240);
+    const resultPath = shortLine(record.path, 260);
+    lines.push(`- ${status}${updatedAt ? ` at ${updatedAt}` : ""}: ${question}${message ? ` (${message})` : ""}`);
+    if (status === "complete" && resultPath) {
+      const result = resultFiles.find((file) => file.path === resultPath);
+      if (result) lines.push(`  excerpt: ${markdownExcerpt(result.text, 900)}`);
+    }
+  }
+  const knownPaths = new Set(records.map((record) => shortLine(record.path, 260)).filter(Boolean));
+  for (const result of resultFiles.filter((file) => !knownPaths.has(file.path)).slice(0, 2)) {
+    lines.push(`- complete legacy result: ${path.basename(result.path)}`);
+    lines.push(`  excerpt: ${markdownExcerpt(result.text, 900)}`);
+  }
+  return lines.join("\n");
+}
+
 export async function runBackgroundResearch(
   input: BackgroundResearchInput,
   outputDirectory: string,
@@ -52,6 +142,9 @@ export async function runBackgroundResearch(
   id = randomUUID(),
 ): Promise<BackgroundResearchResult> {
   const model = process.env.ROCKY_RESEARCH_MODEL ?? "gpt-5.5";
+  const timeoutMs = Math.max(10_000, Math.min(180_000, Number(process.env.ROCKY_RESEARCH_TIMEOUT_MS) || 20_000));
+  const maxOutputTokens = Math.max(300, Math.min(4_000, Number(process.env.ROCKY_RESEARCH_MAX_OUTPUT_TOKENS) || 900));
+  const reasoningEffort = process.env.ROCKY_RESEARCH_REASONING_EFFORT ?? "low";
   const prompt = [
     "You are a slower background research helper for Rocky, a family voice companion.",
     "Answer with concise, kid-safe facts. Use web search when needed.",
@@ -62,19 +155,23 @@ export async function runBackgroundResearch(
   ].filter(Boolean).join("\n");
 
   await mkdir(outputDirectory, { recursive: true });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
+    signal: controller.signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
       model,
-      reasoning: { effort: "high" },
+      max_output_tokens: maxOutputTokens,
+      reasoning: { effort: reasoningEffort },
       tools: [{ type: "web_search" }],
       input: prompt,
     }),
-  });
+  }).finally(() => clearTimeout(timeout));
   if (!response.ok) throw new Error(`Research failed (${response.status}): ${(await response.text()).slice(0, 800)}`);
 
   const raw = await response.json() as unknown;

@@ -90,6 +90,10 @@ in approximate priority order
     ONLYOFFICE Spreadsheet Editor.
 - [x] Add a small Rocky `.xlsx` command-line tool for inspect, set-cell, and append-row workflows,
   so agent/debug work can edit Excel files without driving ONLYOFFICE UI.
+- [ ] Make Rocky's generated `.xlsx` and `.docx` files durable and discoverable across sessions:
+  save them under ignored `local-data/`, inject recent file context into new conversations, let
+  Rocky reopen the latest/relevant file later, and eventually add voice tools for listing/opening
+  prior Rocky files so useful work is never lost.
 - [ ] Extend the Rocky `.xlsx` CLI toward the richer Claude spreadsheet skill pattern:
   /var/folders/6w/1gtm6b0n6s16j6p_fvlqbrfm0000gn/T/claude-hostloop-plugins/ccb68a6b8377b360/skills/xlsx/SKILL.md
 - [ ] Rework live spreadsheet edits to operate more like Claude's spreadsheet skill: inspect/read
