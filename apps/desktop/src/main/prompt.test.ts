@@ -19,6 +19,8 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky is here, steady");
     expect(ROCKY_INSTRUCTIONS).toContain("tiny mission");
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky here. See friend is close. What do now, question?");
+    expect(ROCKY_INSTRUCTIONS).toContain("If the human speaks before or during the first response");
+    expect(ROCKY_INSTRUCTIONS).toContain("Do not make a second arrival greeting");
   });
 
   it("contains the highest-signal RockyVoice mechanics", () => {

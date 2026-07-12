@@ -37,10 +37,11 @@ export class HumePcmAudio {
     return Math.max(0, (this.nextStart - this.context.currentTime) * 1_000);
   }
 
-  push(base64: string, sampleRate: number): void {
+  push(base64: string, sampleRate: number, finalPaddingMs = 0): void {
     const samples = pcm16LeToFloat32(base64);
     if (!samples.length) return;
-    const buffer = this.context.createBuffer(1, samples.length, sampleRate);
+    const paddingSamples = Math.max(0, Math.round((sampleRate * finalPaddingMs) / 1_000));
+    const buffer = this.context.createBuffer(1, samples.length + paddingSamples, sampleRate);
     buffer.getChannelData(0).set(samples);
     const source = this.context.createBufferSource();
     source.buffer = buffer;

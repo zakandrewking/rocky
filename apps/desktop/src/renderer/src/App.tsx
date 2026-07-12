@@ -35,6 +35,7 @@ interface DebugSnapshot {
   pending: string;
   output: string;
   greeting: string;
+  localGreetingPending: string;
   last: string;
 }
 
@@ -77,6 +78,7 @@ export function App(): React.JSX.Element {
     pending: "no",
     output: "no",
     greeting: "no",
+    localGreetingPending: "no",
     last: "boot",
   });
   const [debugOpen, setDebugOpen] = useState(false);
@@ -99,6 +101,9 @@ export function App(): React.JSX.Element {
   const userTurnPendingRef = useRef(false);
   const userSpeechActiveRef = useRef(false);
   const initialGreetingDoneRef = useRef(false);
+  const localInitialGreetingPendingRef = useRef(false);
+  const localInitialGreetingInterruptedRef = useRef(false);
+  const localInitialGreetingTextRef = useRef("");
   const rockyOutputActiveRef = useRef(false);
   const ignoreSpeechStartedUntilRef = useRef(0);
   const rockyUtteranceCountRef = useRef(0);
@@ -114,6 +119,7 @@ export function App(): React.JSX.Element {
     pending: userTurnPendingRef.current ? "yes" : "no",
     output: rockyOutputActiveRef.current ? "yes" : "no",
     greeting: initialGreetingDoneRef.current ? "yes" : "no",
+    localGreetingPending: localInitialGreetingPendingRef.current ? "yes" : "no",
     last,
   }), []);
 
@@ -214,7 +220,7 @@ export function App(): React.JSX.Element {
         bytesApprox: event.audio.length,
         isLastChunk: event.isLastChunk,
       });
-      humeAudioRef.current?.push(event.audio, event.sampleRate);
+      humeAudioRef.current?.push(event.audio, event.sampleRate, event.isLastChunk ? 280 : 0);
     } else {
       void window.rocky.appendTranscript({
         sessionId,
@@ -322,6 +328,21 @@ export function App(): React.JSX.Element {
     rockyUtteranceCountRef.current += 1;
   }, [logTranscript]);
 
+  const finishLocalInitialGreeting = useCallback(() => {
+    if (!localInitialGreetingPendingRef.current) return;
+    const text = localInitialGreetingTextRef.current;
+    localInitialGreetingPendingRef.current = false;
+    localInitialGreetingTextRef.current = "";
+    if (localInitialGreetingInterruptedRef.current) {
+      localInitialGreetingInterruptedRef.current = false;
+      writeDebugLog("local-initial-greeting-discarded", { reason: "interrupted" });
+      return;
+    }
+    localInitialGreetingInterruptedRef.current = false;
+    if (text) recordRockyUtterance(text);
+    writeDebugLog("local-initial-greeting-finished");
+  }, [recordRockyUtterance, writeDebugLog]);
+
   const sendHumeChunks = useCallback((delta: string, flush = false) => {
     const sessionId = sessionIdRef.current;
     if (!sessionId || speechProviderRef.current !== "hume") return;
@@ -376,16 +397,18 @@ export function App(): React.JSX.Element {
     initialGreetingDoneRef.current = true;
     humeTextBufferRef.current = "";
     humeResponseTextRef.current = text;
+    localInitialGreetingPendingRef.current = true;
+    localInitialGreetingInterruptedRef.current = false;
+    localInitialGreetingTextRef.current = text;
     humeAudioRef.current?.beginResponse();
     rockyOutputActiveRef.current = true;
     setRockyPhase("speaking", "local-initial-greeting");
     eridianAudioRef.current?.pushTranscriptDelta(text);
     eridianAudioRef.current?.flushTranscript();
     sendHumeChunks(text, true);
-    recordRockyUtterance(text);
     armHumeTurnWatchdog(text);
     humeResponseTextRef.current = "";
-  }, [armHumeTurnWatchdog, recordRockyUtterance, sendHumeChunks, setRockyPhase]);
+  }, [armHumeTurnWatchdog, sendHumeChunks, setRockyPhase]);
 
   const startInitialGreeting = useCallback(() => {
     if (speechProviderRef.current === "hume") {
@@ -398,6 +421,10 @@ export function App(): React.JSX.Element {
   const stopRockyOutput = useCallback((reason: string) => {
     const hadResponse = responseInProgressRef.current;
     const hadOutput = rockyOutputActiveRef.current;
+    if (reason === "user-barge-in" && localInitialGreetingPendingRef.current) {
+      localInitialGreetingInterruptedRef.current = true;
+      userSpokeBeforeFirstRockyRef.current = true;
+    }
     eridianAudioRef.current?.stop();
     humeAudioRef.current?.stop();
     clearHumeTurnWatchdog();
@@ -918,6 +945,9 @@ export function App(): React.JSX.Element {
     userTurnPendingRef.current = false;
     userSpeechActiveRef.current = false;
     initialGreetingDoneRef.current = false;
+    localInitialGreetingPendingRef.current = false;
+    localInitialGreetingInterruptedRef.current = false;
+    localInitialGreetingTextRef.current = "";
     rockyOutputActiveRef.current = false;
     ignoreSpeechStartedUntilRef.current = 0;
     rockyUtteranceCountRef.current = 0;
@@ -965,7 +995,10 @@ export function App(): React.JSX.Element {
       if (config.speechProvider === "hume") {
         humeAudioRef.current ??= new HumePcmAudio((speaking) => {
           rockyOutputActiveRef.current = speaking;
-          if (!speaking) clearHumeTurnWatchdog();
+          if (!speaking) {
+            clearHumeTurnWatchdog();
+            finishLocalInitialGreeting();
+          }
           setRockyPhase(speaking ? "speaking" : responseInProgressRef.current ? "thinking" : "listening", "hume-speaking");
           if (!speaking && !userSpeechActiveRef.current) answerPendingUserTurn();
         }, config.humeExtraDelayMs);
@@ -1055,6 +1088,7 @@ export function App(): React.JSX.Element {
     answerPendingUserTurn,
     clearHumeTurnWatchdog,
     disconnect,
+    finishLocalInitialGreeting,
     handleRealtimeEvent,
     logTranscript,
     monitorRemoteAudio,
