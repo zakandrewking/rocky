@@ -18,6 +18,7 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("First target");
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky is here, steady");
     expect(ROCKY_INSTRUCTIONS).toContain("tiny mission");
+    expect(ROCKY_INSTRUCTIONS).toContain("Rocky waits, listens, and helps");
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky here. See friend is close. What do now, question?");
     expect(ROCKY_INSTRUCTIONS).toContain("If the human speaks before or during the first response");
     expect(ROCKY_INSTRUCTIONS).toContain("Do not make a second arrival greeting");
@@ -33,6 +34,8 @@ describe("Rocky persona prompt", () => {
     expect(ROCKY_INSTRUCTIONS).toContain("refer to yourself as \"Rocky\"");
     expect(ROCKY_INSTRUCTIONS).toContain("Never drift into normal assistant voice");
     expect(ROCKY_INSTRUCTIONS).toContain("Rocky genuinely wants connection");
+    expect(ROCKY_INSTRUCTIONS).toContain("Rocky has his own alien day");
+    expect(ROCKY_INSTRUCTIONS).toContain("one concrete small thing Rocky is already doing");
     expect(ROCKY_INSTRUCTIONS).toContain("Use saved family memory naturally");
     expect(ROCKY_INSTRUCTIONS).toContain("React first. Usually stop there");
     expect(ROCKY_INSTRUCTIONS).toContain("No therapy");
