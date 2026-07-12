@@ -122,6 +122,9 @@ pnpm dist:mac  # create unsigned macOS DMG, zip, and unpacked app artifacts
 
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.
+DOCX generation is covered by structural tests for valid Word packages, real headings, numbering,
+page geometry, and escaped/plain content. Visual DOCX render QA is still best-effort locally until
+LibreOffice/Poppler are installed on the machine running tests.
 `pnpm xlsx:rocky` provides command-line workbook operations for agent/debug workflows:
 
 ```bash
@@ -129,6 +132,11 @@ pnpm xlsx:rocky inspect local-data/spreadsheets/minecraft_biomes.xlsx 'Biomes!A1
 pnpm xlsx:rocky set-cell local-data/spreadsheets/minecraft_biomes.xlsx 'Biomes!B2' Updated
 pnpm xlsx:rocky append-row local-data/spreadsheets/minecraft_biomes.xlsx Biomes '["New biome","Notes"]'
 ```
+
+The current command-line edit path rereads the workbook from disk before making targeted edits, so
+it preserves other saved workbook changes. The remaining live-collaboration gap is forcing
+ONLYOFFICE to save/sync the active open document before Rocky rereads it; that is tracked in
+`TODOS.md`.
 
 Rocky also has a `start_background_research` voice tool for current or obscure facts. Results are
 saved under `local-data/research/`, appended to the conversation transcript, and injected back into

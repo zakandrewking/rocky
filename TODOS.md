@@ -99,6 +99,10 @@ in approximate priority order
   the existing workbook, apply targeted cell/range/table operations with dedicated Excel tools,
   save the `.xlsx`, and use ONLYOFFICE only as the final visual refresh/control layer. Rocky
   should not tell users he can only replace a whole sheet.
+  - [ ] Support concurrent human + Rocky edits in ONLYOFFICE: before Rocky edits, ask the
+    ONLYOFFICE plugin to save/sync the active document, reread the relevant workbook ranges with
+    CLI tools, apply targeted edits to the freshest `.xlsx`, then refresh only the affected visible
+    cells/ranges. Avoid overwriting user changes made since Rocky last opened the file.
   - [ ] Add voice tools for reading current workbook structure/ranges and applying targeted edits.
   - [ ] Preserve existing formulas, styles, sheet names, and user conventions when editing a
     workbook; never flatten formulas by accidentally saving a value-only read.
