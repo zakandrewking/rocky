@@ -70,6 +70,13 @@ terminal/console panel, so keep the cable attached to read them. Later steps pri
 they display — the CyberPi screen is 128×128 and cannot show a module list — so get comfortable
 finding that panel now.
 
+**If the panel shows hex rather than text**, or you cannot find a text console at all: that is a
+known dead end, not something you did wrong. Look for a HEX/ASCII toggle in the serial monitor —
+though we have not been able to confirm one exists. Rather than fight it, run
+`steps/step05b_gate_screen.py`, which answers the same questions as steps 5 and 6 and renders the
+findings on the CyberPi's own screen, paged with button A. Steps 1–4 do not need the console at
+all; you judge those with your eyes and ears.
+
 ## Naming programs, and the Chinese characters in My Programs
 
 Three things about the My Programs list, from Makeblock's own docs:

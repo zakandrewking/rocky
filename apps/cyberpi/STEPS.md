@@ -17,6 +17,7 @@ only the board.
 | 4 | `steps/step04_loudness.py` | envelope polling rate — is VAD viable? | **PASS** — ran; Hz figures still to be recorded |
 | 5 | `steps/step05_introspect.py` | **gate:** is there any raw capture path? | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
+| 5b | `steps/step05b_gate_screen.py` | **replaces 5 and 6** when the serial console is unreadable — same findings, rendered on the CyberPi screen | |
 | 7 | `steps/step07_wifi.py` | Wi-Fi connects | |
 | 8 | `steps/step08_http_get.py` | robot reaches device-api; latency floor | |
 | 9 | `steps/step09_upload.py` | uplink throughput vs the 384 kbps PCM needs | |
