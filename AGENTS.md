@@ -1,4 +1,5 @@
-- Push to changes regularly to the origin main as you go
+- Work on `main` and push to `origin main` regularly as you go. No feature branches, and no pull
+  requests unless asked. If a harness assigns a working branch, switch back to `main` instead.
 - Keep working; don't ask for confirmation from me unless your goals are unclear or there
   are interesting/fun design decisions
 - It's ok to try out a design option and then ask me if it's good
