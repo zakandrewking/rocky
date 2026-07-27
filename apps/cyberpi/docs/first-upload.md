@@ -78,12 +78,17 @@ Three things about the My Programs list, from Makeblock's own docs:
   another slot at upload time.
 - The name comes from the **project name in the editor**, so you rename the project *before*
   uploading. There is no way to rename a slot from the device afterwards.
-- **Names can only be set in the mBlock 5 _web_ version** (<https://mblock.cc>). The desktop app
-  cannot do it. That is a stated limitation, not something to configure around.
+- Makeblock's help centre is widely quoted as saying names can only be set in the mBlock 5 **web**
+  version. **Treat that as unconfirmed.** Someone working in the web editor could not find any such
+  control, and nobody here has managed to read the source article — it is behind a 403 from this
+  environment.
 
-Which leaves an awkward trade-off, since the desktop app is what this guide recommends for
-uploading: use desktop for the steps, and switch to the web editor for the uploads whose names you
-actually care about. That mainly means the eventual Rocky program, not the throwaway probes.
+If you want a named slot, the thing to try is signing in to a Makeblock account, naming and saving
+the project, and *then* uploading — a project may have no persistent name until it is saved, which
+would explain both the "web only" framing and the missing control. Unverified.
+
+Do not spend long on this. The slot name has no effect on steps 1–12, and only starts to matter at
+the very end of Stage 1, when Rocky is packaged into a slot a person picks from a menu.
 
 ### If slots show Chinese characters
 
