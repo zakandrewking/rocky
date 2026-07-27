@@ -180,3 +180,35 @@ in approximate priority order
   engine passes that quality gate.
 - [ ] Preserve interruption handling by stopping local playback as soon as the family speaks.
 - [ ] Compare YourTTS against the supplied RVC model only if artifacts and latency justify it.
+
+## Rocky on a robot (apps/cyberpi)
+
+Feasibility spike for putting Rocky on a Makeblock mBot2/CyberPi. The plan is in
+`apps/cyberpi/PLAN.md`; the hardware checklist is `apps/cyberpi/STEPS.md`.
+
+Deliberately scoped as a spike, not an implementation. Everything past the decision gate is
+gated on the audio answer, because building a conversation loop and an animated face for a robot
+that cannot speak would be wasted work.
+
+- [x] Write the two-stage plan: CyberOS app first, native ESP32 firmware only if CyberOS blocks
+  realtime audio.
+- [x] Document the CyberOS API surface from Makeblock's published `makeblock` package. It has no
+  raw sample input and no arbitrary sample output: `record()` writes to one opaque internal slot,
+  `play()` takes a preset name rather than data.
+- [x] Break Stage 1 into twelve small hardware steps, each proving one thing, each standalone
+  because mBlock uploads a single program at a time.
+- [x] Build `services/device-api`: device-token auth, ephemeral OpenAI client secrets so the key
+  never lives on the robot, probe endpoints for steps 8-12, and a report sink that saves results
+  under `local-data/cyberpi/`.
+- [ ] **Run steps 1-12 on real hardware** and fill in the results table in `apps/cyberpi/STEPS.md`.
+  Needs an mBot2. Nothing below can be decided without it.
+- [ ] Answer the decision gate: can CyberOS carry a realtime conversation? The two checks that
+  decide it are step 5 (any raw microphone capture path?) and step 10 (can server-generated audio
+  reach the speaker?).
+- [ ] If yes: build the conversation loop, the state-driven screen UI with a tiny Rocky face, and
+  package it into a CyberPi program slot that exits back to normal CyberOS.
+- [ ] If no: start Stage 2 native firmware, and write the one-command restore script before the
+  one-command flash script.
+- [ ] Extract `packages/rocky-core` for the shared persona once the gate is answered. Until then
+  `services/device-api` imports `ROCKY_INSTRUCTIONS` from the desktop app by relative path, which
+  is why `verbatimModuleSyntax` is off in its tsconfig.

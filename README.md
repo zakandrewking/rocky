@@ -121,8 +121,24 @@ pnpm voice:hume:save -- 3 # save the selected candidate as a private Hume accoun
 pnpm onlyoffice:install-plugin # install the live active-sheet bridge for the current macOS user
 pnpm voice:check # verify optional ignored local voice-clone assets
 pnpm voice:server # run the experimental loopback-only YourTTS worker
+pnpm device-api # run the backend for the CyberPi robot experiment
+pnpm cyberpi:check # syntax-check the CyberPi step programs
 pnpm dist:mac  # create unsigned macOS DMG, zip, and unpacked app artifacts
 ```
+
+## Rocky on a robot (experimental)
+
+`apps/cyberpi/` is a feasibility spike: can Rocky live on a Makeblock mBot2 and hold a spoken
+conversation? It is twelve small programs you run one at a time on real hardware, each proving one
+thing, and it starts at [`apps/cyberpi/STEPS.md`](apps/cyberpi/STEPS.md).
+
+The open question is whether Makeblock's CyberOS gives low-level enough microphone, speaker, and
+network access. Its documented API has no raw audio in either direction, so the steps go and check
+before anyone considers replacing firmware. Nothing has run on a board yet.
+
+`services/device-api` is the backend the robot talks to. The OpenAI key stays on your computer and
+the robot gets a short-lived client secret instead, because an mBot2 is a thing a child carries
+around. Rocky's persona is imported from the desktop app rather than copied.
 
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.

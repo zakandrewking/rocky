@@ -34,6 +34,29 @@ only the board.
 None of these steps modify firmware or persist anything. Power-cycling the board returns it to
 normal CyberOS.
 
+### Extra setup for steps 7–12
+
+Every network step has a small config block at the top. Fill it in before uploading:
+
+```python
+WIFI_SSID = ""
+WIFI_PASSWORD = ""
+API_HOST = "192.168.1.10"   # your computer's LAN IP, never "localhost"
+API_PORT = 8787
+```
+
+CyberPi is 2.4 GHz only, and hidden SSIDs and captive portals do not work.
+
+Steps 8–12 also need the backend running on your computer:
+
+```bash
+pnpm device-api
+```
+
+Those steps POST their own numbers to it, so results land in `local-data/cyberpi/` as JSON and
+get summarized in the service's terminal — no transcribing from a serial console. Set
+`POST_RESULTS = False` in a step to turn that off.
+
 ## The three checks that decide the gate
 
 Everything else is supporting evidence. Stage 1 lives or dies on:
