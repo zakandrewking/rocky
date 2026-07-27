@@ -19,7 +19,8 @@ only the board.
 | 5c | `steps/step05c_mic_object.py` | **follow-up:** what are those mic objects? Calls nothing — read-only | **`cyberpi.mic_o` is an `i2s_mic`** with `init`/`deinit`, `record_start`/`record_stop`/`record_with_time`, `record_get/set_status`, `play_recording`, and **`get_recording_data`**. Free heap 1,273,632 B = 26.5 s of 24 kHz PCM. `audio.file_handle` is `None` — dead end |
 | 5d | `steps/step05d_raw_capture.py` | **gate:** does `get_recording_data()` return real audio, and can it be read mid-recording? | Driver alive: `record_get_status()` → `0`, `record_with_time(2)` → `None`. `get_recording_data()` needs **one argument** — the step called it with none. Superseded by 5e |
 | 5e | `steps/step05e_signature.py` | **gate:** find the argument `get_recording_data()` wants, then pull raw samples | **`get_recording_data(x)` → `[b'RIFF…WAVE…', ?]`** — a real WAV stream, 0x3e80 = 16000 Hz in the header. `record_start`/`record_stop` take 0 args and work; `play_recording` wants 2. Not readinto; the argument appears ignored. Payload length still unknown |
-| 5f | `steps/step05f_unpack.py` | **gate:** how many audio bytes are behind that header, and do repeated calls stream? | |
+| 5f | `steps/step05f_unpack.py` | **gate:** how many audio bytes are behind that header, and do repeated calls stream? | **RAW CAPTURE CONFIRMED.** `[48-byte header, 32000 bytes PCM]` for a 2 s recording = 16,000 B/s. Header: 16000 Hz, 8 bits/sample → **16 kHz 8-bit mono, 128 kbps**. Argument ignored; repeated calls return the same buffer, no cursor |
+| 5g | `steps/step05g_stream_and_output.py` | does the buffer grow *during* recording, and is there an `mic_o` equivalent for output? | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
 | 5b | `steps/step05b_gate_screen.py` | **replaces 5 and 6** when the serial console is unreadable — same findings, rendered on the CyberPi screen | |
 | 7 | `steps/step07_wifi.py` | Wi-Fi connects | |
@@ -70,10 +71,9 @@ get summarized in the service's terminal — no transcribing from a serial conso
 
 Everything else is supporting evidence. Stage 1 lives or dies on:
 
-- **Raw capture — step 5d.** Can we get microphone audio out of CyberOS as bytes? Makeblock's
-  published API says no, but the firmware exposes its raw I2S microphone driver as
-  `cyberpi.mic_o`, including `get_recording_data()`. Step 5d finds out whether that returns real
-  samples. **This looks likely to pass**, which was not the expectation going in.
+- **Raw capture — ANSWERED YES.** `cyberpi.mic_o.get_recording_data(x)` returns
+  `[48-byte header, PCM bytes]` at **16 kHz 8-bit mono**, 128 kbps. Makeblock's published API says
+  this is impossible; the firmware does it anyway. Rocky can hear, on stock CyberOS.
 - **Step 10 — raw playback.** Can bytes we generate reach the speaker? Still open, and now the
   binding constraint. Worth checking whether an `i2s`-flavoured *output* object exists too, by the
   same trick that found `mic_o`.
