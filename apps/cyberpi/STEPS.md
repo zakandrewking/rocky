@@ -20,7 +20,9 @@ only the board.
 | 5d | `steps/step05d_raw_capture.py` | **gate:** does `get_recording_data()` return real audio, and can it be read mid-recording? | Driver alive: `record_get_status()` → `0`, `record_with_time(2)` → `None`. `get_recording_data()` needs **one argument** — the step called it with none. Superseded by 5e |
 | 5e | `steps/step05e_signature.py` | **gate:** find the argument `get_recording_data()` wants, then pull raw samples | **`get_recording_data(x)` → `[b'RIFF…WAVE…', ?]`** — a real WAV stream, 0x3e80 = 16000 Hz in the header. `record_start`/`record_stop` take 0 args and work; `play_recording` wants 2. Not readinto; the argument appears ignored. Payload length still unknown |
 | 5f | `steps/step05f_unpack.py` | **gate:** how many audio bytes are behind that header, and do repeated calls stream? | **RAW CAPTURE CONFIRMED.** `[48-byte header, 32000 bytes PCM]` for a 2 s recording = 16,000 B/s. Header: 16000 Hz, 8 bits/sample → **16 kHz 8-bit mono, 128 kbps**. Argument ignored; repeated calls return the same buffer, no cursor |
-| 5g | `steps/step05g_stream_and_output.py` | does the buffer grow *during* recording, and is there an `mic_o` equivalent for output? | |
+| 5g | `steps/step05g_stream_and_output.py` | does the buffer grow *during* recording, and is there an `mic_o` equivalent for output? | **No length growth**: constant 160,000 B during recording, 49,664 B after stop. 160,000 ÷ 16,000 B/s = a preallocated **10-second max recording**. `dir(cyberpi)` = 175 members; output candidates `speaker`, `SPEAKER`, `mp3_music_o`, `mp3_music_t`, `speech`. Part 3 truncated by the console |
+| 5h | `steps/step05h_output.py` | **gate:** does any output object accept raw audio? Read-only | |
+| 5i | `steps/step05i_fill_frontier.py` | does the buffer fill *progressively*, giving us a cursor to stream from? | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
 | 5b | `steps/step05b_gate_screen.py` | **replaces 5 and 6** when the serial console is unreadable — same findings, rendered on the CyberPi screen | |
 | 7 | `steps/step07_wifi.py` | Wi-Fi connects | |
