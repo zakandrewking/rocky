@@ -1,7 +1,18 @@
 # CyberOS API surface (audio, network, display)
 
-This is the API inventory Stage 1 depends on. It is desk research, not hardware measurement —
-`apps/cyberpi/probe/rocky_probe.py` is what turns it into a measured answer.
+This is the API inventory Stage 1 depends on. It is desk research, not hardware measurement.
+
+> **Superseded in part by hardware, 2026-07-27.** Running step 5 on a real CyberPi
+> (MicroPython `44.01.008-16-g7e26a976-dirty`, 2025-11-14, ESP32) showed the published package
+> is a **subset** of the firmware, not a description of it. The board reports **33** members on
+> `cyberpi.audio` where the package documents about 20, and it exposes `cyberpi.mic`,
+> `cyberpi.microphone`, a third `mic_o…` member, and `cyberpi.audio.file_handle` — none of which
+> appear in the package at all.
+>
+> So the conclusion below — "no raw sample input" — is **not established**. It was inferred from
+> an incomplete source. `steps/step05c_mic_object.py` is the follow-up that inspects those objects.
+> Treat everything past this point as documentation of what Makeblock *publishes*, which is useful
+> and still true, but not as a description of what the hardware can do.
 
 ## Where these names come from
 

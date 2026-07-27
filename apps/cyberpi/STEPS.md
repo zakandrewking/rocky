@@ -15,7 +15,8 @@ only the board.
 | 2 | `steps/step02_speaker.py` | speaker plays tones and presets, volume settable | **PASS** |
 | 3 | `steps/step03_record.py` | mic records and plays back; slot is single-buffered | **PASS** — ran; single-buffer behaviour still to be confirmed |
 | 4 | `steps/step04_loudness.py` | envelope polling rate — is VAD viable? | **PASS** — ran; Hz figures still to be recorded |
-| 5 | `steps/step05_introspect.py` | **gate:** is there any raw capture path? | |
+| 5 | `steps/step05_introspect.py` | **gate:** is there any raw capture path? | **Found undocumented `cyberpi.mic`, `cyberpi.microphone`, `mic_o…`, `audio.file_handle`.** `record()` takes no path. `play(path)` failed on an internal firmware bug, not a clean rejection. Board crashed before the filesystem listing |
+| 5c | `steps/step05c_mic_object.py` | **follow-up:** what are those mic objects? Calls nothing — read-only | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
 | 5b | `steps/step05b_gate_screen.py` | **replaces 5 and 6** when the serial console is unreadable — same findings, rendered on the CyberPi screen | |
 | 7 | `steps/step07_wifi.py` | Wi-Fi connects | |
