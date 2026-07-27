@@ -205,12 +205,21 @@ that cannot speak would be wasted work.
   microphone driver as `cyberpi.mic_o` (type `i2s_mic`) with `get_recording_data`, `record_start`,
   `record_stop`, `record_with_time`, and `init`/`deinit` - none of it documented. Free heap is
   1.27 MB, about 26 s of 24 kHz PCM, so buffering is not a constraint.
-- [ ] **Run step 5d**: does `get_recording_data()` return real samples, at what rate and width, and
-  can it be read *during* a recording? If yes, raw capture works on unmodified CyberOS.
-- [ ] Hunt for an I2S *output* object the same way `mic_o` was found. Playback is now the binding
-  constraint on Stage 1, and the published API is known to be incomplete.
-- [ ] Answer the decision gate: can CyberOS carry a realtime conversation? Capture now looks
-  likely; playback (step 10, plus any I2S output path) decides it.
+- [x] Confirm raw capture: `cyberpi.mic_o.get_recording_data(x)` returns `[48-byte header, PCM]` at
+  16 kHz 8-bit mono, 10-second maximum buffer.
+- [x] Find the output path the same way `mic_o` was found: `cyberpi.mp3_music_o.play_raw_data(data,
+  rate)` plays arbitrary bytes, confirmed audible.
+- [x] **DECISION GATE ANSWERED: YES.** CyberOS provides low-level microphone and speaker access.
+  Per the plan, stop here architecturally. **Stage 2 (native ESP32 firmware) is cancelled** - no
+  reflashing, no restore scripts, no ES8218E bring-up, and the GPL-3.0 question that came with
+  Makeblock's Arduino library no longer arises.
+- [ ] Establish the playback shape (step 5l): blocking or async, re-feedable, chunkable. Chunked
+  feeding decides whether replies can start before they finish downloading.
+- [ ] Establish whether capture can stream (step 5i): the buffer exposes no read cursor, so unless
+  it fills progressively, Rocky is turn-based rather than barge-in capable.
+- [ ] Run the networking steps 6-12, none of which have touched hardware yet.
+- [ ] Then build the Stage-1 deliverable proper: conversation loop, state-driven screen UI with a
+  tiny Rocky face, and packaging into a program slot that exits back to normal CyberOS.
 - [ ] If yes: build the conversation loop, the state-driven screen UI with a tiny Rocky face, and
   package it into a CyberPi program slot that exits back to normal CyberOS.
 - [ ] If no: start Stage 2 native firmware, and write the one-command restore script before the

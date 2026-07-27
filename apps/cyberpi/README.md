@@ -17,24 +17,27 @@ Stage 1 is a feasibility spike, not an implementation. The whole thing turns on 
 > realtime conversation?
 
 Desk research said probably not: Makeblock's published API has no raw sample input and no
-arbitrary sample output. **Hardware says otherwise.** The firmware exposes its raw I2S microphone
-driver directly in Python —
+arbitrary sample output. **Hardware says otherwise, on both counts.**
 
+```python
+# hear
+cyberpi.mic_o.get_recording_data(0)      # -> [48-byte header, PCM]
+                                         #    16 kHz, 8-bit, mono, 10 s max
+
+# speak
+cyberpi.mp3_music_o.play_raw_data(pcm, 16000)   # audible. arbitrary bytes.
 ```
-cyberpi.mic_o  (type i2s_mic)
-    init / deinit
-    record_start / record_stop / record_with_time
-    record_get_status / record_set_status
-    get_recording_data          <-- raw samples
-    play_recording
-```
 
-— none of which appears in the published package, which turns out to be a *subset* of the
-firmware rather than a description of it. Free heap is 1.27 MB, about 26 seconds of 24 kHz PCM,
-so buffering was never the constraint either.
+Neither object appears in Makeblock's published API package, which turns out to be a *subset* of
+the firmware rather than a description of it. Both were found by dumping `dir(cyberpi)` on a real
+board and noticing undocumented names.
 
-Capture now looks likely to work on unmodified CyberOS. Playback is the open question and the
-binding constraint. Steps 1–4 and 5c have run on hardware; see `STEPS.md` for what each one found.
+**So the decision gate is answered: CyberOS can carry the conversation, and Stage 2 — native ESP32
+firmware — is unnecessary.** No reflashing, no recovery scripts, no risk to the robot. Rocky
+becomes a program in a CyberPi slot.
+
+What remains open is how *good* it can be: latency, whether audio can stream rather than move in
+whole turns, and networking under load. See `STEPS.md`.
 
 ## Getting started
 
@@ -44,12 +47,11 @@ pnpm device-api      # needed from step 8 onward
 
 Then open `STEPS.md` and work down the list. Steps 1–7 need only the CyberPi and a USB cable.
 
-## What is deliberately not here
+## What is deliberately not here — yet
 
-No conversation loop, no personality on the robot, no animated face, no motor control. Those are
-the plan's later Stage-1 items and they are all gated on the audio answer. Building a screen UI for
-a robot that turns out to be unable to speak would be wasted work.
+No conversation loop, no personality on the robot, no animated face, no motor control. Those were
+gated on the audio answer, which has now come back yes, so they are next rather than speculative.
 
-The backend is the exception, and it is in [`services/device-api`](../../services/device-api). It
-is the same service either way — Stage 2 needs it too — so it is worth having early. It keeps the
-OpenAI key off the robot and hands out short-lived credentials instead.
+The backend already exists in [`services/device-api`](../../services/device-api): it keeps the
+OpenAI key off the robot, hands out short-lived credentials, and decodes the CyberPi's audio format
+into playable WAVs.

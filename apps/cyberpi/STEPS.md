@@ -22,7 +22,8 @@ only the board.
 | 5f | `steps/step05f_unpack.py` | **gate:** how many audio bytes are behind that header, and do repeated calls stream? | **RAW CAPTURE CONFIRMED.** `[48-byte header, 32000 bytes PCM]` for a 2 s recording = 16,000 B/s. Header: 16000 Hz, 8 bits/sample → **16 kHz 8-bit mono, 128 kbps**. Argument ignored; repeated calls return the same buffer, no cursor |
 | 5g | `steps/step05g_stream_and_output.py` | does the buffer grow *during* recording, and is there an `mic_o` equivalent for output? | **No length growth**: constant 160,000 B during recording, 49,664 B after stop. 160,000 ÷ 16,000 B/s = a preallocated **10-second max recording**. `dir(cyberpi)` = 175 members; output candidates `speaker`, `SPEAKER`, `mp3_music_o`, `mp3_music_t`, `speech`. Part 3 truncated by the console |
 | 5h | `steps/step05h_output.py` | **gate:** does any output object accept raw audio? Read-only | **FOUND IT.** `cyberpi.mp3_music_o` (type `mp3_music`) has **`play_raw_data`**, **`PLAYER_MODE_RAW`**, `init`/`deinit`, and `PLAY_STATUS_PLAYING_CONTINUE`. `SPEAKER` is just preset sound names; `speech` is the cloud STT layer |
-| 5k | `steps/step05k_raw_playback.py` | **THE GATE:** does `play_raw_data()` actually make a sound? | |
+| 5k | `steps/step05k_raw_playback.py` | **THE GATE:** does `play_raw_data()` actually make a sound? | **YES — audible tone.** `play_raw_data(data, rate)` is the working form; `init()` takes no arguments. `PLAYER_MODE_RAW=2`, `PLAY_STATUS_PLAYING_CONTINUE=3`. Tests 2–3 failed on a bug in the step (kept using the one-arg form), not on the hardware |
+| 5l | `steps/step05l_playback_shape.py` | is playback blocking, re-feedable, chunkable? Plus the mic echo 5k missed | |
 | 5i | `steps/step05i_fill_frontier.py` | does the buffer fill *progressively*, giving us a cursor to stream from? | |
 | 5j | `steps/step05j_capture_upload.py` | **milestone:** mic → network → server. Uploads a real recording so you can *listen* to it | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
@@ -78,9 +79,8 @@ Everything else is supporting evidence. Stage 1 lives or dies on:
 - **Raw capture — ANSWERED YES.** `cyberpi.mic_o.get_recording_data(x)` returns
   `[48-byte header, PCM bytes]` at **16 kHz 8-bit mono**, 128 kbps. Makeblock's published API says
   this is impossible; the firmware does it anyway. Rocky can hear, on stock CyberOS.
-- **Raw playback — a path exists, unconfirmed.** `cyberpi.mp3_music_o.play_raw_data()` with
-  `PLAYER_MODE_RAW`, found by the same `dir()` trick that found `mic_o`. Step 5k calls it. If it
-  makes a sound, both halves of the gate are open and Stage 2 is unnecessary.
+- **Raw playback — ANSWERED YES.** `cyberpi.mp3_music_o.play_raw_data(data, rate)` produced an
+  audible tone from bytes generated in Python. Found by the same `dir()` trick that found `mic_o`.
 - **Step 6 — sockets.** Without `socket`/`ssl`, the robot cannot talk to Rocky's backend at all,
   and the only remaining path is Makeblock's cloud redirects.
 
@@ -94,24 +94,40 @@ members on the board versus about 20 in the package, plus an entire undocumented
 "CyberOS cannot do X" claim derived from that package is unproven until a `dir()` on real hardware
 says so. That is what these steps are for.
 
-## Verdict
+## Verdict: **CyberOS can do it. Stage 2 is not needed.**
 
-Fill this in once steps 1–12 have run.
+- **Raw microphone capture: YES.** `cyberpi.mic_o.get_recording_data(x)` → `[48-byte header,
+  PCM]`, 16 kHz 8-bit mono, 10-second maximum.
+- **Raw speaker playback: YES.** `cyberpi.mp3_music_o.play_raw_data(data, rate)` plays bytes
+  generated in Python. Confirmed audible.
+- Sockets / HTTPS: _pending (steps 6–8)_
+- Sustained traffic during audio: _pending (step 11)_
 
-- Raw microphone capture: _pending_
-- Raw speaker playback: _pending_
-- Sockets / HTTPS: _pending_
-- Sustained traffic during audio: _pending_
-- **Decision gate:** _pending_
+Both audio halves work on **unmodified Makeblock firmware**, through an API Makeblock does not
+document. The plan's decision gate says: *"If yes, stop here architecturally. CyberOS is the
+better solution."* That is the answer.
 
-### If the answer is no
+### What this cancels
 
-Two options, and they are not equally good:
+**Stage 2 — native ESP32 firmware — is unnecessary.** No reflashing, no `pnpm cyberpi:flash-rocky`
+or `cyberpi:restore`, no ES8218E bring-up, no risk to the family's robot. The board keeps its
+Makeblock identity and Rocky becomes a program in a slot, exactly as the plan hoped.
 
-1. **Stage 2, native firmware.** Full control, realtime conversation, robot motion. The plan
-   already describes it, and no Stage-1 work is wasted — `services/device-api` is the same
-   backend either way.
-2. **Turn-based cloud-redirect Rocky.** Point `cyberpi.cloud.recognition_set_url` and
-   `tts_set_url` at device-api and accept a record → upload → think → synthesize → play cycle
-   with no barge-in. Runs on unmodified firmware. Worth prototyping only if reflashing turns out
-   to be unacceptable, and the endpoint protocol would have to be reverse-engineered first.
+The turn-based cloud-redirect fallback (`cloud.recognition_set_url` / `tts_set_url`) is also
+unnecessary. It was the consolation prize; we do not need it.
+
+The ES8218E research in [`docs/upstream-sources.md`](docs/upstream-sources.md) is now reference
+material rather than a dependency — which also retires the GPL-3.0 licence question that came with
+building on Makeblock's Arduino library.
+
+### What remains genuinely open
+
+Not whether Rocky can talk here, but how *well*:
+
+- **Latency and streaming.** Step 5g showed the capture buffer exposes no read cursor, so audio
+  cannot be shipped while the person is still speaking unless step 5i finds progressive fill.
+  Step 5l asks the same of playback. Expect turn-based first — talk, pause, reply — rather than
+  barge-in.
+- **Quality.** 16 kHz 8-bit is telephone-grade. Fine for speech recognition, audibly grainy for
+  Rocky's voice.
+- **Networking under load** (steps 6–12), still entirely unmeasured.
