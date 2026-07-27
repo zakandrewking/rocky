@@ -50,7 +50,8 @@ If mBlock warns you when switching, accept it.
 1. Open `apps/cyberpi/steps/step01_hello.py` and copy the whole file.
 2. Paste it into the mBlock Python editor, replacing whatever is there.
 3. Pick a program slot. **Uploading overwrites whatever is in the slot you choose**, so pick an
-   empty one, or one holding a demo you do not mind losing.
+   empty one, or one holding a demo you do not mind losing. Left alone, an upload lands in
+   Program 1 under the name `main` — see [naming](#naming-programs-and-the-chinese-characters-in-my-programs).
 4. Click **Upload** and wait. The first upload of a session takes longer than later ones.
 
 ### What you should see
@@ -68,6 +69,40 @@ Screen text comes from `cyberpi.console.println()`. The `print()` lines go over 
 terminal/console panel, so keep the cable attached to read them. Later steps print far more than
 they display — the CyberPi screen is 128×128 and cannot show a module list — so get comfortable
 finding that panel now.
+
+## Naming programs, and the Chinese characters in My Programs
+
+Three things about the My Programs list, from Makeblock's own docs:
+
+- An uploaded program is named **`main`** by default, and overwrites **Program 1** unless you pick
+  another slot at upload time.
+- The name comes from the **project name in the editor**, so you rename the project *before*
+  uploading. There is no way to rename a slot from the device afterwards.
+- **Names can only be set in the mBlock 5 _web_ version** (<https://mblock.cc>). The desktop app
+  cannot do it. That is a stated limitation, not something to configure around.
+
+Which leaves an awkward trade-off, since the desktop app is what this guide recommends for
+uploading: use desktop for the steps, and switch to the web editor for the uploads whose names you
+actually care about. That mainly means the eventual Rocky program, not the throwaway probes.
+
+### If slots show Chinese characters
+
+The documented default is `main`, so Chinese names mean something else is going on. Two likely
+causes, in order:
+
+1. **They are untouched factory demos.** CyberPi ships with demo programs whose names render in
+   Chinese on some firmware builds. If the Chinese entries are slots you never uploaded to, that is
+   all this is — overwrite them or leave them alone.
+2. **mBlock's UI language is set to Chinese**, so a new project's default name is a Chinese string
+   such as 未命名 ("unnamed"), and that gets sent as the program name. Set mBlock's language to
+   English and start a fresh project.
+
+Cause 2 is a hypothesis rather than something confirmed against Makeblock's documentation — check
+it first because it is quick, but do not be surprised if the answer turns out to be cause 1.
+
+This matters more later than it does now. Stage 1's final item is packaging Rocky into a program
+slot such that exiting returns you to ordinary CyberOS, and that only works cleanly if the slots
+are legible.
 
 ## Getting your board back to normal
 
