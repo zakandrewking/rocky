@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    // Deliberately off: src/session.ts imports Rocky's persona straight from
+    // the desktop app, whose package.json has no "type": "module". Node
+    // reparses that file as ESM at runtime, but verbatimModuleSyntax would
+    // reject it at compile time. Drops away once packages/rocky-core exists.
+    "noEmit": true,
+    "types": ["node"],
+    "lib": ["ES2023"]
+  },
+  "include": ["src/**/*.ts"]
+}

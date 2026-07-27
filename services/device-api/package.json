@@ -1,0 +1,18 @@
+{
+  "name": "@rocky/device-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Authenticated backend for Rocky's CyberPi robot body",
+  "type": "module",
+  "scripts": {
+    "dev": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=../../.env src/server.ts",
+    "start": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file-if-exists=../../.env src/server.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
