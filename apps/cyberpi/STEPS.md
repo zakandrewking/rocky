@@ -12,9 +12,9 @@ only the board.
 | # | File | Proves | Result |
 | --- | --- | --- | --- |
 | 1 | `steps/step01_hello.py` | upload works, screen draws, console readable | **PASS** — uploaded to Program 1 |
-| 2 | `steps/step02_speaker.py` | speaker plays tones and presets, volume settable | |
-| 3 | `steps/step03_record.py` | mic records and plays back; slot is single-buffered | |
-| 4 | `steps/step04_loudness.py` | envelope polling rate — is VAD viable? | |
+| 2 | `steps/step02_speaker.py` | speaker plays tones and presets, volume settable | **PASS** |
+| 3 | `steps/step03_record.py` | mic records and plays back; slot is single-buffered | **PASS** — ran; single-buffer behaviour still to be confirmed |
+| 4 | `steps/step04_loudness.py` | envelope polling rate — is VAD viable? | **PASS** — ran; Hz figures still to be recorded |
 | 5 | `steps/step05_introspect.py` | **gate:** is there any raw capture path? | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
 | 7 | `steps/step07_wifi.py` | Wi-Fi connects | |
