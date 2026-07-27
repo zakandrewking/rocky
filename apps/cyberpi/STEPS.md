@@ -21,7 +21,8 @@ only the board.
 | 5e | `steps/step05e_signature.py` | **gate:** find the argument `get_recording_data()` wants, then pull raw samples | **`get_recording_data(x)` → `[b'RIFF…WAVE…', ?]`** — a real WAV stream, 0x3e80 = 16000 Hz in the header. `record_start`/`record_stop` take 0 args and work; `play_recording` wants 2. Not readinto; the argument appears ignored. Payload length still unknown |
 | 5f | `steps/step05f_unpack.py` | **gate:** how many audio bytes are behind that header, and do repeated calls stream? | **RAW CAPTURE CONFIRMED.** `[48-byte header, 32000 bytes PCM]` for a 2 s recording = 16,000 B/s. Header: 16000 Hz, 8 bits/sample → **16 kHz 8-bit mono, 128 kbps**. Argument ignored; repeated calls return the same buffer, no cursor |
 | 5g | `steps/step05g_stream_and_output.py` | does the buffer grow *during* recording, and is there an `mic_o` equivalent for output? | **No length growth**: constant 160,000 B during recording, 49,664 B after stop. 160,000 ÷ 16,000 B/s = a preallocated **10-second max recording**. `dir(cyberpi)` = 175 members; output candidates `speaker`, `SPEAKER`, `mp3_music_o`, `mp3_music_t`, `speech`. Part 3 truncated by the console |
-| 5h | `steps/step05h_output.py` | **gate:** does any output object accept raw audio? Read-only | |
+| 5h | `steps/step05h_output.py` | **gate:** does any output object accept raw audio? Read-only | **FOUND IT.** `cyberpi.mp3_music_o` (type `mp3_music`) has **`play_raw_data`**, **`PLAYER_MODE_RAW`**, `init`/`deinit`, and `PLAY_STATUS_PLAYING_CONTINUE`. `SPEAKER` is just preset sound names; `speech` is the cloud STT layer |
+| 5k | `steps/step05k_raw_playback.py` | **THE GATE:** does `play_raw_data()` actually make a sound? | |
 | 5i | `steps/step05i_fill_frontier.py` | does the buffer fill *progressively*, giving us a cursor to stream from? | |
 | 5j | `steps/step05j_capture_upload.py` | **milestone:** mic → network → server. Uploads a real recording so you can *listen* to it | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
@@ -77,9 +78,9 @@ Everything else is supporting evidence. Stage 1 lives or dies on:
 - **Raw capture — ANSWERED YES.** `cyberpi.mic_o.get_recording_data(x)` returns
   `[48-byte header, PCM bytes]` at **16 kHz 8-bit mono**, 128 kbps. Makeblock's published API says
   this is impossible; the firmware does it anyway. Rocky can hear, on stock CyberOS.
-- **Step 10 — raw playback.** Can bytes we generate reach the speaker? Still open, and now the
-  binding constraint. Worth checking whether an `i2s`-flavoured *output* object exists too, by the
-  same trick that found `mic_o`.
+- **Raw playback — a path exists, unconfirmed.** `cyberpi.mp3_music_o.play_raw_data()` with
+  `PLAYER_MODE_RAW`, found by the same `dir()` trick that found `mic_o`. Step 5k calls it. If it
+  makes a sound, both halves of the gate are open and Stage 2 is unnecessary.
 - **Step 6 — sockets.** Without `socket`/`ssl`, the robot cannot talk to Rocky's backend at all,
   and the only remaining path is Makeblock's cloud redirects.
 
