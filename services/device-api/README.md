@@ -35,6 +35,7 @@ Generate a device token with `openssl rand -hex 24`.
 | `GET /v1/health` | open | reachability and latency floor (step 8) |
 | `POST /v1/probe/echo` | probe | uplink throughput measurement (step 9) |
 | `GET /v1/probe/audio.wav` | probe | a generated tone the robot tries to play (step 10) |
+| `POST /v1/probe/capture` | probe | receives a raw microphone capture and writes a playable WAV (step 5j) |
 | `POST /v1/probe/report` | probe | saves step results under `local-data/cyberpi/` |
 | `GET /v1/probe/ws` | open | answers a WebSocket upgrade with 101 (step 12) |
 | `POST /v1/device/session` | **required** | mints an ephemeral OpenAI Realtime client secret |
@@ -42,6 +43,21 @@ Generate a device token with `openssl rand -hex 24`.
 "probe" auth means: open while `ROCKY_DEVICE_TOKENS` is unset, so the first hardware run needs no
 setup, and locked the moment any token exists. `/v1/device/session` is never open, because it
 spends money.
+
+## Decoding CyberPi audio
+
+`src/makeblockAudio.ts` converts what the robot's microphone produces into something a player
+accepts. The hardware returns a 48-byte RIFF-flavoured header that is **not** valid WAV — its RIFF
+size is 0 and it has no `data` chunk — followed by 16 kHz 8-bit mono PCM.
+
+The decoder rebuilds a real 16-bit WAV, and infers the sign convention rather than assuming it: the
+firmware never says whether 8-bit means unsigned (silence at 128) or signed (silence at 0), and
+guessing wrong turns speech into buzzing. Averaging cannot tell them apart, because two's-complement
+negatives wrap to high byte values and land the mean near 128 either way. Smoothness can — the wrong
+reading puts a full-scale discontinuity at every zero crossing.
+
+Captures land in `local-data/cyberpi/` as both `.wav` and the original `.raw`, so a conversion that
+turns out wrong can be redone without another trip to the robot.
 
 ## Persona
 

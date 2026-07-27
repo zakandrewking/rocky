@@ -1,4 +1,5 @@
 import { authenticate, type DeviceRegistry } from "./auth.ts";
+import { decodeCapture, type DecodedCapture } from "./makeblockAudio.ts";
 import { isProbeReport, type ProbeReport } from "./probeReport.ts";
 import { mintDeviceSession, type DeviceSessionOptions, type FetchLike } from "./session.ts";
 import { generateTone } from "./wav.ts";
@@ -8,6 +9,12 @@ export interface DeviceRequest {
   readonly path: string;
   readonly headers: Readonly<Record<string, string | undefined>>;
   readonly body: string;
+  /**
+   * The raw request bytes. Audio uploads are binary, and utf8-decoding them
+   * would corrupt every byte above 0x7f — which is half of an 8-bit PCM
+   * waveform.
+   */
+  readonly bytes?: Buffer;
 }
 
 export interface DeviceResponse {
@@ -22,6 +29,7 @@ export interface RouterDeps {
   readonly session?: DeviceSessionOptions;
   readonly fetchImpl?: FetchLike;
   readonly onProbeReport?: (report: ProbeReport) => Promise<void> | void;
+  readonly onCapture?: (decoded: DecodedCapture, raw: Buffer) => Promise<void> | void;
   readonly now?: () => Date;
 }
 
@@ -71,6 +79,27 @@ export async function handleRequest(request: DeviceRequest, deps: RouterDeps): P
       if (!isProbeReport(parsed)) return json(400, { error: "not a rocky-cyberpi-stage1 probe report" });
       await deps.onProbeReport?.(parsed);
       return json(200, { ok: true, checks: parsed.checks?.length ?? 0 });
+    }
+
+    case "POST /v1/probe/capture": {
+      if (!probeAuthOk) return json(401, { error: "unauthorized" });
+
+      // Binary in, so use the raw bytes rather than the utf8 view.
+      const raw = request.bytes ?? Buffer.from(request.body, "binary");
+      if (raw.length === 0) return json(400, { error: "empty capture" });
+
+      const decoded = decodeCapture(raw);
+      await deps.onCapture?.(decoded, raw);
+      return json(200, {
+        ok: true,
+        bytes: raw.length,
+        samples: decoded.sampleCount,
+        seconds: Number(decoded.durationSeconds.toFixed(3)),
+        sample_rate: decoded.header.sampleRate || null,
+        unsigned: decoded.unsigned,
+        peak: Number(decoded.peak.toFixed(4)),
+        silent: decoded.peak < 0.02,
+      });
     }
 
     case "POST /v1/device/session": {

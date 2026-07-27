@@ -1,8 +1,10 @@
+import { mkdir, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseDeviceTokens } from "./auth.ts";
+import { describeCapture } from "./makeblockAudio.ts";
 import { saveProbeReport, summarizeProbeReport, type ProbeReport } from "./probeReport.ts";
 import { handleRequest } from "./router.ts";
 import { DEFAULT_MODEL, DEFAULT_VOICE } from "./session.ts";
@@ -14,7 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../../..");
 const reportDirectory = path.join(repoRoot, "local-data", "cyberpi");
 
-function readBody(request: http.IncomingMessage): Promise<string> {
+function readBody(request: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -27,7 +29,7 @@ function readBody(request: http.IncomingMessage): Promise<string> {
       }
       chunks.push(chunk);
     });
-    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("end", () => resolve(Buffer.concat(chunks)));
     request.on("error", reject);
   });
 }
@@ -37,9 +39,9 @@ export function createServer(): http.Server {
   const apiKey = process.env["OPENAI_API_KEY"];
 
   const server = http.createServer(async (request, response) => {
-    let body = "";
+    let bytes: Buffer = Buffer.alloc(0);
     try {
-      body = await readBody(request);
+      bytes = await readBody(request);
     } catch {
       response.writeHead(413, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ error: "request body too large" }));
@@ -51,7 +53,8 @@ export function createServer(): http.Server {
         method: request.method ?? "GET",
         path: request.url ?? "/",
         headers: request.headers as Record<string, string | undefined>,
-        body,
+        body: bytes.toString("utf8"),
+        bytes,
       },
       {
         registry,
@@ -63,6 +66,17 @@ export function createServer(): http.Server {
         onProbeReport: async (report: ProbeReport) => {
           const savedTo = await saveProbeReport(reportDirectory, report);
           console.log(`\n${summarizeProbeReport(report)}\nSaved to ${savedTo}\n`);
+        },
+        onCapture: async (decoded, raw) => {
+          await mkdir(reportDirectory, { recursive: true });
+          const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+          const wavPath = path.join(reportDirectory, `capture-${stamp}.wav`);
+          const rawPath = path.join(reportDirectory, `capture-${stamp}.raw`);
+          // Keep the original alongside the WAV: if the conversion turns out
+          // wrong, the bytes can be re-decoded without another robot trip.
+          await writeFile(wavPath, decoded.wav);
+          await writeFile(rawPath, raw);
+          console.log(`\n${describeCapture(decoded)}\nPlayable WAV: ${wavPath}\n`);
         },
       },
     );

@@ -23,6 +23,7 @@ only the board.
 | 5g | `steps/step05g_stream_and_output.py` | does the buffer grow *during* recording, and is there an `mic_o` equivalent for output? | **No length growth**: constant 160,000 B during recording, 49,664 B after stop. 160,000 ÷ 16,000 B/s = a preallocated **10-second max recording**. `dir(cyberpi)` = 175 members; output candidates `speaker`, `SPEAKER`, `mp3_music_o`, `mp3_music_t`, `speech`. Part 3 truncated by the console |
 | 5h | `steps/step05h_output.py` | **gate:** does any output object accept raw audio? Read-only | |
 | 5i | `steps/step05i_fill_frontier.py` | does the buffer fill *progressively*, giving us a cursor to stream from? | |
+| 5j | `steps/step05j_capture_upload.py` | **milestone:** mic → network → server. Uploads a real recording so you can *listen* to it | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
 | 5b | `steps/step05b_gate_screen.py` | **replaces 5 and 6** when the serial console is unreadable — same findings, rendered on the CyberPi screen | |
 | 7 | `steps/step07_wifi.py` | Wi-Fi connects | |
