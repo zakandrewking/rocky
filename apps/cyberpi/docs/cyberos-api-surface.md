@@ -10,9 +10,36 @@ This is the API inventory Stage 1 depends on. It is desk research, not hardware 
 > appear in the package at all.
 >
 > So the conclusion below — "no raw sample input" — is **not established**. It was inferred from
-> an incomplete source. `steps/step05c_mic_object.py` is the follow-up that inspects those objects.
-> Treat everything past this point as documentation of what Makeblock *publishes*, which is useful
-> and still true, but not as a description of what the hardware can do.
+> an incomplete source. Treat everything past this point as documentation of what Makeblock
+> *publishes*, which is useful and still true, but not as a description of what the hardware can do.
+
+## What the firmware actually exposes (step 5c)
+
+`cyberpi.mic_o` is an object of type **`i2s_mic`** — the raw I2S microphone driver, reachable
+straight from Python:
+
+| Member | Why it matters |
+| --- | --- |
+| `get_recording_data()` | **raw sample readout** — the thing the published API has no equivalent of |
+| `record_start()` / `record_stop()` | explicit control, the shape a streaming loop needs |
+| `record_with_time(n)` | fixed-length capture |
+| `record_get_status()` / `record_set_status()` | state inspection |
+| `init()` / `deinit()` | configure the I2S peripheral directly |
+| `play_recording()`, `get_loudness()` | the parts the documented API also has |
+
+Alongside it: `cyberpi.mic` (the class), `cyberpi.microphone` (a `mic` instance wrapping the
+documented `record`/`play_record`/`stop_record`/`get_loudness`), and `cyberpi.audio.file_handle`,
+which is `None` and appears to be a placeholder rather than a way in.
+
+Free heap measured **1,273,632 bytes** — about 26.5 seconds of 24 kHz 16-bit mono PCM. Memory is
+not a constraint on buffering.
+
+Whether `get_recording_data()` returns real samples, at what rate and width, and whether it can be
+read *during* a recording, is what `steps/step05d_raw_capture.py` measures.
+
+**The methodological point:** the board reports 33 members on `cyberpi.audio`; the package
+documents about 20. Anything below that says CyberOS "cannot" do something is a statement about
+the documentation, not the hardware, until a `dir()` on a real board confirms it.
 
 ## Where these names come from
 

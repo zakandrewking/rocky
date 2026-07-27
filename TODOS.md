@@ -200,11 +200,17 @@ that cannot speak would be wasted work.
 - [x] Build `services/device-api`: device-token auth, ephemeral OpenAI client secrets so the key
   never lives on the robot, probe endpoints for steps 8-12, and a report sink that saves results
   under `local-data/cyberpi/`.
-- [ ] **Run steps 1-12 on real hardware** and fill in the results table in `apps/cyberpi/STEPS.md`.
-  Needs an mBot2. Nothing below can be decided without it.
-- [ ] Answer the decision gate: can CyberOS carry a realtime conversation? The two checks that
-  decide it are step 5 (any raw microphone capture path?) and step 10 (can server-generated audio
-  reach the speaker?).
+- [x] Run steps 1-4 on real hardware: toolchain, speaker, microphone, and loudness all work.
+- [x] Discover that the published API is a *subset* of the firmware. The board exposes its raw I2S
+  microphone driver as `cyberpi.mic_o` (type `i2s_mic`) with `get_recording_data`, `record_start`,
+  `record_stop`, `record_with_time`, and `init`/`deinit` - none of it documented. Free heap is
+  1.27 MB, about 26 s of 24 kHz PCM, so buffering is not a constraint.
+- [ ] **Run step 5d**: does `get_recording_data()` return real samples, at what rate and width, and
+  can it be read *during* a recording? If yes, raw capture works on unmodified CyberOS.
+- [ ] Hunt for an I2S *output* object the same way `mic_o` was found. Playback is now the binding
+  constraint on Stage 1, and the published API is known to be incomplete.
+- [ ] Answer the decision gate: can CyberOS carry a realtime conversation? Capture now looks
+  likely; playback (step 10, plus any I2S output path) decides it.
 - [ ] If yes: build the conversation loop, the state-driven screen UI with a tiny Rocky face, and
   package it into a CyberPi program slot that exits back to normal CyberOS.
 - [ ] If no: start Stage 2 native firmware, and write the one-command restore script before the

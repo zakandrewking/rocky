@@ -16,12 +16,25 @@ Stage 1 is a feasibility spike, not an implementation. The whole thing turns on 
 > Can CyberOS provide sufficiently low-level microphone, speaker, and network access for a good
 > realtime conversation?
 
-Desk research says probably not. Makeblock's published API has no raw sample input and no
-arbitrary sample output: `record()` writes to one opaque internal slot, and `play()` takes a preset
-name rather than data. But that is a documented surface, not a measured one, so the twelve steps
-go and check on real hardware before anyone commits to reflashing a robot.
+Desk research said probably not: Makeblock's published API has no raw sample input and no
+arbitrary sample output. **Hardware says otherwise.** The firmware exposes its raw I2S microphone
+driver directly in Python —
 
-Nothing here has run on a board yet. Every result in `STEPS.md` is blank on purpose.
+```
+cyberpi.mic_o  (type i2s_mic)
+    init / deinit
+    record_start / record_stop / record_with_time
+    record_get_status / record_set_status
+    get_recording_data          <-- raw samples
+    play_recording
+```
+
+— none of which appears in the published package, which turns out to be a *subset* of the
+firmware rather than a description of it. Free heap is 1.27 MB, about 26 seconds of 24 kHz PCM,
+so buffering was never the constraint either.
+
+Capture now looks likely to work on unmodified CyberOS. Playback is the open question and the
+binding constraint. Steps 1–4 and 5c have run on hardware; see `STEPS.md` for what each one found.
 
 ## Getting started
 

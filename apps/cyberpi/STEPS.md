@@ -16,7 +16,8 @@ only the board.
 | 3 | `steps/step03_record.py` | mic records and plays back; slot is single-buffered | **PASS** — ran; single-buffer behaviour still to be confirmed |
 | 4 | `steps/step04_loudness.py` | envelope polling rate — is VAD viable? | **PASS** — ran; Hz figures still to be recorded |
 | 5 | `steps/step05_introspect.py` | **gate:** is there any raw capture path? | **Found undocumented `cyberpi.mic`, `cyberpi.microphone`, `mic_o…`, `audio.file_handle`.** `record()` takes no path. `play(path)` failed on an internal firmware bug, not a clean rejection. Board crashed before the filesystem listing |
-| 5c | `steps/step05c_mic_object.py` | **follow-up:** what are those mic objects? Calls nothing — read-only | |
+| 5c | `steps/step05c_mic_object.py` | **follow-up:** what are those mic objects? Calls nothing — read-only | **`cyberpi.mic_o` is an `i2s_mic`** with `init`/`deinit`, `record_start`/`record_stop`/`record_with_time`, `record_get/set_status`, `play_recording`, and **`get_recording_data`**. Free heap 1,273,632 B = 26.5 s of 24 kHz PCM. `audio.file_handle` is `None` — dead end |
+| 5d | `steps/step05d_raw_capture.py` | **gate:** does `get_recording_data()` return real audio, and can it be read mid-recording? | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
 | 5b | `steps/step05b_gate_screen.py` | **replaces 5 and 6** when the serial console is unreadable — same findings, rendered on the CyberPi screen | |
 | 7 | `steps/step07_wifi.py` | Wi-Fi connects | |
@@ -67,15 +68,25 @@ get summarized in the service's terminal — no transcribing from a serial conso
 
 Everything else is supporting evidence. Stage 1 lives or dies on:
 
-- **Step 5 — raw capture.** Can we get microphone audio out of CyberOS as bytes? The documented
-  API says no ([`docs/cyberos-api-surface.md`](docs/cyberos-api-surface.md)); step 5 looks for an
-  undocumented way.
-- **Step 10 — raw playback.** Can bytes we generate reach the speaker? Same story.
+- **Raw capture — step 5d.** Can we get microphone audio out of CyberOS as bytes? Makeblock's
+  published API says no, but the firmware exposes its raw I2S microphone driver as
+  `cyberpi.mic_o`, including `get_recording_data()`. Step 5d finds out whether that returns real
+  samples. **This looks likely to pass**, which was not the expectation going in.
+- **Step 10 — raw playback.** Can bytes we generate reach the speaker? Still open, and now the
+  binding constraint. Worth checking whether an `i2s`-flavoured *output* object exists too, by the
+  same trick that found `mic_o`.
 - **Step 6 — sockets.** Without `socket`/`ssl`, the robot cannot talk to Rocky's backend at all,
   and the only remaining path is Makeblock's cloud redirects.
 
 If capture and playback both fail, CyberOS cannot carry a realtime conversation, and the answer
 to the decision gate is **no** → Stage 2.
+
+### The lesson from steps 5 and 5c
+
+The published API package is a **subset** of the firmware, not a description of it: 33 audio
+members on the board versus about 20 in the package, plus an entire undocumented I2S driver. Every
+"CyberOS cannot do X" claim derived from that package is unproven until a `dir()` on real hardware
+says so. That is what these steps are for.
 
 ## Verdict
 
