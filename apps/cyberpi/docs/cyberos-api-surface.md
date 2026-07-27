@@ -34,8 +34,30 @@ which is `None` and appears to be a placeholder rather than a way in.
 Free heap measured **1,273,632 bytes** — about 26.5 seconds of 24 kHz 16-bit mono PCM. Memory is
 not a constraint on buffering.
 
-Whether `get_recording_data()` returns real samples, at what rate and width, and whether it can be
-read *during* a recording, is what `steps/step05d_raw_capture.py` measures.
+### Measured capture format (steps 5e, 5f)
+
+```
+cyberpi.mic_o.get_recording_data(x) -> [header: 48 bytes, pcm: N bytes]
+```
+
+A 2-second `record_with_time(2)` yields **32,000 bytes** of PCM = 16,000 B/s. The 48-byte header is
+RIFF-flavoured but not standard WAV — `RIFF` size is 0 and there is no `data` chunk — though it is
+self-describing: offset 24 holds the sample rate `16000`, offset 34 holds `8` bits per sample, and
+offset 36 holds the payload length.
+
+| Property | Value |
+| --- | --- |
+| Sample rate | 16 kHz |
+| Width | 8-bit |
+| Channels | mono |
+| Bitrate | 128 kbps |
+| Access | read the whole buffer after recording |
+
+The argument is ignored — 0, 1, 2 and 100 all return the same thing — and repeated calls return the
+same buffer rather than advancing, so there is no read cursor.
+
+Whether the buffer grows *during* an active recording, which is what separates a live conversation
+from a walkie-talkie, is what `steps/step05g_stream_and_output.py` measures.
 
 **The methodological point:** the board reports 33 members on `cyberpi.audio`; the package
 documents about 20. Anything below that says CyberOS "cannot" do something is a statement about
