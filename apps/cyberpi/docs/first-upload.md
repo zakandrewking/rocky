@@ -1,0 +1,110 @@
+# Running your first step on the CyberPi
+
+Setup instructions for step 1. Everything here applies to steps 2–12 as well, so this is a
+one-time read.
+
+Nothing in this process is destructive. You are writing to one of CyberPi's program slots, the
+same thing any mBlock lesson does, and the board's normal menu is always a joystick press away.
+
+## What you need
+
+- a CyberPi (on its own, or plugged into the mBot2 shield — step 1 does not care)
+- a USB-C cable that carries **data**, not just power. A charge-only cable is the single most
+  common reason nothing shows up.
+- mBlock 5, the **desktop** app, from <https://mblock.cc/pages/downloads>
+
+Use the desktop app rather than the web editor. The web version needs a helper service called
+mLink to reach USB devices, which is one more thing to debug on your first run.
+
+## Setup, once
+
+**1. Power on.** Slide the switch on the side of the CyberPi. You should get the CyberOS home
+screen. Connect the USB-C cable to your computer.
+
+**2. Add the device.** In mBlock 5, the device panel starts on Codey by default. Remove it, click
+**+ add**, and pick **CyberPi** from the device library.
+
+**3. Connect.** Click **Connect**, then confirm in the dialog that appears. If mBlock offers a
+firmware update, take it — several of the later steps depend on a current CyberOS.
+
+**4. Switch to Python.** Toggle the editor from Blocks to **Python**.
+
+**5. Switch to Upload mode.** This is the step people miss, and it changes what your program
+actually is:
+
+| | Live mode | Upload mode |
+| --- | --- | --- |
+| Where the code runs | your computer, driving the board over USB | on the CyberPi itself |
+| Language | full Python 3, third-party libraries allowed | MicroPython only |
+| Unplug the cable | program stops | program keeps running |
+| Button | Run | **Upload** |
+
+Every step in this directory must run in **Upload mode**. Live mode drives the board remotely
+through a serial protocol, so it would be measuring your Mac's audio and network stack, not the
+robot's — which is the entire question we are trying to answer.
+
+If mBlock warns you when switching, accept it.
+
+## Running step 1
+
+1. Open `apps/cyberpi/steps/step01_hello.py` and copy the whole file.
+2. Paste it into the mBlock Python editor, replacing whatever is there.
+3. Pick a program slot. **Uploading overwrites whatever is in the slot you choose**, so pick an
+   empty one, or one holding a demo you do not mind losing.
+4. Click **Upload** and wait. The first upload of a session takes longer than later ones.
+
+### What you should see
+
+- the screen clears and shows `Rocky step 1`
+- the five LEDs go green
+- `tick 1` … `tick 5`, one per second, on the screen and in the terminal panel
+- `PASS - toolchain works`, and the LEDs turn blue
+
+If you get all of that, the toolchain works and steps 2 and 3 need nothing further from you.
+
+### Where the printed output goes
+
+Screen text comes from `cyberpi.console.println()`. The `print()` lines go over USB to mBlock's
+terminal/console panel, so keep the cable attached to read them. Later steps print far more than
+they display — the CyberPi screen is 128×128 and cannot show a module list — so get comfortable
+finding that panel now.
+
+## Getting your board back to normal
+
+Your uploaded program runs on boot, which will feel alarming the first time. It is not permanent:
+
+1. Press the **home** button to return to the CyberOS home screen.
+2. Move the joystick up or down to highlight **Switch Program**, and press **B**.
+3. Pick a different program and press **B**. The CyberPi restarts into it.
+
+The board's own firmware is untouched by anything in this directory. Only Stage 2 would replace
+it, and that is a decision the steps have not reached yet.
+
+## When it does not work
+
+| What you see | Likely cause |
+| --- | --- |
+| No device in the connect list | charge-only USB cable, or the board is switched off |
+| Connect fails or the port is busy | another mBlock window, or a serial monitor, is holding the port |
+| Upload button greyed out | still in Live mode, or no device connected |
+| Upload succeeds, nothing happens | the program went to a different slot than the one running — use Switch Program |
+| Screen blank but LEDs work | `cyberpi.console` output can be pushed off-screen; power-cycle and watch from the start |
+| `AttributeError: get_shield` | a known bug in the PyPI `cyberpi` 0.0.7 package used by **Live** mode. Upload mode does not use it — another reason to stay in Upload mode |
+
+If step 1 misbehaves and you want to rule out the file itself, this is the irreducible version:
+
+```python
+import cyberpi
+cyberpi.console.println("hi")
+cyberpi.led.on(0, 60, 0)
+```
+
+Three lines. If that shows nothing, the problem is the connection or the mode, not the code.
+
+## Then what
+
+Record the outcome in [`../STEPS.md`](../STEPS.md) and move to step 2 (speaker) and step 3
+(microphone). Both need only the board and this same setup.
+
+Step 5 is where it gets interesting: that is the one that goes looking for a raw audio path and
+starts actually answering the Stage-1 question.

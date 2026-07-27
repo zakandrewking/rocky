@@ -26,10 +26,14 @@ only the board.
 
 ## Running a step
 
+**First time?** Read [`docs/first-upload.md`](docs/first-upload.md) — it covers the mBlock setup,
+Live vs Upload mode, program slots, and how to get the board back to normal afterwards.
+
 1. Connect the CyberPi over USB, open mBlock 5.
-2. Python editor, mode toggle set to **Upload**.
-3. Paste the file, click Upload.
-4. Read the screen and the serial console. Record the outcome above.
+2. Python editor, mode toggle set to **Upload** (not Live — Live runs the code on your computer
+   and would measure your Mac's audio and network stack instead of the robot's).
+3. Paste the file, pick a program slot, click Upload.
+4. Read the screen and the terminal panel. Record the outcome above.
 
 None of these steps modify firmware or persist anything. Power-cycling the board returns it to
 normal CyberOS.

@@ -5,6 +5,7 @@ Giving Rocky a body: a Makeblock mBot2 you can talk to out loud.
 - [`PLAN.md`](PLAN.md) — the two-stage plan. Stage 1 is Rocky as a normal CyberOS program;
   Stage 2 is native ESP32 firmware if CyberOS cannot carry realtime audio.
 - [`STEPS.md`](STEPS.md) — the Stage-1 checklist. **Start here.**
+- [`docs/first-upload.md`](docs/first-upload.md) — mBlock setup for the first hardware run.
 - [`docs/cyberos-api-surface.md`](docs/cyberos-api-surface.md) — what CyberOS documents it can do.
 - [`steps/`](steps) — twelve small programs, run one at a time on hardware.
 
