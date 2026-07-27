@@ -18,7 +18,8 @@ only the board.
 | 5 | `steps/step05_introspect.py` | **gate:** is there any raw capture path? | **Found undocumented `cyberpi.mic`, `cyberpi.microphone`, `mic_o…`, `audio.file_handle`.** `record()` takes no path. `play(path)` failed on an internal firmware bug, not a clean rejection. Board crashed before the filesystem listing |
 | 5c | `steps/step05c_mic_object.py` | **follow-up:** what are those mic objects? Calls nothing — read-only | **`cyberpi.mic_o` is an `i2s_mic`** with `init`/`deinit`, `record_start`/`record_stop`/`record_with_time`, `record_get/set_status`, `play_recording`, and **`get_recording_data`**. Free heap 1,273,632 B = 26.5 s of 24 kHz PCM. `audio.file_handle` is `None` — dead end |
 | 5d | `steps/step05d_raw_capture.py` | **gate:** does `get_recording_data()` return real audio, and can it be read mid-recording? | Driver alive: `record_get_status()` → `0`, `record_with_time(2)` → `None`. `get_recording_data()` needs **one argument** — the step called it with none. Superseded by 5e |
-| 5e | `steps/step05e_signature.py` | **gate:** find the argument `get_recording_data()` wants, then pull raw samples | |
+| 5e | `steps/step05e_signature.py` | **gate:** find the argument `get_recording_data()` wants, then pull raw samples | **`get_recording_data(x)` → `[b'RIFF…WAVE…', ?]`** — a real WAV stream, 0x3e80 = 16000 Hz in the header. `record_start`/`record_stop` take 0 args and work; `play_recording` wants 2. Not readinto; the argument appears ignored. Payload length still unknown |
+| 5f | `steps/step05f_unpack.py` | **gate:** how many audio bytes are behind that header, and do repeated calls stream? | |
 | 6 | `steps/step06_modules.py` | **gate:** sockets, and `machine.I2S` for raw output | |
 | 5b | `steps/step05b_gate_screen.py` | **replaces 5 and 6** when the serial console is unreadable — same findings, rendered on the CyberPi screen | |
 | 7 | `steps/step07_wifi.py` | Wi-Fi connects | |
