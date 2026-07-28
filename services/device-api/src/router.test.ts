@@ -211,6 +211,62 @@ describe("POST /v1/device/session", () => {
   });
 });
 
+describe("POST /v1/device/voice-turn", () => {
+  const pcmBytes = { bytes: Buffer.from(new Int16Array([1, -1, 2, -2]).buffer) };
+
+  it("requires authentication", async () => {
+    const response = await handleRequest(
+      { ...request("POST", "/v1/device/voice-turn"), ...pcmBytes },
+      { registry: openRegistry, apiKey: "sk-test" },
+    );
+    expect(response.status).toBe(401);
+  });
+
+  it("reports a missing API key rather than failing opaquely", async () => {
+    const response = await handleRequest({ ...authed("POST", "/v1/device/voice-turn"), ...pcmBytes }, deps);
+    expect(response.status).toBe(503);
+  });
+
+  it("rejects an empty recording", async () => {
+    const response = await handleRequest(authed("POST", "/v1/device/voice-turn"), { ...deps, apiKey: "sk-test" });
+    expect(response.status).toBe(400);
+  });
+
+  it("chains transcribe/chat/speak and returns raw PCM with the transcript and reply as headers", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ text: "how are you" }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ output: [{ content: [{ type: "output_text", text: "Doing great!" }] }] }), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([5, 6, 7]), { status: 200 }));
+
+    const response = await handleRequest(
+      { ...authed("POST", "/v1/device/voice-turn"), ...pcmBytes },
+      { ...deps, apiKey: "sk-secret", fetchImpl },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers["X-Rocky-Sample-Rate"]).toBe("24000");
+    expect(decodeURIComponent(response.headers["X-Rocky-Transcript"]!)).toBe("how are you");
+    expect(decodeURIComponent(response.headers["X-Rocky-Reply"]!)).toBe("Doing great!");
+    expect(Buffer.from(response.body)).toEqual(Buffer.from([5, 6, 7]));
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("surfaces an upstream failure as 502", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response("bad audio", { status: 400 }));
+    const response = await handleRequest(
+      { ...authed("POST", "/v1/device/voice-turn"), ...pcmBytes },
+      { ...deps, apiKey: "sk-secret", fetchImpl },
+    );
+    expect(response.status).toBe(502);
+    expect(String(response.body)).toContain("400");
+  });
+});
+
 describe("unknown routes", () => {
   it("404s with the route echoed back", async () => {
     const response = await handleRequest(request("GET", "/nope"), deps);

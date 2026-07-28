@@ -63,6 +63,9 @@ export function createServer(): http.Server {
           model: process.env["ROCKY_REALTIME_MODEL"] ?? DEFAULT_MODEL,
           voice: process.env["ROCKY_VOICE"] ?? DEFAULT_VOICE,
         },
+        ...(process.env["ROCKY_DEVICE_VOICE_TURN_MODEL"]
+          ? { voiceTurnModel: process.env["ROCKY_DEVICE_VOICE_TURN_MODEL"] }
+          : {}),
         onProbeReport: async (report: ProbeReport) => {
           const savedTo = await saveProbeReport(reportDirectory, report);
           console.log(`\n${summarizeProbeReport(report)}\nSaved to ${savedTo}\n`);
