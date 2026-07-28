@@ -94,40 +94,48 @@ members on the board versus about 20 in the package, plus an entire undocumented
 "CyberOS cannot do X" claim derived from that package is unproven until a `dir()` on real hardware
 says so. That is what these steps are for.
 
-## Verdict: **CyberOS can do it. Stage 2 is not needed.**
+## Verdict: **CyberOS can do audio I/O — but not to the bar this project set. Building Stage 2.**
 
 - **Raw microphone capture: YES.** `cyberpi.mic_o.get_recording_data(x)` → `[48-byte header,
-  PCM]`, 16 kHz 8-bit mono, 10-second maximum.
+  PCM]`, 16 kHz 8-bit mono, **10-second maximum, single preallocated buffer, no read cursor.**
 - **Raw speaker playback: YES.** `cyberpi.mp3_music_o.play_raw_data(data, rate)` plays bytes
-  generated in Python. Confirmed audible.
+  generated in Python. Confirmed audible. Chunked/re-feedable behavior still open (step 5l).
 - Sockets / HTTPS: _pending (steps 6–8)_
 - Sustained traffic during audio: _pending (step 11)_
 
 Both audio halves work on **unmodified Makeblock firmware**, through an API Makeblock does not
-document. The plan's decision gate says: *"If yes, stop here architecturally. CyberOS is the
-better solution."* That is the answer.
+document. Read narrowly, the plan's decision gate says stop here. But the gate's bar — "a good
+realtime conversation" — was underspecified until the product target became explicit: **the full
+experience, ~10 ms audio buffering and barge-in**, matching what the desktop app already delivers
+over WebRTC.
 
-### What this cancels
+CyberOS's Python API cannot reach that bar. A 10-second all-or-nothing recording buffer with no
+cursor cannot stream; nothing confirms simultaneous record+playback, which barge-in requires; and
+nothing in the API offers frame-level control anywhere near 10 ms. It is a scripting layer over an
+opaque driver, not a real-time audio stack.
 
-**Stage 2 — native ESP32 firmware — is unnecessary.** No reflashing, no `pnpm cyberpi:flash-rocky`
-or `cyberpi:restore`, no ES8218E bring-up, no risk to the family's robot. The board keeps its
-Makeblock identity and Rocky becomes a program in a slot, exactly as the plan hoped.
+### Decision: proceed to Stage 2
 
-The turn-based cloud-redirect fallback (`cloud.recognition_set_url` / `tts_set_url`) is also
-unnecessary. It was the consolation prize; we do not need it.
+**Native ESP32 firmware, driving the ES8218E codec directly over I2S**, is what full duplex and
+barge-in require. See [`PLAN.md`](PLAN.md) for the concrete spec and sequence. None of this work
+is wasted:
 
-The ES8218E research in [`docs/upstream-sources.md`](docs/upstream-sources.md) is now reference
-material rather than a dependency — which also retires the GPL-3.0 licence question that came with
-building on Makeblock's Arduino library.
+- the ES8218E register map in [`docs/upstream-sources.md`](docs/upstream-sources.md) is exactly
+  what Stage 2 needs to bring the codec up, and it was found before any of this hardware probing
+  started
+- `services/device-api` is the same backend either way
+- the measured audio format (16 kHz, sign convention, WAV decoding) transfers directly
 
-### What remains genuinely open
+The turn-based cloud-redirect fallback (`cloud.recognition_set_url` / `tts_set_url`) is not being
+pursued — it would still fall short of the bar even if it worked.
 
-Not whether Rocky can talk here, but how *well*:
+### What Stage 1 leaves settled for Stage 2
 
-- **Latency and streaming.** Step 5g showed the capture buffer exposes no read cursor, so audio
-  cannot be shipped while the person is still speaking unless step 5i finds progressive fill.
-  Step 5l asks the same of playback. Expect turn-based first — talk, pause, reply — rather than
-  barge-in.
-- **Quality.** 16 kHz 8-bit is telephone-grade. Fine for speech recognition, audibly grainy for
-  Rocky's voice.
-- **Networking under load** (steps 6–12), still entirely unmeasured.
+- The hardware is capable: the same mic and speaker this Python API drives will be driven
+  natively.
+- The codec is identified and its registers are known, without having opened a single I2S line.
+
+Steps 6-12 (sockets, TLS, sustained throughput under MicroPython) are **not being pursued.** The
+native client uses a different network stack entirely (ESP-IDF/Arduino `WiFiClientSecure` rather
+than `usocket`/`ussl`), so those MicroPython-level results would not transfer, and Stage 2 will
+measure its own networking directly against the real client instead of a proxy for it.

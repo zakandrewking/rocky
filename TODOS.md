@@ -183,47 +183,60 @@ in approximate priority order
 
 ## Rocky on a robot (apps/cyberpi)
 
-Feasibility spike for putting Rocky on a Makeblock mBot2/CyberPi. The plan is in
-`apps/cyberpi/PLAN.md`; the hardware checklist is `apps/cyberpi/STEPS.md`.
+Giving Rocky a body: a Makeblock mBot2/CyberPi. The plan is in `apps/cyberpi/PLAN.md`; the
+Stage-1 hardware log is `apps/cyberpi/STEPS.md`.
 
-Deliberately scoped as a spike, not an implementation. Everything past the decision gate is
-gated on the audio answer, because building a conversation loop and an animated face for a robot
-that cannot speak would be wasted work.
+**Stage 1 (CyberOS, no firmware changes) is spiked and closed. Stage 2 (native ESP32 firmware) is
+the active target**, because the product bar is the full experience — ~10 ms audio buffering and
+barge-in — which CyberOS's Python audio API cannot reach even though raw audio I/O on it works.
 
-- [x] Write the two-stage plan: CyberOS app first, native ESP32 firmware only if CyberOS blocks
-  realtime audio.
-- [x] Document the CyberOS API surface from Makeblock's published `makeblock` package. It has no
-  raw sample input and no arbitrary sample output: `record()` writes to one opaque internal slot,
-  `play()` takes a preset name rather than data.
-- [x] Break Stage 1 into twelve small hardware steps, each proving one thing, each standalone
-  because mBlock uploads a single program at a time.
+### Stage 1 — done, kept as reference
+
+- [x] Write the two-stage plan: CyberOS app first, native ESP32 firmware if CyberOS cannot meet
+  the bar.
+- [x] Document the CyberOS API surface from Makeblock's published `makeblock` package. It claims no
+  raw sample input and no arbitrary sample output - wrong, as hardware later showed, but the
+  starting hypothesis.
+- [x] Break Stage 1 into small hardware steps, each proving one thing, each standalone because
+  mBlock uploads a single program at a time.
 - [x] Build `services/device-api`: device-token auth, ephemeral OpenAI client secrets so the key
-  never lives on the robot, probe endpoints for steps 8-12, and a report sink that saves results
-  under `local-data/cyberpi/`.
-- [x] Run steps 1-4 on real hardware: toolchain, speaker, microphone, and loudness all work.
-- [x] Discover that the published API is a *subset* of the firmware. The board exposes its raw I2S
-  microphone driver as `cyberpi.mic_o` (type `i2s_mic`) with `get_recording_data`, `record_start`,
-  `record_stop`, `record_with_time`, and `init`/`deinit` - none of it documented. Free heap is
-  1.27 MB, about 26 s of 24 kHz PCM, so buffering is not a constraint.
-- [x] Confirm raw capture: `cyberpi.mic_o.get_recording_data(x)` returns `[48-byte header, PCM]` at
-  16 kHz 8-bit mono, 10-second maximum buffer.
-- [x] Find the output path the same way `mic_o` was found: `cyberpi.mp3_music_o.play_raw_data(data,
-  rate)` plays arbitrary bytes, confirmed audible.
-- [x] **DECISION GATE ANSWERED: YES.** CyberOS provides low-level microphone and speaker access.
-  Per the plan, stop here architecturally. **Stage 2 (native ESP32 firmware) is cancelled** - no
-  reflashing, no restore scripts, no ES8218E bring-up, and the GPL-3.0 question that came with
-  Makeblock's Arduino library no longer arises.
-- [ ] Establish the playback shape (step 5l): blocking or async, re-feedable, chunkable. Chunked
-  feeding decides whether replies can start before they finish downloading.
-- [ ] Establish whether capture can stream (step 5i): the buffer exposes no read cursor, so unless
-  it fills progressively, Rocky is turn-based rather than barge-in capable.
-- [ ] Run the networking steps 6-12, none of which have touched hardware yet.
-- [ ] Then build the Stage-1 deliverable proper: conversation loop, state-driven screen UI with a
-  tiny Rocky face, and packaging into a program slot that exits back to normal CyberOS.
-- [ ] If yes: build the conversation loop, the state-driven screen UI with a tiny Rocky face, and
-  package it into a CyberPi program slot that exits back to normal CyberOS.
-- [ ] If no: start Stage 2 native firmware, and write the one-command restore script before the
-  one-command flash script.
-- [ ] Extract `packages/rocky-core` for the shared persona once the gate is answered. Until then
-  `services/device-api` imports `ROCKY_INSTRUCTIONS` from the desktop app by relative path, which
-  is why `verbatimModuleSyntax` is off in its tsconfig.
+  never lives on the robot, probe endpoints, a report sink under `local-data/cyberpi/`, and a
+  decoder that turns the CyberPi's raw audio format into playable WAVs. Carries forward into
+  Stage 2 unchanged.
+- [x] Run steps 1-4 on real hardware: toolchain, speaker, microphone, loudness all work.
+- [x] Discover the published API is a *subset* of the firmware. The board exposes an undocumented
+  raw I2S microphone driver (`cyberpi.mic_o`, type `i2s_mic`) and an undocumented raw playback
+  object (`cyberpi.mp3_music_o`, `play_raw_data`).
+- [x] Confirm raw capture: `cyberpi.mic_o.get_recording_data(x)` -> `[48-byte header, PCM]`, 16 kHz
+  8-bit mono, **10-second maximum, single preallocated buffer, no read cursor**.
+- [x] Confirm raw playback: `cyberpi.mp3_music_o.play_raw_data(data, rate)` produced an audible
+  tone from Python-generated bytes.
+- [x] Check for published source before reverse-engineering further. Makeblock's CyberOS firmware
+  is closed, but a GPL-3.0 sibling library (`CyberPi-Library-for-Arduino`) named the audio codec -
+  **Everest ES8218E on I2C 0x10** - and its full register map. See
+  `apps/cyberpi/docs/upstream-sources.md`. This is Stage 2's starting point.
+- [x] **Decide: CyberOS's Python audio API cannot reach the ~10 ms buffering / barge-in bar.** A
+  10-second all-or-nothing recording block with no cursor cannot stream; nothing confirms
+  simultaneous record+playback; nothing offers frame-level control. Close Stage 1 as a spike,
+  proceed to Stage 2. Full reasoning in `apps/cyberpi/STEPS.md`.
+
+### Stage 2 — native firmware, active
+
+- [ ] **Recovery first.** Script and verify `pnpm cyberpi:restore` (reflash official CyberPi
+  firmware) against the actual board before any custom build touches it. Ordering this first is
+  deliberate - this is the one Stage-2 step where a mistake has real cost to a device the family
+  uses.
+- [ ] Bring up the PlatformIO/Arduino toolchain against `CyberPi-Library-for-Arduino`; flash a
+  trivial program; confirm `pnpm cyberpi:flash-rocky` round-trips with the restore script.
+- [ ] Bring up the ES8218E over I2S using the register map already in hand; confirm raw capture and
+  playback at ~10 ms frames before building anything on top.
+- [ ] One-directional streaming milestones: `mic -> 10ms frames -> network -> server` and
+  `server -> network -> 10ms frames -> speaker`, each proven gap-free before combining them.
+- [ ] Full duplex + barge-in: both directions active at once, VAD on the live mic during playback,
+  interrupt-and-flush on trigger. This is the milestone that actually delivers "the full
+  experience" and the reason Stage 2 exists.
+- [ ] Then: the embedded Rocky state machine, personality reuse from the backend, robot tool calls
+  (`drive_cm`, `rotate_degrees`, `read_distance`, ...), and packaging.
+- [ ] Extract `packages/rocky-core` for the shared persona once the native client's needs are
+  clearer. Until then `services/device-api` imports `ROCKY_INSTRUCTIONS` from the desktop app by
+  relative path, which is why `verbatimModuleSyntax` is off in its tsconfig.
