@@ -222,12 +222,31 @@ barge-in — which CyberOS's Python audio API cannot reach even though raw audio
 
 ### Stage 2 — native firmware, active
 
-- [ ] **Recovery first.** Script and verify `pnpm cyberpi:restore` (reflash official CyberPi
-  firmware) against the actual board before any custom build touches it. Ordering this first is
-  deliberate - this is the one Stage-2 step where a mistake has real cost to a device the family
-  uses.
-- [ ] Bring up the PlatformIO/Arduino toolchain against `CyberPi-Library-for-Arduino`; flash a
-  trivial program; confirm `pnpm cyberpi:flash-rocky` round-trips with the restore script.
+The product bar is explicit: **the full experience - ~10 ms audio buffering and barge-in** -
+matching the desktop app's WebRTC session, not a turn-based approximation of it.
+
+- [x] Design the recovery strategy: dump the board's entire flash before any custom firmware
+  touches it, rather than depending on Makeblock publishing a downloadable official image (they
+  don't appear to - updates go through mBlock's GUI flow only). Write `pnpm cyberpi:backup` /
+  `pnpm cyberpi:restore` (`apps/cyberpi/scripts/`, `docs/recovery.md`). **Unverified against real
+  hardware** - the scripts pass `bash -n` and the flash-size-detection regex was checked against
+  realistic `esptool` output, but nothing has run against a real board yet.
+- [ ] **Run the recovery scripts for real**, on a machine with physical access to the board (this
+  needs to happen from a local Claude Code session or by hand - the primary session here runs in a
+  cloud container with no USB access). Confirm the backup/restore round trip before anything else
+  touches the board.
+- [ ] Bring up the PlatformIO toolchain and confirm the framework: **ESP-IDF recommended** over
+  Arduino-ESP32 (precise I2S DMA and dual-core task control is the reason to leave CyberOS at all;
+  Arduino's abstraction sits on top of exactly that layer) - not yet acted on, confirm during real
+  bring-up. Reference `CyberPi-Library-for-Arduino` for hardware facts regardless of which
+  framework wins. Flash a trivial program; confirm `pnpm cyberpi:flash-rocky` round-trips with the
+  restore script.
+- [ ] **Bring up OTA updates, prioritized ASAP** - right after the toolchain works at all, before
+  the codec. Needs only Wi-Fi and a minimal update receiver. This is the actual lever on iteration
+  speed for every step after it, and it removes the single biggest practical constraint on this
+  project: a cloud session with no physical USB access can push firmware once this exists, the
+  same way it already pushes commits. `cyberpi:restore` stays the fallback for when OTA itself is
+  unreachable.
 - [ ] Bring up the ES8218E over I2S using the register map already in hand; confirm raw capture and
   playback at ~10 ms frames before building anything on top.
 - [ ] One-directional streaming milestones: `mic -> 10ms frames -> network -> server` and
