@@ -228,13 +228,16 @@ matching the desktop app's WebRTC session, not a turn-based approximation of it.
 - [x] Design the recovery strategy: dump the board's entire flash before any custom firmware
   touches it, rather than depending on Makeblock publishing a downloadable official image (they
   don't appear to - updates go through mBlock's GUI flow only). Write `pnpm cyberpi:backup` /
-  `pnpm cyberpi:restore` (`apps/cyberpi/scripts/`, `docs/recovery.md`). **Unverified against real
-  hardware** - the scripts pass `bash -n` and the flash-size-detection regex was checked against
-  realistic `esptool` output, but nothing has run against a real board yet.
-- [ ] **Run the recovery scripts for real**, on a machine with physical access to the board (this
-  needs to happen from a local Claude Code session or by hand - the primary session here runs in a
-  cloud container with no USB access). Confirm the backup/restore round trip before anything else
-  touches the board.
+  `pnpm cyberpi:restore` (`apps/cyberpi/scripts/`, `docs/recovery.md`). **Verified against real
+  hardware**: full 8MB backup/restore round trip on the real board (ESP32-D0WD, port
+  `/dev/cu.usbserial-210`), esptool's own hash verification passing, and a confirmed power-cycle
+  back into normal CyberOS.
+- [x] **Run the recovery scripts for real**, on a machine with physical access to the board.
+  `pnpm cyberpi:backup` and `pnpm cyberpi:restore` both ran clean against the real board (ESP32-
+  D0WD, 8MB flash, port `/dev/cu.usbserial-210`): full 8MB backup, restore with esptool's own
+  post-write hash verification passing, and a confirmed power-cycle back into normal CyberOS (home
+  screen, LEDs). One real fix was needed - esptool 5.3.1 renamed `flash_id`/`read_flash`/
+  `write_flash` to the hyphenated `flash-id`/`read-flash`/`write-flash`; scripts updated to match.
 - [ ] Bring up the PlatformIO toolchain and confirm the framework: **ESP-IDF recommended** over
   Arduino-ESP32 (precise I2S DMA and dual-core task control is the reason to leave CyberOS at all;
   Arduino's abstraction sits on top of exactly that layer) - not yet acted on, confirm during real

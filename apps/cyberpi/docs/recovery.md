@@ -24,14 +24,17 @@ cyberpi-restore.sh  writes a backup back, with a typed confirmation before it ov
 Both live in [`../scripts/`](../scripts) and are wired up as `pnpm cyberpi:backup` /
 `pnpm cyberpi:restore`.
 
-## Status: written, not yet run against real hardware
+## Status: verified against real hardware
 
-Everything in this doc and in `apps/cyberpi/scripts/` was written from `esptool`'s documented
-behavior and the one hardware fact already in hand — the port name
-(`/dev/cu.wchusbserial14120`) from Makeblock's own `platformio.ini` for this board. The scripts
-pass `bash -n` (syntax) and their flash-size-parsing regex was checked against realistic
-`esptool` output, but **nothing has run against a real CyberPi yet.** The first real run of
-`pnpm cyberpi:backup` is this script's actual test.
+`pnpm cyberpi:backup` and `pnpm cyberpi:restore` have both run for real against this board (an
+ESP32-D0WD, 8MB flash, port `/dev/cu.usbserial-210` — not the `wchusbserial*` name originally
+guessed from Makeblock's `platformio.ini`; `lib.sh`'s port-detection glob already covered
+`usbserial-*` too, so no change was needed there). The backup read all 8MB, the restore wrote it
+back with esptool's own post-write hash verification passing, and the board power-cycled back into
+normal CyberOS — home screen and LEDs working. The one real fix needed: esptool 5.3.1 renamed
+`flash_id`/`read_flash`/`write_flash` to `flash-id`/`read-flash`/`write-flash` (the old names still
+work today but only via a deprecated alias esptool says it will remove) — the scripts now use the
+current names directly.
 
 ## What to do, in order
 

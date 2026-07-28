@@ -240,12 +240,13 @@ That capability carries forward into Stage 2 unchanged.
 Stage 2 gets the same discipline — small, verifiable steps before a large implementation,
 particularly because this stage touches firmware on a real device:
 
-1. **Recovery first, before anything else is flashed.** `pnpm cyberpi:backup` dumps the board's
-   current flash; `pnpm cyberpi:restore` writes it back. Confirm the round trip actually works on
-   this specific board — power-cycle and see stock CyberOS boot — before any custom build goes
-   anywhere near it. This is the one step in Stage 2 where getting the order wrong has real cost.
-   Scripts exist (`apps/cyberpi/scripts/`) but are unverified against real hardware; running them
-   for the first time *is* this step.
+1. **Recovery first, before anything else is flashed — done.** `pnpm cyberpi:backup` dumped the
+   board's current flash (ESP32-D0WD, 8MB, port `/dev/cu.usbserial-210`); `pnpm cyberpi:restore`
+   wrote it back, with esptool's own post-write hash verification passing, and the board
+   power-cycled straight back into normal CyberOS — home screen and LEDs working. The round trip is
+   confirmed on this specific board. One fix was needed to get there: esptool 5.3.1 renamed
+   `flash_id`/`read_flash`/`write_flash` to the hyphenated `flash-id`/`read-flash`/`write-flash`;
+   the scripts (`apps/cyberpi/scripts/`) now use the current names. Safe to move on to step 2.
 2. **Bring up the toolchain and confirm the framework choice.** PlatformIO project — ESP-IDF is
    recommended (see above), pending confirmation once real bring-up starts. Flash a trivial
    program (blink an LED, print over serial), confirm `pnpm cyberpi:flash-rocky` round-trips with
