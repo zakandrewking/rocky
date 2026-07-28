@@ -14,3 +14,6 @@ __pycache__/
 # Firmware dumps: multi-MB binaries, and the only path back to stock CyberOS.
 # Never committed, never deleted.
 apps/cyberpi/firmware/backups/
+
+# PlatformIO build output - regenerated locally, not portable between machines.
+apps/cyberpi/.pio/
