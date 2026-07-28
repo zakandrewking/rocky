@@ -125,6 +125,8 @@ pnpm device-api # run the backend for the CyberPi robot experiment
 pnpm cyberpi:check # syntax-check the CyberPi step programs
 pnpm cyberpi:backup # dump the CyberPi's entire flash before any custom firmware touches it
 pnpm cyberpi:restore # write a backup back to the CyberPi (typed confirmation required)
+pnpm cyberpi:flash-rocky # build and flash the native firmware over USB
+pnpm cyberpi:ota # push a new build to the CyberPi over Wi-Fi, no USB required
 pnpm dist:mac  # create unsigned macOS DMG, zip, and unpacked app artifacts
 ```
 
@@ -137,8 +139,10 @@ Stage 1 asked whether Makeblock's CyberOS — no firmware changes — could carr
 conversation. It found that raw audio I/O works (undocumented, but real), but CyberOS's Python API
 has a hard ceiling short of the project's bar (~10 ms buffering and barge-in). Stage 1 is closed as
 a spike; **Stage 2, native ESP32 firmware, is the active target.** Recovery
-(`pnpm cyberpi:backup` / `pnpm cyberpi:restore`) is verified against the real board — see
-[`apps/cyberpi/docs/recovery.md`](apps/cyberpi/docs/recovery.md).
+(`pnpm cyberpi:backup` / `pnpm cyberpi:restore`), the PlatformIO/ESP-IDF toolchain
+(`pnpm cyberpi:flash-rocky`), and OTA (`pnpm cyberpi:ota`) are all verified against the real
+board — see [`apps/cyberpi/docs/recovery.md`](apps/cyberpi/docs/recovery.md) and
+[`apps/cyberpi/PLAN.md`](apps/cyberpi/PLAN.md).
 
 `services/device-api` is the backend the robot talks to. The OpenAI key stays on your computer and
 the robot gets a short-lived client secret instead, because an mBot2 is a thing a child carries

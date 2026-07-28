@@ -14,6 +14,9 @@ Giving Rocky a body: a Makeblock mBot2 you can talk to out loud.
 - [`docs/recovery.md`](docs/recovery.md) — the flash backup/restore strategy. Verified against real
   hardware: `pnpm cyberpi:backup` / `pnpm cyberpi:restore` round-trip and boot back into stock
   CyberOS.
+- [`platformio.ini`](platformio.ini) / [`src/main.c`](src/main.c) — the native ESP-IDF firmware.
+  Verified against real hardware: joins Wi-Fi and serves OTA updates over `pnpm cyberpi:ota`, no
+  USB required after the first `pnpm cyberpi:flash-rocky`.
 - [`steps/`](steps) — the Stage-1 probe programs, kept as a working reference.
 
 ## Where this stands
@@ -52,13 +55,16 @@ Stage 1's probe programs (`steps/`) still work and are worth keeping around as a
 measured audio format and for any future MicroPython-level debugging. They are not the path
 forward.
 
-For Stage 2, start with `PLAN.md`'s sequence: recovery scripts first, then toolchain bring-up,
-then the codec, before any conversation logic.
+Stage 2's first three steps are done and verified on real hardware: recovery
+(`pnpm cyberpi:backup` / `cyberpi:restore`), the PlatformIO/ESP-IDF toolchain
+(`pnpm cyberpi:flash-rocky`), and OTA (`pnpm cyberpi:ota`, once the board has joined Wi-Fi from a
+first USB flash). See `PLAN.md`'s sequence for what's next: the ES8218E codec, then the streaming
+milestones.
 
 ## What is deliberately not here yet
 
-No PlatformIO project, no C++ audio pipeline, no barge-in implementation. Those are Stage 2's
-actual work, tracked in `TODOS.md`.
+No C++ audio pipeline, no barge-in implementation, no display or robot-control code. Those are
+Stage 2's actual work, tracked in `TODOS.md`.
 
 The backend already exists in [`services/device-api`](../../services/device-api): it keeps the
 OpenAI key off the robot, hands out short-lived credentials, and decodes the CyberPi's audio
