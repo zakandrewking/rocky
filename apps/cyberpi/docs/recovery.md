@@ -35,7 +35,7 @@ pass `bash -n` (syntax) and their flash-size-parsing regex was checked against r
 
 ## What to do, in order
 
-1. **Install esptool** if it isn't already: `pip3 install esptool`
+1. **Install esptool** if it isn't already: `uv tool install esptool`
 2. **Connect the CyberPi** over USB and power it on.
 3. **Run the backup:**
    ```bash
@@ -63,7 +63,7 @@ pass `bash -n` (syntax) and their flash-size-parsing regex was checked against r
   use. Try holding whatever button maps to `BOOT`/`GPIO0` while the script connects, if simply
   running it doesn't work.
 - **Restore doesn't boot cleanly:** don't guess further — this is exactly the scenario `esptool`'s
-  own recovery tools exist for (`esptool.py --port <PORT> chip_id` to confirm the chip is still
+  own recovery tools exist for (`esptool --port <PORT> chip-id` to confirm the chip is still
   reachable at all; if it is, the flash contents can always be rewritten again, including a fresh
   backup attempt if the board somehow still has something bootable on it).
 - **Genuinely bricked feeling:** the ESP32's boot ROM is separate silicon, not part of what gets

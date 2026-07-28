@@ -32,11 +32,11 @@ mkdir -p "${BACKUP_DIR}"
 
 cyberpi_log "esptool: ${ESPTOOL}"
 cyberpi_log "port: ${PORT}"
-cyberpi_log "detecting flash size (flash_id is read-only, safe to run any time)..."
+cyberpi_log "detecting flash size (flash-id is read-only, safe to run any time)..."
 
-FLASH_ID_OUTPUT="$(${ESPTOOL} --port "${PORT}" flash_id 2>&1)" || {
+FLASH_ID_OUTPUT="$(${ESPTOOL} --port "${PORT}" flash-id 2>&1)" || {
   echo "${FLASH_ID_OUTPUT}" >&2
-  cyberpi_die "flash_id failed - see esptool's output above. Common causes: wrong port \
+  cyberpi_die "flash-id failed - see esptool's output above. Common causes: wrong port \
 (set CYBERPI_PORT), board not in bootloader mode (some boards need BOOT held during reset - \
 try that if auto-reset doesn't work), or a cable that only carries power."
 }
@@ -60,7 +60,7 @@ OUT_FILE="${BACKUP_DIR}/cyberpi-stock-${DETECTED_SIZE_MB}MB-${TIMESTAMP}.bin"
 cyberpi_log "reading ${FLASH_HEX} bytes from 0x0 -> ${OUT_FILE}"
 cyberpi_log "this takes a few minutes at typical serial speeds - do not unplug the board"
 
-${ESPTOOL} --port "${PORT}" read_flash 0x0 "${FLASH_BYTES}" "${OUT_FILE}"
+${ESPTOOL} --port "${PORT}" read-flash 0x0 "${FLASH_BYTES}" "${OUT_FILE}"
 
 ACTUAL_BYTES="$(wc -c < "${OUT_FILE}" | tr -d ' ')"
 if [[ "${ACTUAL_BYTES}" != "${FLASH_BYTES}" ]]; then

@@ -48,7 +48,7 @@ if [[ "${CONFIRM}" != "restore" ]]; then
 fi
 
 cyberpi_log "writing ${BACKUP_BYTES} bytes to 0x0 - do not unplug the board"
-${ESPTOOL} --port "${PORT}" write_flash 0x0 "${BACKUP_FILE}"
+${ESPTOOL} --port "${PORT}" write-flash 0x0 "${BACKUP_FILE}"
 
 cyberpi_log "PASS: write completed. Power-cycle the CyberPi and confirm it boots into normal"
 cyberpi_log "CyberOS - screen shows the home UI, mBlock can reconnect to it - before trusting"

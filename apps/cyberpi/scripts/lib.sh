@@ -31,7 +31,7 @@ cyberpi_find_esptool() {
     echo "python3 -m esptool"
     return 0
   fi
-  cyberpi_die "esptool not found. Install it with: pip3 install esptool  (or: pipx install esptool)"
+  cyberpi_die "esptool not found. Install it with: uv tool install esptool"
 }
 
 # Finds the CyberPi's USB-serial port. Honors CYBERPI_PORT if set. Otherwise
