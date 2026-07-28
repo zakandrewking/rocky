@@ -10,3 +10,7 @@ coverage/
 *.log
 __pycache__/
 *.py[cod]
+
+# Firmware dumps: multi-MB binaries, and the only path back to stock CyberOS.
+# Never committed, never deleted.
+apps/cyberpi/firmware/backups/
