@@ -123,18 +123,22 @@ pnpm voice:check # verify optional ignored local voice-clone assets
 pnpm voice:server # run the experimental loopback-only YourTTS worker
 pnpm device-api # run the backend for the CyberPi robot experiment
 pnpm cyberpi:check # syntax-check the CyberPi step programs
+pnpm cyberpi:backup # dump the CyberPi's entire flash before any custom firmware touches it
+pnpm cyberpi:restore # write a backup back to the CyberPi (typed confirmation required)
 pnpm dist:mac  # create unsigned macOS DMG, zip, and unpacked app artifacts
 ```
 
 ## Rocky on a robot (experimental)
 
-`apps/cyberpi/` is a feasibility spike: can Rocky live on a Makeblock mBot2 and hold a spoken
-conversation? It is twelve small programs you run one at a time on real hardware, each proving one
-thing, and it starts at [`apps/cyberpi/STEPS.md`](apps/cyberpi/STEPS.md).
+`apps/cyberpi/` is giving Rocky a body: a Makeblock mBot2 (CyberPi controller, ESP32-based) you can
+talk to out loud. Start at [`apps/cyberpi/PLAN.md`](apps/cyberpi/PLAN.md).
 
-The open question is whether Makeblock's CyberOS gives low-level enough microphone, speaker, and
-network access. Its documented API has no raw audio in either direction, so the steps go and check
-before anyone considers replacing firmware. Nothing has run on a board yet.
+Stage 1 asked whether Makeblock's CyberOS — no firmware changes — could carry a realtime
+conversation. It found that raw audio I/O works (undocumented, but real), but CyberOS's Python API
+has a hard ceiling short of the project's bar (~10 ms buffering and barge-in). Stage 1 is closed as
+a spike; **Stage 2, native ESP32 firmware, is the active target.** Recovery
+(`pnpm cyberpi:backup` / `pnpm cyberpi:restore`) is verified against the real board — see
+[`apps/cyberpi/docs/recovery.md`](apps/cyberpi/docs/recovery.md).
 
 `services/device-api` is the backend the robot talks to. The OpenAI key stays on your computer and
 the robot gets a short-lived client secret instead, because an mBot2 is a thing a child carries

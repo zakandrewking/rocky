@@ -66,8 +66,8 @@ there is exactly one definition of who Rocky is. A device addendum is appended t
 what the body cannot do — no spreadsheets, no files, everything heard rather than read.
 
 The plan's `packages/rocky-core` extraction is the right long-term home for this. It is not worth
-doing until Stage 1 clears its decision gate, so for now a relative import does the job and
-`verbatimModuleSyntax` is off in `tsconfig.json` to permit it.
+doing until the native Stage 2 client's needs are clearer, so for now a relative import does the
+job and `verbatimModuleSyntax` is off in `tsconfig.json` to permit it.
 
 ## Tests
 

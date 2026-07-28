@@ -11,6 +11,9 @@ Giving Rocky a body: a Makeblock mBot2 you can talk to out loud.
   (and doesn't).
 - [`docs/upstream-sources.md`](docs/upstream-sources.md) — the ES8218E codec and its register map,
   found in Makeblock's GPL-3.0 Arduino library. **This is what Stage 2 builds on.**
+- [`docs/recovery.md`](docs/recovery.md) — the flash backup/restore strategy. Verified against real
+  hardware: `pnpm cyberpi:backup` / `pnpm cyberpi:restore` round-trip and boot back into stock
+  CyberOS.
 - [`steps/`](steps) — the Stage-1 probe programs, kept as a working reference.
 
 ## Where this stands
