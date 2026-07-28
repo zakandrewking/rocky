@@ -238,12 +238,14 @@ matching the desktop app's WebRTC session, not a turn-based approximation of it.
   post-write hash verification passing, and a confirmed power-cycle back into normal CyberOS (home
   screen, LEDs). One real fix was needed - esptool 5.3.1 renamed `flash_id`/`read_flash`/
   `write_flash` to the hyphenated `flash-id`/`read-flash`/`write-flash`; scripts updated to match.
-- [ ] Bring up the PlatformIO toolchain and confirm the framework: **ESP-IDF recommended** over
-  Arduino-ESP32 (precise I2S DMA and dual-core task control is the reason to leave CyberOS at all;
-  Arduino's abstraction sits on top of exactly that layer) - not yet acted on, confirm during real
-  bring-up. Reference `CyberPi-Library-for-Arduino` for hardware facts regardless of which
-  framework wins. Flash a trivial program; confirm `pnpm cyberpi:flash-rocky` round-trips with the
-  restore script.
+- [x] Bring up the PlatformIO toolchain and confirm the framework: **ESP-IDF**, confirmed
+  (`apps/cyberpi/platformio.ini`, `board = esp32dev`). Checked `CyberPi-Library-for-Arduino` first
+  and found the board's LEDs/buttons are behind I2C (AW9523B expander, LED driver at `0x5B`), not
+  raw GPIO, so the trivial program prints over serial instead of blinking. `pnpm cyberpi:flash-rocky`
+  built and flashed clean; serial output confirmed a steady tick counter with no resets. Also fixed
+  a real flash-size mismatch (`sdkconfig.esp32dev` had picked up ESP-IDF's 2MB default against this
+  board's actual 8MB). By explicit choice, not restored back to stock CyberOS afterward - Stage 2
+  continues from the custom firmware now on the board.
 - [ ] **Bring up OTA updates, prioritized ASAP** - right after the toolchain works at all, before
   the codec. Needs only Wi-Fi and a minimal update receiver. This is the actual lever on iteration
   speed for every step after it, and it removes the single biggest practical constraint on this

@@ -247,10 +247,15 @@ particularly because this stage touches firmware on a real device:
    confirmed on this specific board. One fix was needed to get there: esptool 5.3.1 renamed
    `flash_id`/`read_flash`/`write_flash` to the hyphenated `flash-id`/`read-flash`/`write-flash`;
    the scripts (`apps/cyberpi/scripts/`) now use the current names. Safe to move on to step 2.
-2. **Bring up the toolchain and confirm the framework choice.** PlatformIO project — ESP-IDF is
-   recommended (see above), pending confirmation once real bring-up starts. Flash a trivial
-   program (blink an LED, print over serial), confirm `pnpm cyberpi:flash-rocky` round-trips with
-   step 1's restore.
+2. **Bring up the toolchain and confirm the framework choice — done.** PlatformIO + ESP-IDF
+   confirmed (`apps/cyberpi/platformio.ini`, `board = esp32dev` matching the real ESP32-D0WD chip).
+   Checked Makeblock's own Arduino library first and found the board has no raw-GPIO LED - front
+   lights and buttons are behind I2C (an AW9523B expander, a separate LED driver at `0x5B`) - so
+   the trivial program prints over serial instead of blinking. `pnpm cyberpi:flash-rocky` built and
+   flashed clean on the real board; serial output confirmed a steady tick counter with no resets.
+   Custom firmware is now running on the board - by explicit choice, it was not restored back to
+   stock CyberOS afterward, so Stage 2 continues directly from here rather than round-tripping back
+   through step 1's restore each time.
 3. **Bring up OTA.** Prioritized ASAP per the framework discussion — it's the actual lever on
    iteration speed for every step after this one, and it's what lets a session with no physical
    access to the board (like this one) push firmware the same way it already pushes commits. Needs
