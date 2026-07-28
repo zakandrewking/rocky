@@ -256,7 +256,17 @@ particularly because this stage touches firmware on a real device:
    Custom firmware is now running on the board - by explicit choice, it was not restored back to
    stock CyberOS afterward, so Stage 2 continues directly from here rather than round-tripping back
    through step 1's restore each time.
-3. **Bring up OTA.** Prioritized ASAP per the framework discussion — it's the actual lever on
+3. **Bring up OTA — done.** The board joins Wi-Fi (credentials read from the repo root `.env` into
+   a gitignored generated header, never committed) and runs a minimal HTTP `POST /ota` receiver
+   that writes the request body to the inactive `ota_0`/`ota_1` partition via `esp_ota_ops` and
+   reboots into it. Needed a real partition-table change first — the default single-app layout has
+   no room for a second image — sized for the actual 8MB flash. Verified for real: flashed once
+   over USB, confirmed the printed IP over serial, then pushed a second build with `pnpm
+   cyberpi:ota` and confirmed over serial that the board rebooted into it. No physical access is
+   needed for firmware pushes from here on; `cyberpi:restore` over USB remains the fallback if OTA
+   itself ever breaks. The receiver has no auth — fine for this LAN-only bring-up tool, not
+   acceptable if this ever ships, see TODOS.md.
+   Prioritized ASAP per the framework discussion — it's the actual lever on
    iteration speed for every step after this one, and it's what lets a session with no physical
    access to the board (like this one) push firmware the same way it already pushes commits. Needs
    only Wi-Fi and a minimal update receiver; doesn't depend on the codec or audio pipeline at all,

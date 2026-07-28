@@ -246,12 +246,15 @@ matching the desktop app's WebRTC session, not a turn-based approximation of it.
   a real flash-size mismatch (`sdkconfig.esp32dev` had picked up ESP-IDF's 2MB default against this
   board's actual 8MB). By explicit choice, not restored back to stock CyberOS afterward - Stage 2
   continues from the custom firmware now on the board.
-- [ ] **Bring up OTA updates, prioritized ASAP** - right after the toolchain works at all, before
-  the codec. Needs only Wi-Fi and a minimal update receiver. This is the actual lever on iteration
-  speed for every step after it, and it removes the single biggest practical constraint on this
-  project: a cloud session with no physical USB access can push firmware once this exists, the
-  same way it already pushes commits. `cyberpi:restore` stays the fallback for when OTA itself is
-  unreachable.
+- [x] **Bring up OTA updates - done.** Board joins Wi-Fi (credentials from the repo root `.env`
+  into a gitignored generated header) and runs a minimal HTTP `POST /ota` receiver that writes to
+  the inactive `ota_0`/`ota_1` partition (new `partitions_ota.csv`, sized for the real 8MB flash)
+  and reboots into it. Verified for real: flashed once over USB, then pushed a second build with
+  `pnpm cyberpi:ota` and confirmed over serial the board rebooted into the new firmware. No auth on
+  the receiver yet - fine for LAN-only bring-up, needs fixing before this ever ships.
+  `cyberpi:restore` over USB stays the fallback for when OTA itself is unreachable.
+- [ ] Add auth to the CyberPi's `/ota` HTTP receiver (currently open to anything on the LAN) before
+  this firmware is ever used somewhere the Wi-Fi network isn't fully trusted.
 - [ ] Bring up the ES8218E over I2S using the register map already in hand; confirm raw capture and
   playback at ~10 ms frames before building anything on top.
 - [ ] One-directional streaming milestones: `mic -> 10ms frames -> network -> server` and
