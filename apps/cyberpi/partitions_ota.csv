@@ -1,0 +1,15 @@
+# CyberPi OTA partition table. Real flash is 8MB (0x800000), confirmed via
+# `esptool flash-id` during the recovery backup - see docs/recovery.md.
+# Offsets below 0x10000 follow ESP-IDF's own standard OTA layout
+# (partitions_two_ota.csv) unchanged; only the two app partition sizes are
+# scaled up for this chip's larger flash.
+#
+# Two 3MB app slots leave ~2MB unpartitioned for later use (e.g. a data/log
+# partition) rather than claiming the whole chip up front.
+#
+# Name,     Type, SubType,  Offset,    Size
+nvs,        data, nvs,      0x9000,    0x4000
+otadata,    data, ota,      0xd000,    0x2000
+phy_init,   data, phy,      0xf000,    0x1000
+ota_0,      app,  ota_0,    0x10000,   0x300000
+ota_1,      app,  ota_1,    0x310000,  0x300000
