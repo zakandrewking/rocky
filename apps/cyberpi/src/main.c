@@ -1,12 +1,11 @@
-// Stage 2 OTA bring-up (PLAN.md step 3): join Wi-Fi, then run a minimal HTTP
-// receiver that accepts a POSTed firmware binary, writes it to the inactive
-// OTA slot, and reboots into it. This is the actual lever on iteration speed
-// for every step after this one - once it works, later firmware pushes don't
-// need physical USB access.
+// Stage 2 bring-up: display first (fastest visible confirmation of custom
+// firmware), then Wi-Fi, then a minimal HTTP OTA receiver (PLAN.md step 3)
+// that writes a POSTed binary to the inactive OTA slot and reboots into it.
 
 #include <string.h>
 #include <sys/param.h>
 
+#include "aw9523b.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -17,6 +16,7 @@
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "st7789.h"
 
 #include "wifi_credentials.h"
 
@@ -169,6 +169,11 @@ void app_main(void) {
     nvs_err = nvs_flash_init();
   }
   ESP_ERROR_CHECK(nvs_err);
+
+  ESP_ERROR_CHECK(aw9523b_init());
+  ESP_ERROR_CHECK(st7789_init());
+  ESP_ERROR_CHECK(st7789_fill(0x07e0));  // green: first pixels on screen
+  ESP_LOGI(TAG, "display initialized and filled");
 
   wifi_init_sta();
 
