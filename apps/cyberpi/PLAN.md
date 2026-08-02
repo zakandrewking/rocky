@@ -272,16 +272,21 @@ particularly because this stage touches firmware on a real device:
    only Wi-Fi and a minimal update receiver; doesn't depend on the codec or audio pipeline at all,
    which is why it comes before them here even though the plan's Work list keeps audio as the
    architecturally central item.
-4. **Bring up the codec.** Drive the ES8218E over I2S using the register map already in hand;
+4. **Bring up the ST7789 display — done.** Native driver against ESP-IDF's `spi_master`, DC/
+   RESET/backlight driven through the AW9523B I2C expander rather than raw ESP32 pins (panel pin
+   facts from the GPL-3.0 `CyberPi-Library-for-Arduino`, see `docs/upstream-sources.md`). Verified
+   for real: `st7789_init()` followed by a solid green `st7789_fill()` produced real pixels on the
+   board's screen — the fastest visible confirmation that custom firmware was running at all.
+5. **Bring up the codec.** Drive the ES8218E over I2S using the register map already in hand;
    confirm raw capture and playback at the target frame size (~10 ms) before building anything on
    top. OTA should already be usable by this point, so this is the first step that gets to benefit
    from it.
-5. **One-directional streaming milestone**, mirroring Stage 1's own first milestone but at the
+6. **One-directional streaming milestone**, mirroring Stage 1's own first milestone but at the
    native layer: `mic → 10ms frames → network → server`, and separately `server → network → 10ms
    frames → speaker`. No personality, no barge-in logic yet — just prove frames move continuously
    in each direction without gaps or growing latency.
-6. **Full duplex + barge-in.** Both directions active at once, VAD on the live mic during
+7. **Full duplex + barge-in.** Both directions active at once, VAD on the live mic during
    playback, interrupt-and-flush on trigger. This is the milestone that actually delivers on "the
    full experience."
-7. Then personality, the state machine, the screen UI, robot tool calls, and packaging — the rest
+8. Then personality, the state machine, the screen UI, robot tool calls, and packaging — the rest
    of Stage 2's work list above.

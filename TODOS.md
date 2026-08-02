@@ -255,6 +255,9 @@ matching the desktop app's WebRTC session, not a turn-based approximation of it.
   `cyberpi:restore` over USB stays the fallback for when OTA itself is unreachable.
 - [ ] Add auth to the CyberPi's `/ota` HTTP receiver (currently open to anything on the LAN) before
   this firmware is ever used somewhere the Wi-Fi network isn't fully trusted.
+- [x] **Bring up the ST7789 display - done.** Native SPI driver against ESP-IDF's `spi_master`,
+  DC/RESET/backlight driven through the AW9523B I2C expander rather than raw ESP32 pins. Verified
+  for real: `st7789_fill()` painted a solid green screen on the real board.
 - [ ] Bring up the ES8218E over I2S using the register map already in hand; confirm raw capture and
   playback at ~10 ms frames before building anything on top.
 - [ ] One-directional streaming milestones: `mic -> 10ms frames -> network -> server` and
