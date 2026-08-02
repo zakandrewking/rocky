@@ -4,11 +4,12 @@
 // not guessed; this implementation is written independently.
 #include "aw9523b.h"
 
-#include "driver/i2c_master.h"
 #include "esp_check.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "i2c_bus.h"
 
+#define REG_INPUT_P0 0x00
 #define REG_OUTPUT_P1 0x03
 #define REG_CONFIG_P1 0x05
 #define REG_WORK_MODE_P0 0x12
@@ -30,22 +31,14 @@ static esp_err_t write_reg(uint8_t reg, uint8_t value) {
 }
 
 esp_err_t aw9523b_init(void) {
-  i2c_master_bus_config_t bus_config = {
-      .i2c_port = -1,
-      .sda_io_num = AW9523B_SDA_GPIO,
-      .scl_io_num = AW9523B_SCL_GPIO,
-      .clk_source = I2C_CLK_SRC_DEFAULT,
-      .glitch_ignore_cnt = 7,
-  };
-  i2c_master_bus_handle_t bus;
-  ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &bus), TAG, "bus init");
+  ESP_RETURN_ON_ERROR(cyberpi_i2c_bus_init(), TAG, "shared bus init");
 
   i2c_device_config_t dev_config = {
       .dev_addr_length = I2C_ADDR_BIT_LEN_7,
       .device_address = AW9523B_I2C_ADDR,
       .scl_speed_hz = 100000,
   };
-  ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(bus, &dev_config, &s_dev), TAG,
+  ESP_RETURN_ON_ERROR(i2c_master_bus_add_device(cyberpi_i2c_bus(), &dev_config, &s_dev), TAG,
                        "add device");
 
   ESP_RETURN_ON_ERROR(write_reg(REG_SWRST, 0x00), TAG, "soft reset");
