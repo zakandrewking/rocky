@@ -21,3 +21,5 @@ apps/cyberpi/.pio/
 # Generated from the repo root .env at build time - contains the real Wi-Fi
 # password, never committed.
 apps/cyberpi/src/wifi_credentials.h
+
+.pocketbot
