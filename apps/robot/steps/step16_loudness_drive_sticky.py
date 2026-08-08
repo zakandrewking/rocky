@@ -81,8 +81,9 @@ except ImportError:
 
 try:
     from mbuild import quad_rgb_sensor  # confirmed real import: device/rocky_agent.py already
-
-    HAS_LINE_SENSOR = True  # uses quad_rgb_sensor.get_reflect(i) for i in (1, 2) this same way
+    # uses this same one, though for get_all_data() instead of the get_reflect() it assumed --
+    # see _reflect_readings() for how that got sorted out live, on real hardware.
+    HAS_LINE_SENSOR = True
 except ImportError:
     HAS_LINE_SENSOR = False
 
@@ -94,11 +95,17 @@ def _distance_cm():
 
 
 def _reflect_readings():
+    """The 4 per-channel intensity readings from the quad_rgb_sensor -- "quad" is literal, 4
+    channels, not 2. get_reflect() doesn't exist on this firmware despite being in the generated
+    `makeblock` package (mbuild-api-surface.md's weak-tier caveat proved out); confirmed live via
+    dir() + probing candidate calls (2026-08-08): get_intensity(1) returned the same value as
+    get_all_data()[0], so get_all_data()'s first 4 elements are the real per-channel readings."""
     if not HAS_LINE_SENSOR:
         return None
-    try:  # import succeeding doesn't guarantee the physical sensor is attached and working --
-        return (quad_rgb_sensor.get_reflect(1), quad_rgb_sensor.get_reflect(2))  # same defensive
-    except Exception:  # pattern device/rocky_agent.py's read_line_sensors() already uses
+    try:
+        return tuple(quad_rgb_sensor.get_all_data()[0:4])
+    except Exception as error:
+        _report_error_once("line_sensor_error", error)  # surfaced instead of silently swallowed
         return None
 
 # ============================== CALIBRATED CONSTANTS (measured) ==============================
@@ -199,13 +206,12 @@ MIN_LEVEL = 0.05  # minimum CURVE level while listening that counts as "a clear 
 OBSTACLE_STOP_CM = 15
 
 # "Did something touch/approach me while idle?" -- both checked only in "listening" (motors off,
-# so neither sensor is confused by the robot's own vibration/motion), and both real hardware
-# neither has calibration data for: mbuild-api-surface.md flags Color/quad_rgb_sensor as
-# weak-tier/unconfirmed, and there's no dedicated calibration pass for either signal (unlike
-# CURVE/SELF_NOISE). These thresholds are first guesses, meant to be tuned against live telemetry
-# same as every other guessed constant in this file.
-BUMP_THRESHOLD = 30  # get_reflect()'s real units/range are unconfirmed -- how far a channel must
-# suddenly jump from its own recent baseline to count as a physical bump, not floor-color drift
+# so neither sensor is confused by the robot's own vibration/motion). Neither has a dedicated
+# calibration pass (unlike CURVE/SELF_NOISE), so these thresholds are first guesses, meant to be
+# tuned against live telemetry same as every other guessed constant in this file.
+BUMP_THRESHOLD = 30  # a real quiet-room baseline reading was ~42-51 per channel (see
+# _reflect_readings' header for how that got confirmed); how far a channel must suddenly jump
+# from its own recent baseline to count as a physical bump, not ordinary floor-color drift
 REFLECT_BASELINE_ALPHA = 0.05
 APPROACH_CM = 10  # tighter than OBSTACLE_STOP_CM (15) on purpose -- that one's "stay safe while
 # driving," this one's "something is right in front of me while I'm sitting still." Edge-detected
@@ -243,8 +249,9 @@ _state = {
     "flee_ms": FLEE_MS_MIN,
     "recover_index": 0,
     "recover_seg_start": 0,
-    "reflect_baseline": [None, None],  # seeded from the first real reading, see _tick_listening
+    "reflect_baseline": [None, None, None, None],  # seeded per-channel, see _tick_listening
     "was_close": False,  # edge-detector for "something newly came close" -- see APPROACH_CM
+    "reported_errors": [],  # event keys already sent via _report_error_once, so it fires once
     "sock": None,
     "sock_tried": False,
 }
@@ -288,6 +295,16 @@ def _send_telemetry(extra):
         except Exception:
             pass
         _state["sock"] = None
+
+
+def _report_error_once(event, error):
+    """Surface a swallowed exception via telemetry, once per event key -- a silent `except:
+    return None` looks identical whether the hardware isn't there or the call is just wrong,
+    and that ambiguity is exactly what made the bump feature undebuggable live."""
+    if event in _state["reported_errors"]:
+        return
+    _state["reported_errors"].append(event)
+    _send_telemetry(',"event":"{}","error":"{}"'.format(event, str(error).replace('"', "'")))
 
 
 def _show_face(label, color):
@@ -366,6 +383,13 @@ def _boot():
     _state["floor"] = min(samples)
     _state["booted"] = True
     _connect_telemetry()
+    # One-time capability report -- "did it even import" was invisible before, and a bump never
+    # firing could equally mean "no sensor" or "wrong threshold." No point guessing which.
+    _send_telemetry(
+        ',"event":"sensors","has_ultrasonic":{},"has_line_sensor":{}'.format(
+            "true" if HAS_ULTRASONIC else "false", "true" if HAS_LINE_SENSOR else "false"
+        )
+    )
     _enter("listening", utime.ticks_ms())
     _show_face("o _ o", (0, 150, 255))
 
@@ -388,9 +412,13 @@ def _tick_listening(now):
         _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
         return
 
+    # Raw sensor values, always included below (not just when something fires) -- a bump never
+    # triggering could mean "no sensor," "wrong threshold," or "working fine, nothing touched it,"
+    # and those look identical without visibility into the actual numbers.
     readings = _reflect_readings()
+    reflect_extra = ',"reflect":null,"reflect_baseline":null'
+    bumped = False
     if readings is not None:
-        bumped = False
         for i, reading in enumerate(readings):
             baseline = _state["reflect_baseline"][i]
             if baseline is None:
@@ -399,14 +427,20 @@ def _tick_listening(now):
                 if abs(reading - baseline) > BUMP_THRESHOLD:
                     bumped = True
                 _state["reflect_baseline"][i] += REFLECT_BASELINE_ALPHA * (reading - baseline)
-        if bumped:
-            _enter("dizzy", now)
-            _show_face(*DIZZY_FACE)
-            _send_telemetry(',"bump":true')
-            return
+        reflect_extra = ',"reflect":[{}],"reflect_baseline":[{}]'.format(
+            ",".join(str(r) for r in readings),
+            ",".join(str(b) for b in _state["reflect_baseline"]),
+        )
+    if bumped:
+        _enter("dizzy", now)
+        _show_face(*DIZZY_FACE)
+        _send_telemetry(',"bump":true' + reflect_extra)
+        return
 
+    distance_extra = ',"distance_cm":null'
     if HAS_ULTRASONIC:
         distance = _distance_cm()
+        distance_extra = ',"distance_cm":{}'.format(distance)
         close_now = 0 <= distance < APPROACH_CM
         if close_now and not _state["was_close"]:
             surprise = 1.0 - (distance / APPROACH_CM)  # closer -> more startled, see STARTLE_CUTOFF
@@ -414,7 +448,7 @@ def _tick_listening(now):
             _state["was_close"] = close_now
             _enter("startled", now)
             _show_face("O   O", (255, 255, 255))
-            _send_telemetry(',"approach_cm":{}'.format(distance))
+            _send_telemetry(',"approach_cm":{}'.format(distance) + reflect_extra)
             return
         _state["was_close"] = close_now
 
@@ -422,7 +456,10 @@ def _tick_listening(now):
     if level > MIN_LEVEL:
         _start_driving(level, now)
 
-    _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+    _send_telemetry(
+        ',"loud":{},"external":{}'.format(loudness, round(external, 1)) + reflect_extra
+        + distance_extra
+    )
 
 
 def _tick_driving(now):

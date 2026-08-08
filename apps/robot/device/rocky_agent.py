@@ -155,7 +155,11 @@ def read_line_sensors():
     if not HAS_ULTRASONIC:
         return []
     try:
-        return [quad_rgb_sensor.get_reflect(i) for i in (1, 2)]
+        # get_reflect() doesn't exist on this firmware -- confirmed live on real hardware
+        # (2026-08-08, apps/robot/steps/step16_loudness_drive_sticky.py's touch-detection work):
+        # dir(quad_rgb_sensor) has no such method, and get_all_data()'s first 4 elements are the
+        # real per-channel readings (get_intensity(1) matched get_all_data()[0] exactly).
+        return list(quad_rgb_sensor.get_all_data()[0:2])
     except Exception:
         return []
 

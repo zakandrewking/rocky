@@ -78,6 +78,16 @@ Also present in the package, not used by Phase 1: `EncoderMotor` (superseded by 
 Slider, MQ2 gas, Light, SoilMoisture, Sound, Touch, LaserRanging, Flame, PIRMotion, Magnetic,
 Angle, Motion/IMU — this last one is moot now that `cyberpi.get_yaw()` is confirmed directly).
 
+**`Color.get_reflect()` does not actually exist** (found 2026-08-08, live on real hardware, while
+wiring up bump detection for `steps/step16_loudness_drive_sticky.py`): the weak-tier evidence
+above was simply wrong about this one method name. `dir(quad_rgb_sensor)` on the real device has
+no `get_reflect` at all. Confirmed real replacement, found by probing candidate calls live rather
+than guessing a second name from the same weak source: `get_all_data()` returns a 13-element list
+whose first 4 elements are the per-channel readings (`quad` is literal — 4 channels, not 2);
+`get_intensity(1)` independently returned the same value as `get_all_data()[0]`, cross-confirming
+it. `device/rocky_agent.py`'s `read_line_sensors()` carried the same wrong assumption (it was
+never run on hardware either) and has been fixed to match.
+
 ## No built-in obstacle-avoidance or line-following toggle
 
 Grepped the whole `makeblock` package tree for `avoid`, `line_follow`, `autopilot`, `auto_drive`:
