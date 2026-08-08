@@ -37,6 +37,13 @@
 #   - A sudden, very loud spike while listening (not a scream that built up gradually) looks
 #     startled: a quick reverse jolt ("jump" -- the mBot2 has no legs, so this is the closest
 #     physical analog) then a few seconds retreating ("runs away").
+#   - Two more idle-only triggers, added per live feedback asking for something like touch
+#     detection: the floor sensor (quad_rgb_sensor) suddenly deviating from its own recent
+#     baseline reads as a physical bump -- reacts with its own "dizzy" spin-and-silly-face, a
+#     distinct reaction from being startled by sound, since getting bumped and hearing a scream
+#     aren't the same feeling. The ultrasonic sensor reporting something newly within APPROACH_CM
+#     while sitting still reads as "something just got close to me" and reuses the sound-startled
+#     flee reaction instead (that one's closer to a real threat than a bump is).
 #
 # What's measured vs. guessed (same discipline as every prior version): CURVE is still from the
 # real 2026-08-08 calibration run. SUSTAIN_MIN/MAX_MS, DRIVE_TIMEOUT_MS, TURN_RPM/TURN_MS, and the
@@ -62,7 +69,9 @@ except ImportError:
     import socket
 
 # Same defensive pattern device/rocky_agent.py already established for this hardware: a base
-# mBot2 kit may not have the ultrasonic accessory attached, so don't assume it's there.
+# mBot2 kit may not have the ultrasonic accessory attached, so don't assume it's there. Same for
+# the quad_rgb_sensor (floor/line sensor) below -- separate try/except since kits could plausibly
+# have one accessory but not the other.
 try:
     from mbuild import ultrasonic2
 
@@ -70,11 +79,27 @@ try:
 except ImportError:
     HAS_ULTRASONIC = False
 
+try:
+    from mbuild import quad_rgb_sensor  # confirmed real import: device/rocky_agent.py already
+
+    HAS_LINE_SENSOR = True  # uses quad_rgb_sensor.get_reflect(i) for i in (1, 2) this same way
+except ImportError:
+    HAS_LINE_SENSOR = False
+
 
 def _distance_cm():
     if not HAS_ULTRASONIC:
         return -1
     return ultrasonic2.get_distance()
+
+
+def _reflect_readings():
+    if not HAS_LINE_SENSOR:
+        return None
+    try:  # import succeeding doesn't guarantee the physical sensor is attached and working --
+        return (quad_rgb_sensor.get_reflect(1), quad_rgb_sensor.get_reflect(2))  # same defensive
+    except Exception:  # pattern device/rocky_agent.py's read_line_sensors() already uses
+        return None
 
 # ============================== CALIBRATED CONSTANTS (measured) ==============================
 # Live feedback: the original (3,0)->(6,0.35) jump was too coarse -- almost all of a real "talk"
@@ -144,6 +169,10 @@ RECOVER_SCHEDULE = (
     (160, -WOBBLE_RPM, ".     o", (255, 230, 160)),
     (120, WOBBLE_RPM, "o     .", (255, 230, 160)),  # settle, still a little rattled
 )
+
+DIZZY_RPM = 70  # a comedic, sustained spin -- being bumped reads as "whoa, dizzy," not "scared"
+DIZZY_MS = 1800  # long enough for a couple of full rotations at DIZZY_RPM, not just one turn
+DIZZY_FACE = ("@ @", (170, 255, 130))  # label, LED color -- distinct from every other reaction
 # ==============================================================================================
 
 LAPTOP_HOST = "192.168.1.138"  # this Mac's current LAN IP -- check `ipconfig getifaddr en0`
@@ -169,6 +198,19 @@ MIN_LEVEL = 0.05  # minimum CURVE level while listening that counts as "a clear 
 # OBSTACLE_TURN_MS/_random_sign and _tick_driving), not the timeout turn's fixed ~180.
 OBSTACLE_STOP_CM = 15
 
+# "Did something touch/approach me while idle?" -- both checked only in "listening" (motors off,
+# so neither sensor is confused by the robot's own vibration/motion), and both real hardware
+# neither has calibration data for: mbuild-api-surface.md flags Color/quad_rgb_sensor as
+# weak-tier/unconfirmed, and there's no dedicated calibration pass for either signal (unlike
+# CURVE/SELF_NOISE). These thresholds are first guesses, meant to be tuned against live telemetry
+# same as every other guessed constant in this file.
+BUMP_THRESHOLD = 30  # get_reflect()'s real units/range are unconfirmed -- how far a channel must
+# suddenly jump from its own recent baseline to count as a physical bump, not floor-color drift
+REFLECT_BASELINE_ALPHA = 0.05
+APPROACH_CM = 10  # tighter than OBSTACLE_STOP_CM (15) on purpose -- that one's "stay safe while
+# driving," this one's "something is right in front of me while I'm sitting still." Edge-detected
+# (newly close, not merely close) so parking near a wall doesn't startle it forever.
+
 FLOOR_SEED_SAMPLES = 8
 FLOOR_SEED_INTERVAL_MS = 25
 
@@ -187,7 +229,7 @@ FACES = (
 _state = {
     "booted": False,
     "floor": None,
-    # "listening" | "driving" | "settling" | "turning" | "startled" | "recovering"
+    # "listening" | "driving" | "settling" | "turning" | "startled" | "recovering" | "dizzy"
     "mode": "listening",
     "mode_start": 0,
     "return_to": "listening",  # where "settling" goes next
@@ -201,6 +243,8 @@ _state = {
     "flee_ms": FLEE_MS_MIN,
     "recover_index": 0,
     "recover_seg_start": 0,
+    "reflect_baseline": [None, None],  # seeded from the first real reading, see _tick_listening
+    "was_close": False,  # edge-detector for "something newly came close" -- see APPROACH_CM
     "sock": None,
     "sock_tried": False,
 }
@@ -344,6 +388,36 @@ def _tick_listening(now):
         _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
         return
 
+    readings = _reflect_readings()
+    if readings is not None:
+        bumped = False
+        for i, reading in enumerate(readings):
+            baseline = _state["reflect_baseline"][i]
+            if baseline is None:
+                _state["reflect_baseline"][i] = reading
+            else:
+                if abs(reading - baseline) > BUMP_THRESHOLD:
+                    bumped = True
+                _state["reflect_baseline"][i] += REFLECT_BASELINE_ALPHA * (reading - baseline)
+        if bumped:
+            _enter("dizzy", now)
+            _show_face(*DIZZY_FACE)
+            _send_telemetry(',"bump":true')
+            return
+
+    if HAS_ULTRASONIC:
+        distance = _distance_cm()
+        close_now = 0 <= distance < APPROACH_CM
+        if close_now and not _state["was_close"]:
+            surprise = 1.0 - (distance / APPROACH_CM)  # closer -> more startled, see STARTLE_CUTOFF
+            _state["flee_ms"] = int(FLEE_MS_MIN + surprise * (FLEE_MS_MAX - FLEE_MS_MIN))
+            _state["was_close"] = close_now
+            _enter("startled", now)
+            _show_face("O   O", (255, 255, 255))
+            _send_telemetry(',"approach_cm":{}'.format(distance))
+            return
+        _state["was_close"] = close_now
+
     level = _interp(CURVE, external)
     if level > MIN_LEVEL:
         _start_driving(level, now)
@@ -478,6 +552,22 @@ def _tick_recovering(now):
     _send_telemetry("")
 
 
+def _tick_dizzy(now):
+    level, loudness, external = _sensed_level(DIZZY_RPM)
+    if level is not None and level > MIN_LEVEL:  # a surprise mid-spin takes priority
+        _start_driving(level, now)
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
+        return
+
+    if utime.ticks_diff(now, _state["mode_start"]) >= DIZZY_MS:
+        mbot2.drive_speed(0, 0)
+        _state["return_to"] = "listening"
+        _enter("settling", now)
+        return
+    mbot2.drive_speed(DIZZY_RPM, DIZZY_RPM)  # spin in place, sustained -- see DIZZY_MS
+    _send_telemetry("")
+
+
 _TICKS = {
     "listening": _tick_listening,
     "driving": _tick_driving,
@@ -485,6 +575,7 @@ _TICKS = {
     "turning": _tick_turning,
     "startled": _tick_startled,
     "recovering": _tick_recovering,
+    "dizzy": _tick_dizzy,
 }
 
 
