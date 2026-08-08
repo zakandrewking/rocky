@@ -1,0 +1,218 @@
+# Rocky as a networked robot body (apps/robot)
+
+## North star
+
+**Rocky navigates a room, finds a person, follows them, and talks to them — without crashing.**
+
+Everything in this plan earns its place by moving toward that sentence. Mapping exists so Rocky
+knows where "around the room" is. The camera layer exists so Rocky can tell a person from a
+chair. The obstacle-avoidance reflex exists so "without crashing" holds even when the plan or the
+network is wrong. Talking is the one part that's already solved — see below.
+
+## Relationship to apps/cyberpi
+
+This is a second, independent track from [`apps/cyberpi`](../cyberpi/PLAN.md), not a replacement
+for it. They're solving different problems:
+
+- **`apps/cyberpi`** asks whether the CyberPi itself can carry a realtime *voice* conversation,
+  and answered "not on stock firmware" — it's building native ESP32 firmware to drive the audio
+  codec directly, because the product bar is ~10 ms buffering and barge-in.
+- **`apps/robot`** doesn't need that answer at all. In this architecture the laptop keeps the
+  microphone and speaker — it already runs the existing desktop Rocky, which already meets the
+  realtime bar over WebRTC. The CyberPi's job here is motion and telemetry only: drive, sense,
+  don't crash. "Talk to them" in the north star is just the existing desktop app; once the robot
+  is near a person, nothing new has to be built for Rocky to speak.
+
+Once the laptop is physically mounted on the robot (Phase 6 below), both tracks are running on
+the same physical object, but as two separable concerns: `apps/cyberpi`'s native firmware would
+own audio I/O if it's ever needed on-device (e.g. the laptop's mic is a bad match for a moving
+robot's acoustics — untested, a real risk, see Phase 6 notes); `apps/robot`'s CyberOS agent owns
+the shield. Nothing here blocks or is blocked by `apps/cyberpi`'s progress.
+
+## Architecture
+
+```text
+Laptop (Rocky's brain)
+  ├─ Rocky desktop app — voice, personality, memory (unchanged, apps/desktop)
+  ├─ webcam — semantic layer (Phase 5+)
+  ├─ occupancy grid + semantic map (Phase 3+)
+  ├─ route planning (Phase 4+) — lives here, not on the CyberPi
+  └─ Robot SDK (apps/robot/src) — drive/turn/stop/telemetry, bounded before it hits the wire
+          │
+          │ Wi-Fi, newline-delimited JSON over TCP (see docs/mbuild-api-surface.md
+          │ for why not WebSocket/MQTT: unconfirmed whether stock CyberOS has sockets at all)
+          ▼
+CyberPi running stock CyberOS (apps/robot/device/rocky_agent.py)
+  ├─ protocol server — the only thing that talks to the laptop
+  ├─ heartbeat watchdog — stops motors if the link goes quiet
+  ├─ obstacle-avoidance reflex — vetoes a commanded drive locally, no round trip to the laptop
+  ├─ face/lights — cyberpi.display + cyberpi.led (already proven in apps/cyberpi Stage 1)
+  └─ mbuild shield API (EncoderMotor, Ultrasonic, Color)
+          │
+          ▼
+mBot2 Shield — motors, encoders, ultrasonic, line/color sensor
+```
+
+Rocky never gets direct low-level motor access: every command from an LLM tool call passes
+through `protocol.ts`'s `boundCommand`, which clamps distance/angle/speed before anything reaches
+the network. This is already implemented and tested (`apps/robot/src/protocol.ts`).
+
+## The three original open questions, answered
+
+### Can we do OTA?
+
+**Not the way the plan originally assumed, and not for free.** The cited evidence
+(`github.com/PerfecXX/mBot2` "demonstrating Wi-Fi filesystem upload") turned out, on actually
+reading the source, to be a Wi-Fi pub/sub messaging primitive between two already-running
+programs — not a way to push a new program onto the device. See
+[`docs/mbuild-api-surface.md`](docs/mbuild-api-surface.md) for the full accounting.
+
+What's real: mBlock's own GUI supports pushing one whole compiled program over Wi-Fi (alongside
+USB/Bluetooth) in Upload mode. That's a genuine no-USB iteration path for `rocky_agent.py`, but
+it's manual (through the mBlock app), all-or-nothing, and has no rollback story.
+
+`apps/cyberpi` already solved OTA properly — `pnpm cyberpi:ota`, atomic `ota_0`/`ota_1`
+partitions, no USB, verified on real hardware — but that's on **custom ESP-IDF firmware**, a
+different world from the MicroPython program this plan runs under stock CyberOS. **Decision:**
+for Phase 1-3, iterate via mBlock's manual Wi-Fi upload; it's slower than a scripted `rockyctl
+push` but real and already available, and building a scripted equivalent for a single MicroPython
+file isn't worth it yet. If `apps/robot` ever needs scripted OTA with rollback, the honest fallback
+is porting the motion agent onto `apps/cyberpi`'s existing native-firmware OTA plumbing rather
+than inventing a second one — revisit only if manual re-uploads actually become the bottleneck.
+
+### AI goals × mBot2 Shield obstacle avoidance — how do they integrate?
+
+There's no firmware-level "avoid obstacles" toggle to integrate with (confirmed absent from the
+`mbuild` API surface — see the doc above). So this isn't wiring two existing systems together;
+it's building one small one. The design:
+
+- The **laptop** plans: given the occupancy grid and a goal ("go toward the couch"), it issues
+  `drive`/`turn` commands.
+- The **CyberPi agent** runs a cheap local reflex on every control cycle, independent of what the
+  laptop asked for: poll `Ultrasonic.get_distance()`, and if it drops under a safety threshold
+  mid-drive, call `EncoderMotor.stop()` immediately and report `distance` telemetry back. The
+  laptop sees the early stop via telemetry and replans; it does not have to be fast enough to
+  prevent the collision itself, because the reflex already did.
+- This mirrors the heartbeat watchdog that's already built into `rocky_agent.py`'s design: safety
+  lives on the device, at the timescale the device can actually guarantee, and the laptop reacts
+  to reports rather than being trusted to arrive in time. Same principle both times — a dropped
+  Wi-Fi packet and an unseen coffee table are the same class of failure.
+
+### Where does route-planning live?
+
+**On the laptop**, next to the LLM tool-call layer and the occupancy grid, not on the CyberPi.
+This matches `apps/cyberpi/PLAN.md`'s own principle for the audio track ("the robot remains a
+thin embodied client") — same reasoning applies to motion. The CyberPi has no map, no goal, and
+no memory of the room; it only knows the command it was just given and whether its own ultrasonic
+sensor currently disagrees with that command.
+
+## Spatial mapping: rotate-and-ping, not SLAM
+
+Discussed and agreed: build a **crude occupancy grid**, not precise metric SLAM — the hardware
+doesn't support the latter well. The mBot2 has a single fixed, wide-beam ultrasonic sensor, and
+wheel-encoder odometry that drifts with slip; there's no LIDAR or depth camera, and no way to
+close a loop and correct that drift. That combination is fine for "is the space ahead roughly
+open," not for a nav-stack-grade map — a real upgrade path is a LIDAR or depth camera, deliberately
+deferred rather than attempted now.
+
+The technique: rotate the whole robot in place in fixed angle increments (say 15°), take an
+ultrasonic reading at each, and you get a low-resolution 360° polar scan — a poor-man's LIDAR
+sweep built entirely from primitives Phase 1-2 already needs (`turn`, `readDistance`). Convert
+each polar scan to world-frame points using the robot's estimated pose (odometry + the CyberPi's
+onboard gyro for heading), and merge scans taken from a few different spots in the room into one
+occupancy grid on the laptop. Good enough to tell Rocky "the doorway is roughly northeast of
+here"; not good enough to trust down to the centimeter.
+
+## Camera: a second, semantic layer
+
+The ultrasonic/odometry layer answers *where is space free*. It cannot answer *what is that* or
+*is that a person*. The laptop's webcam fills that gap, and does so as a genuinely different kind
+of sensor, not a redundant one: monocular vision gives identity and bearing (this is a person, and
+they're roughly 20° to my left) but not reliable depth — so it composes with the occupancy grid
+rather than replacing it. Concretely: send frames through the same vision-capable model already
+reasoning for Rocky (no separate CV pipeline to build), and when it reports a person, tag that
+bearing onto the map at the robot's current pose. "Find/follow a person" in the north star is this
+layer plus the occupancy grid together — bearing from vision, safe approach distance from
+ultrasonic.
+
+Two things to hold onto before building this:
+
+- **The camera isn't on the robot until Phase 6** (the laptop's physical mount), unless a cheap
+  USB webcam is added to the mBot2 earlier just for this. Don't block Phase 5 on Phase 6 without
+  deciding that explicitly.
+- **Privacy**: a camera on a family device is a materially bigger deal than audio alone (this
+  project's existing rule is already careful about audio memory — see root `TODOS.md`). Default
+  to no persistent recording, and give it an explicit, visible on/off — not bundled silently into
+  "the robot is on."
+
+## Repo shape
+
+```text
+apps/robot/
+├── PLAN.md                    — this file
+├── STEPS.md                   — ordered test list, software-only steps first
+├── README.md
+├── docs/
+│   └── mbuild-api-surface.md  — the mBot2 Shield API research, and the OTA claim checked
+├── src/                       — laptop-side SDK (@rocky/robot)
+│   ├── protocol.ts            — wire format, command bounding
+│   ├── transport.ts           — TcpTransport (real) + MockTransport (tests, no hardware)
+│   ├── robot.ts                — Robot: drive/turn/stop/setFace/setLights/readDistance/...
+│   └── index.ts
+└── device/
+    └── rocky_agent.py         — stock-CyberOS MicroPython agent (untested: no board attached
+                                  in this environment; see STEPS.md before trusting it)
+```
+
+## Movement primitives: confirmed, and one real risk
+
+Checking `github.com/PerfecXX/mBot2`'s actual device examples (not just the generated PyPI
+package) upgraded this plan materially — see `docs/mbuild-api-surface.md` for the full accounting:
+
+- `mbot2.straight(cm)` and `mbot2.turn(degrees)` are real, confirmed calls that take exactly the
+  units `drive`/`turn` need — no calibration guesswork for distance/angle.
+- `cyberpi.get_yaw()` gives heading directly from the onboard gyro — no accessory IMU needed for
+  the rotate-and-ping scan's pose tracking.
+- But `straight`/`turn` appear to **block until the maneuver finishes**, based on how the examples
+  call them back-to-back with no polling in between. If true, they're unusable for the
+  obstacle-avoidance reflex: a reflex that can only check the ultrasonic sensor *between* blocking
+  calls, after several blind seconds of `straight(200)`, doesn't hold up the north star's "without
+  crashing." So `rocky_agent.py` is built on `mbot2.drive_speed(em1, em2)` instead — not time- or
+  distance-boxed, so the agent's own loop can drive in short bursts, poll the ultrasonic between
+  them, and cut power immediately on its own schedule. Whether `straight`/`turn` truly block is
+  unconfirmed and worth settling on hardware (STEPS.md) — if they don't, they're less code to get
+  wrong and worth switching to.
+
+## Build order toward the north star
+
+Software-first, hardware steps clearly separated and deferred until there's physical access to
+the board (none in this environment right now). Full detail in `STEPS.md`; summary here:
+
+1. **Protocol + SDK, hardware-free.** Done: `boundCommand`, newline-JSON framing, `Robot` against
+   `MockTransport`, a loopback `TcpTransport` test against a real local TCP server. 25 tests
+   passing.
+2. **The one hardware fact that decides everything else**: can an uploaded (standalone) CyberOS
+   program open a real TCP socket? A real device example (`extension/02-mqtt/01-mqtt_publish.py`)
+   connects to a public MQTT broker from an uploaded program, which is strong circumstantial
+   evidence this works — but it hasn't been run by this project yet. If it turns out not to, the
+   fallback is porting the motion agent onto `apps/cyberpi`'s native firmware instead.
+3. Single motor + heartbeat watchdog on real hardware: drive briefly, then kill the connection and
+   confirm the agent stops on its own.
+4. Confirm whether `mbot2.straight`/`turn` actually block the interpreter, which decides whether
+   `rocky_agent.py`'s `drive_speed`-based interruptible control loop is necessary or whether the
+   simpler blocking calls are safe to use after all.
+5. Ultrasonic rotate-and-ping: verify a real scan produces a plausible point cloud against a known
+   room layout.
+6. Stitch scans from 2-3 spots into one occupancy grid on the laptop; eyeball it against the real
+   room.
+7. Obstacle-avoidance reflex: verify the agent stops a commanded drive on its own when something
+   is placed in the ultrasonic's path, independent of the laptop.
+8. Laptop-side planning against the occupancy grid: drive toward an open frontier.
+9. Camera semantic layer: detect a person in frame, estimate bearing, turn to face them.
+10. Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
+    comfortable distance.
+11. Talk: hand off to the existing desktop Rocky voice conversation once close — this is the one
+    step that needs no new work.
+12. **North-star run**: navigate the room, find a person, approach, talk, without crashing. Run it
+    repeatedly; tune reflex thresholds and planning behavior against what actually happens, not
+    what was assumed here.
