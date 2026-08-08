@@ -104,6 +104,8 @@ SUSTAIN_MAX_MS = 9000  # a max-level reading would sustain this long, but DRIVE_
 DRIVE_TIMEOUT_MS = 8000
 TURN_RPM = 105  # scaled with MAX_RPM below, now grounded in the mBot2's real rated speed
 TURN_MS = 1100  # paired guess with TURN_RPM for "about 180 degrees" -- no deg/s data exists yet
+OBSTACLE_TURN_MS = int(TURN_MS * 110 / 180)  # ~110 degrees instead of the personality turn's
+# ~180 -- same guessed degrees-per-ms ratio as TURN_MS, just scaled for a smaller angle
 
 # THE dial for "startle and flee" vs. "just drive forward fast": a clean (motors-off) reading at
 # or above STARTLE_CUTOFF is a candidate flee trigger; below it, the same loudness just drives
@@ -162,8 +164,9 @@ MIN_LEVEL = 0.05  # minimum CURVE level while listening that counts as "a clear 
 # override, not a loudness consideration. Only covers "driving" (translating forward): the mBot2
 # has a single fixed, forward-facing ultrasonic sensor (PLAN.md), so there's no way to see what's
 # behind it during the startled flee's backward retreat -- a real hardware limit, not an
-# oversight. Reacts by stopping and turning, reusing the existing turn-around path (see
-# _tick_driving) rather than adding a new one.
+# oversight. Reacts by stopping and turning -- shares "turning" mode's machinery with the
+# personality 8s-timeout turn, but with its own angle and a randomized direction (see
+# OBSTACLE_TURN_MS/_random_sign and _tick_driving), not the timeout turn's fixed ~180.
 OBSTACLE_STOP_CM = 15
 
 FLOOR_SEED_SAMPLES = 8
@@ -192,6 +195,8 @@ _state = {
     "rpm": 0,
     "sustain_ms": 0,
     "drive_started": None,  # start of the current unbroken run of commitments, for the 8s cap
+    "turn_ms": TURN_MS,  # how long "turning" spins for -- parameterized so the personality
+    "turn_rpm": TURN_RPM,  # 8s-timeout turn and the collision-avoidance turn can differ
     "baseline": 0.0,
     "flee_ms": FLEE_MS_MIN,
     "recover_index": 0,
@@ -263,6 +268,15 @@ def _enter(mode, now):
 def _ext_repr(external):
     """JSON-safe representation of an optional external reading (see _sensed_level)."""
     return "null" if external is None else round(external, 1)
+
+
+def _random_sign():
+    """+1 or -1, picked from the low bit of the current tick count. No confirmed `random`
+    module in this project's typings (typings/ has no random.pyi, and nothing else here
+    imports it) -- rather than risk an unconfirmed import failing to upload, this reuses timing
+    jitter that's already unpredictable enough for "which way to turn when startled by an
+    obstacle," which doesn't need real randomness."""
+    return 1 if utime.ticks_ms() % 2 == 0 else -1
 
 
 def _sensed_level(rpm_magnitude):
@@ -341,6 +355,12 @@ def _tick_driving(now):
     distance = _distance_cm()
     if HAS_ULTRASONIC and 0 <= distance < OBSTACLE_STOP_CM:
         mbot2.drive_speed(0, 0)
+        # Shorter, randomly-directioned turn than the personality 8s-timeout one below -- see
+        # OBSTACLE_TURN_MS's comment. Random because there's no way to tell which side is more
+        # open with a single fixed forward-facing sensor; always turning the same way would mean
+        # always turning toward whatever's usually on that side.
+        _state["turn_ms"] = OBSTACLE_TURN_MS
+        _state["turn_rpm"] = TURN_RPM * _random_sign()
         _state["return_to"] = "turning"
         _enter("settling", now)
         _send_telemetry(',"obstacle_cm":{}'.format(distance))
@@ -348,6 +368,8 @@ def _tick_driving(now):
 
     if utime.ticks_diff(now, _state["drive_started"]) >= DRIVE_TIMEOUT_MS:
         mbot2.drive_speed(0, 0)
+        _state["turn_ms"] = TURN_MS
+        _state["turn_rpm"] = TURN_RPM
         _state["return_to"] = "turning"
         _enter("settling", now)
         return
@@ -385,15 +407,15 @@ def _tick_settling(now):
 
 
 def _tick_turning(now):
-    level, loudness, external = _sensed_level(TURN_RPM)
+    level, loudness, external = _sensed_level(abs(_state["turn_rpm"]))
     if level is not None and level > MIN_LEVEL:  # a surprise mid-turn takes priority
         _start_driving(level, now)
         _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
         return
 
     elapsed = utime.ticks_diff(now, _state["mode_start"])
-    if elapsed < TURN_MS:
-        mbot2.drive_speed(TURN_RPM, TURN_RPM)  # spin in place -- guessed ~180 degrees, see header
+    if elapsed < _state["turn_ms"]:
+        mbot2.drive_speed(_state["turn_rpm"], _state["turn_rpm"])  # spin in place
         _send_telemetry("")
     else:
         mbot2.drive_speed(0, 0)
