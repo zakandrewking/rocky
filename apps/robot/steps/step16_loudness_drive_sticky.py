@@ -41,9 +41,16 @@
 # What's measured vs. guessed (same discipline as every prior version): CURVE is still from the
 # real 2026-08-08 calibration run. SUSTAIN_MIN/MAX_MS, DRIVE_TIMEOUT_MS, TURN_RPM/TURN_MS, and the
 # startle thresholds are NOT measured -- flagged exactly like v1-v7's window sizes were, meant to
-# be tuned against live telemetry. SELF_NOISE is kept below purely as calibration data for
-# reference (and because a future hybrid design might want it); this file's control loop no
-# longer uses it at all, for the reason explained above.
+# be tuned against live telemetry.
+#
+# Further live correction: the ability to react to something louder than expected was, at first,
+# only wired into "driving." Any state that runs the motors -- turning, the startled jump/flee,
+# the post-flee recovery wobble -- now runs the same self-noise-subtracted check every tick
+# (see _sensed_level/_start_driving) using whatever RPM magnitude that state currently commands,
+# and abandons its scripted action to start driving forward if something genuinely louder
+# registers. "settling" is the one deliberate exception: motors have JUST been commanded to stop
+# and mechanical ringing hasn't died down yet -- that untrustworthy window is exactly what
+# SETTLE_MS exists to wait out, so it doesn't get a mic check of its own.
 
 import cyberpi
 import mbot2
@@ -58,12 +65,15 @@ except ImportError:
 # Live feedback: the original (3,0)->(6,0.35) jump was too coarse -- almost all of a real "talk"
 # phase's dynamic range (measured 0-18 above floor) fell inside that single 3-unit step, so soft
 # vs. louder talking barely differed in speed. Two extra anchors (12, 25) spread resolution across
-# that same measured range instead of jumping straight to "moderately fast."
-CURVE = ((3.0, 0.0), (6.0, 0.15), (12.0, 0.35), (25.0, 0.6), (40.0, 0.85), (80.0, 1.0))
-SELF_NOISE = ((0.0, 0.0), (20.0, 42.0), (40.0, 65.0), (60.0, 83.0))  # used only during
-# "driving" (see header) to detect an escalation; NOT used in "listening", where motors are
-# already off and subtraction isn't needed. Caveat carried from v10: measured while spinning in
-# place (step12), reused here as an approximation for straight driving.
+# that same measured range instead of jumping straight to "moderately fast." Top anchor lowered
+# from a measured 80 to 50 per live feedback ("increase sensitivity for getting to max speed") --
+# a product choice to make max speed easier to reach, no longer the raw measured loud-talking
+# level itself.
+CURVE = ((3.0, 0.0), (6.0, 0.15), (12.0, 0.35), (25.0, 0.6), (40.0, 0.85), (50.0, 1.0))
+SELF_NOISE = ((0.0, 0.0), (20.0, 42.0), (40.0, 65.0), (60.0, 83.0))  # used during any
+# motors-on state (see header) to detect a louder-than-expected sound; NOT used in "listening",
+# where motors are already off and subtraction isn't needed. Caveat carried from v10: measured
+# while spinning in place (step12), reused here as an approximation for straight driving too.
 SETTLE_MS = 180  # measured motor-stop ring-down (step12); the pause before any clean read
 # ==============================================================================================
 
@@ -76,13 +86,13 @@ SUSTAIN_MAX_MS = 9000  # a max-level reading would sustain this long, but DRIVE_
 # is deliberately smaller, so a max-level commitment always gets interrupted by a turn instead of
 # quietly completing its own sustain window.
 DRIVE_TIMEOUT_MS = 8000
-TURN_RPM = 45
+TURN_RPM = 105  # scaled with MAX_RPM below, now grounded in the mBot2's real rated speed
 TURN_MS = 1100  # paired guess with TURN_RPM for "about 180 degrees" -- no deg/s data exists yet
 
 # THE dial for "startle and flee" vs. "just drive forward fast": a clean (motors-off) reading at
 # or above STARTLE_CUTOFF is a candidate flee trigger; below it, the same loudness just drives
-# forward per CURVE (whose own top anchor, 80, sits just under this on purpose -- see CURVE's
-# comment). Raise this to make the robot harder to startle, lower it to make it jumpier.
+# forward per CURVE (whose own top anchor sits comfortably under this). Raise this to make the
+# robot harder to startle, lower it to make it jumpier.
 STARTLE_CUTOFF = 85.0
 # Secondary refinement, not the main dial above: the reading must ALSO have jumped at least this
 # far above the recent baseline, so a scream that gradually climbs past STARTLE_CUTOFF drives
@@ -90,17 +100,19 @@ STARTLE_CUTOFF = 85.0
 # loud screaming would trigger flee repeatedly rather than the fast-forward behavior it should.
 STARTLE_JUMP_THRESHOLD = 55.0
 BASELINE_ALPHA = 0.03  # how fast the recent-baseline estimate tracks ambient loudness
-JUMP_RPM = 55
+JUMP_RPM = 165  # the fastest speed in the whole file -- a startled flinch should feel more
+# urgent than an ordinary max-speed cruise, not slower than one. Set relative to the real 178 RPM
+# rated-load ceiling (see MAX_RPM below) rather than scaled off the old MAX_RPM=60/100 guesses.
 JUMP_MS = 300  # the startled "flinch" -- reverse hard, briefly, fixed duration regardless of how
 # loud the trigger was (a flinch reads as reflexive, not proportional)
-FLEE_RPM = 45
+FLEE_RPM = 140  # fast and sustained, just under MAX_RPM -- urgent but not as sharp as the jolt
 SENSOR_MAX = 100.0  # measured: real calibration readings (loud/scream bursts) topped out here
 FLEE_MS_MIN = 1500  # how long the retreat lasts scales with how startling the sound was: a
 FLEE_MS_MAX = 4000  # reading right at the threshold flees briefly, one at the sensor's ceiling
 # flees for much longer -- "the louder the surprise, the farther it drives without slowing down."
 # Speed (FLEE_RPM) stays constant either way; only distance/duration scales.
 
-WOBBLE_RPM = 30  # a quick glance, gentler than a real TURN_RPM turn
+WOBBLE_RPM = 45  # a quick glance, gentler than a real TURN_RPM turn
 # After fleeing, spin back around to face the direction it just ran toward (so it isn't left
 # facing backward), then a few decaying alternating glances -- "did something just happen?"
 # before settling back into listening. (duration_ms, spin_rpm, face_label, led_color); spin_rpm
@@ -119,21 +131,28 @@ RECOVER_SCHEDULE = (
 LAPTOP_HOST = "192.168.1.138"  # this Mac's current LAN IP -- check `ipconfig getifaddr en0`
 LAPTOP_PORT = 8767
 
-MAX_RPM = 60
+# Makeblock's own published spec for the mBot2's 180 Optical Encoder Motor
+# (makeblock.com/products/180-optical-encoder-motor-for-mbot2): rated load speed 178 RPM +-10%,
+# no-load 350 RPM. 150 sits comfortably under the rated figure (margin for real load/battery
+# sag) while being real headroom above the earlier unverified 60/100 guesses. Real cm/s at this
+# RPM is still unmeasured (STEPS.md step 9 is still open) -- this bounds the dial, not the feel.
+MAX_RPM = 150
 MIN_RPM = 10  # below this the encoder motors whine without really moving
 MIN_LEVEL = 0.05  # minimum CURVE level while listening that counts as "a clear reading"
 
 FLOOR_SEED_SAMPLES = 8
 FLOOR_SEED_INTERVAL_MS = 25
 
-# level threshold, face key, label, LED color -- highest threshold <= level wins, set once at
-# commit time (not re-evaluated per tick -- there's nothing to react to mid-commitment).
-# idle/listening/happy are device/rocky_agent.py's existing face vocabulary; "alert" is new.
+# level threshold, face key, label, LED color -- highest threshold <= level wins (entries must
+# stay in ascending-threshold order -- see _face_for_level), set once at commit time (not
+# re-evaluated per tick -- there's nothing to react to mid-commitment). idle/listening/happy are
+# device/rocky_agent.py's existing face vocabulary; "alert" and "maxed" are new here.
 FACES = (
     (0.0, "idle", ". _ .", (40, 40, 60)),
     (0.15, "listening", "o _ o", (0, 150, 255)),
     (0.5, "alert", "> < ", (255, 150, 0)),
     (0.85, "happy", "^ _ ^", (255, 30, 130)),
+    (0.95, "maxed", "X   X", (255, 0, 90)),  # "X eyes" at/near max speed, per live feedback
 )
 
 _state = {
@@ -215,6 +234,26 @@ def _enter(mode, now):
     _state["mode_start"] = now
 
 
+def _sensed_level(rpm_magnitude):
+    """Self-noise-subtracted CURVE level given some known RPM magnitude currently commanded --
+    lets any motors-on state notice a genuinely louder sound and react (see module header)."""
+    loudness = cyberpi.get_loudness()
+    self_noise = _interp(SELF_NOISE, rpm_magnitude)
+    external = max(0.0, loudness - _state["floor"] - self_noise)
+    return _interp(CURVE, external), loudness, external
+
+
+def _start_driving(level, now):
+    _state["level"] = level
+    _state["rpm"] = max(MIN_RPM, int(level * MAX_RPM))
+    _state["sustain_ms"] = int(SUSTAIN_MIN_MS + level * (SUSTAIN_MAX_MS - SUSTAIN_MIN_MS))
+    if _state["drive_started"] is None:
+        _state["drive_started"] = now
+    _enter("driving", now)
+    mbot2.drive_speed(_state["rpm"], -_state["rpm"])
+    _show_face(*_face_for_level(level)[2:])
+
+
 def _boot():
     mbot2.drive_speed(0, 0)  # guarantee motors are physically stopped before seeding the floor,
     # in case a mid-drive payload was just replaced by this push
@@ -250,14 +289,7 @@ def _tick_listening(now):
 
     level = _interp(CURVE, external)
     if level > MIN_LEVEL:
-        _state["level"] = level
-        _state["rpm"] = max(MIN_RPM, int(level * MAX_RPM))
-        _state["sustain_ms"] = int(SUSTAIN_MIN_MS + level * (SUSTAIN_MAX_MS - SUSTAIN_MIN_MS))
-        if _state["drive_started"] is None:
-            _state["drive_started"] = now
-        _enter("driving", now)
-        mbot2.drive_speed(_state["rpm"], -_state["rpm"])
-        _show_face(*_face_for_level(level)[2:])
+        _start_driving(level, now)
 
     _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
 
@@ -269,18 +301,11 @@ def _tick_driving(now):
         _enter("settling", now)
         return
 
-    loudness = cyberpi.get_loudness()
-    self_noise = _interp(SELF_NOISE, _state["rpm"])
-    external = max(0.0, loudness - _state["floor"] - self_noise)
-    candidate_level = _interp(CURVE, external)
+    candidate_level, loudness, external = _sensed_level(_state["rpm"])
     if candidate_level > _state["level"]:  # louder than the current commitment -- escalate
-        _state["level"] = candidate_level
-        _state["rpm"] = max(MIN_RPM, int(candidate_level * MAX_RPM))
-        _state["sustain_ms"] = int(
-            SUSTAIN_MIN_MS + candidate_level * (SUSTAIN_MAX_MS - SUSTAIN_MIN_MS)
-        )
-        _state["mode_start"] = now  # escalating refreshes how long this commitment holds
-        _show_face(*_face_for_level(candidate_level)[2:])
+        _start_driving(candidate_level, now)  # refreshes mode_start, so the sustain check below
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+        return
     # A quieter-or-equal reading is ignored on purpose -- the commitment holds steady rather than
     # decaying or jittering with every tick's noise.
 
@@ -309,6 +334,12 @@ def _tick_settling(now):
 
 
 def _tick_turning(now):
+    level, loudness, external = _sensed_level(TURN_RPM)
+    if level > MIN_LEVEL:  # a surprise mid-turn takes priority -- see module header
+        _start_driving(level, now)
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+        return
+
     elapsed = utime.ticks_diff(now, _state["mode_start"])
     if elapsed < TURN_MS:
         mbot2.drive_speed(TURN_RPM, TURN_RPM)  # spin in place -- guessed ~180 degrees, see header
@@ -322,7 +353,14 @@ def _tick_turning(now):
 
 def _tick_startled(now):
     elapsed = utime.ticks_diff(now, _state["mode_start"])
-    if elapsed < JUMP_MS:
+    jumping = elapsed < JUMP_MS
+    level, loudness, external = _sensed_level(JUMP_RPM if jumping else FLEE_RPM)
+    if level > MIN_LEVEL:  # a surprise mid-flee takes priority -- see module header
+        _start_driving(level, now)
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+        return
+
+    if jumping:
         mbot2.drive_speed(-JUMP_RPM, JUMP_RPM)  # sharp reverse jolt -- the closest analog to a
         # "jump" the mBot2 has, given it has no legs
         _send_telemetry("")
@@ -345,6 +383,13 @@ def _enter_recovering(now):
 def _tick_recovering(now):
     idx = _state["recover_index"]
     duration, rpm, _, _ = RECOVER_SCHEDULE[idx]
+
+    level, loudness, external = _sensed_level(abs(rpm))
+    if level > MIN_LEVEL:  # a surprise mid-wobble takes priority -- see module header
+        _start_driving(level, now)
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+        return
+
     if utime.ticks_diff(now, _state["recover_seg_start"]) >= duration:
         idx += 1
         if idx >= len(RECOVER_SCHEDULE):

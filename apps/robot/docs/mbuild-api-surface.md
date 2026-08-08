@@ -50,6 +50,16 @@ timescale rather than whatever `straight()`'s internal one is. **Unconfirmed: wh
 settling on hardware since if they don't block, they're a simpler, less code to get wrong. Not
 assumed away; see `STEPS.md`.
 
+**`drive_speed(em1, em2)`'s real RPM ceiling** (found 2026-08-08, while tuning
+`steps/step16_loudness_drive_sticky.py`'s top speed against live feedback: "can we go faster?"):
+Makeblock's own product page for the mBot2's drive motor — the 180 Optical Encoder Motor
+(`makeblock.com/products/180-optical-encoder-motor-for-mbot2`) — states **rated load speed 178
+RPM ±10%**, no-load speed 350 RPM, reduction ratio 39.6:1. `drive_speed`'s em1/em2 arguments are
+real RPM (confirmed above from `04-encoder_speed.py`), so this is the actual hardware ceiling for
+them under load, not a value to guess at. STEPS.md step 9 (measured cm/s and deg/s per RPM) is
+still open, so what a given RPM actually *feels like* on the ground remains untested — this only
+answers "how high can the number go," not "what does it mean."
+
 ### Weaker tier: the generated `makeblock` PyPI package (0.1.8), `mbuild` module
 
 No example in `PerfecXX/mBot2` demonstrates the mBot2's onboard ultrasonic or quad-color sensor
