@@ -48,13 +48,16 @@ crashing.**
 - [ ] Calibrate drive_speed RPM-to-cm/s and deg/s, and the em1/em2-to-wheel sign convention.
   Partial real data: `drive_speed(+RPM, -RPM)` confirmed to drive forward (found incidentally
   during the loudness-driving experiment below), cm/s and deg/s still unmeasured.
-- [ ] **Voice-volume-controlled driving needs a fresh design pass.** Seven live-iterated versions
-  (`apps/robot/steps/step05` through `step11_loudness_drive_tuned.py`) all fell short — full
-  history, root causes (an acoustic self-noise feedback loop, and a floor-calibration step that
-  got corrupted by the very loud sound it was trying to filter out), and what the next attempt
-  needs (real calibration data instead of guessed constants, a mapping fit to that data, and a
-  deliberate calibration conversation with a person rather than blind auto-probing) are all in
-  `apps/robot/docs/loudness-drive-problem-statement.md`.
+- [ ] **Voice-volume-controlled driving: fresh pass built, needs its hardware run.** Seven
+  live-iterated versions (`apps/robot/steps/step05` through `step11_loudness_drive_tuned.py`)
+  all fell short — history and root causes in
+  `apps/robot/docs/loudness-drive-problem-statement.md`. The tooling that doc asked for now
+  exists (same doc, "The fresh pass, built" section): a telemetry logger
+  (`apps/robot/scripts/telemetry.mjs`), a guided calibration payload
+  (`steps/step12_loudness_calibration.py`), an analyzer that emits measured constants
+  (`scripts/analyze-calibration.mjs`), and the v8 drive payload that consumes them
+  (`steps/step13_loudness_drive_calibrated.py`). Remaining: one ~45s calibration session with
+  the robot and a person, paste the constants, and iterate on logged numbers.
 - [ ] Rotate-and-ping ultrasonic scan against a real room; stitch 2-3 scans into one occupancy
   grid using odometry + `cyberpi.get_yaw()`; check real-world drift.
 - [ ] Verify the obstacle-avoidance reflex stops a commanded drive locally, without waiting on the

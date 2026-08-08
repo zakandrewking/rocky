@@ -111,7 +111,8 @@ while True:
             payload["tick"]()  # pyright: ignore[reportCallIssue]
         except Exception as error:
             print("payload tick raised:", error)
-            payload = None  # stop calling a payload that's throwing; keep the loop (and pushes) alive
+            # Stop calling a payload that's throwing; keep the loop (and pushes) alive.
+            payload = None
             cyberpi.display.clear()
             cyberpi.display.show_label("PAYLOAD CRASHED", 16, 0, 40, 2)
             cyberpi.display.show_label("Push a fix", 12, 0, 60, 3)

@@ -91,6 +91,7 @@ def tick():
     cyberpi.led.on(brightness, 0, 255 - brightness, id="all")
     cyberpi.display.clear()
     cyberpi.display.show_label(
-        "L:{} self:{} ext:{}".format(loudness, int(predicted_self_noise), int(external)), 10, 0, 10, 0
+        "L:{} self:{} ext:{}".format(loudness, int(predicted_self_noise), int(external)),
+        10, 0, 10, 0,
     )
     cyberpi.display.show_label("k100:{} rpm:{}".format(int(_state["k"] * 100), rpm), 10, 0, 30, 1)

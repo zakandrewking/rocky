@@ -118,3 +118,55 @@ delay between motor-stop and mic-read changes anything.
   trustworthy (mechanical vibration/ringing)?
 - What listen/drive window sizes (if keeping the alternation approach) best balance
   responsiveness against smoothness for a sound sustained over ~10-15 seconds?
+
+## The fresh pass, built (2026-08-08) — awaiting a hardware run
+
+Everything section "What the fresh design pass needs" asked for now exists; what's left is one
+calibration session with the robot and a person. The pieces:
+
+- **`scripts/telemetry.mjs`** — laptop-side listener (port 8767). Logs every newline-JSON sample
+  from the board to a gitignored `local-data/robot-telemetry/*.jsonl` file. This is the "real
+  numbers land on the laptop" fix; nothing is read off the 128×128 screen anymore.
+- **`steps/step12_loudness_calibration.py`** — the deliberate calibration conversation as an OTA
+  payload. LED colors direct the person (orange = get ready, red = recording): silence → talk →
+  loud → scream, 6s of samples each; then three silent motor runs (RPM 20/40/60, spinning in
+  place so an unattended robot can't hit a wall), each followed by a ~1.2s ring-down probe
+  sampling every 10ms after motor-stop — that probe answers the settle-time open question
+  directly. Every socket op is time-bounded so a missing laptop listener can't freeze
+  `bootstrap.py`'s push loop, and any exception stops the motors before propagating.
+- **`scripts/analyze-calibration.mjs`** — reads the log, prints per-phase stats, self-noise vs.
+  RPM (directly testing v5's `K·rpm` assumption), the measured ring-down settle time, a
+  linear-vs-log diagnostic, and emits a ready-to-paste constants block. The mapping is
+  piecewise-linear interpolation through the measured anchors, so it works regardless of whether
+  the sensor turns out linear or logarithmic — no functional-form bet. Verified end-to-end
+  against a synthetic log.
+- **`steps/step13_loudness_drive_calibrated.py`** — v8. Keeps v7's listen/drive alternation and
+  corruption-proof leaky-min floor, adds the measured `SETTLE_MS` between motor-stop and
+  mic-read, maps loudness-above-floor through the calibrated `CURVE`, smooths with fast-attack
+  (scream hits 97% of max by the third listen cycle, ~1.9s) / slower-release, and streams every
+  listen window's numbers (`loud`, `floor`, `level`, `rpm`) back to `telemetry.mjs` so the next
+  tuning conversation happens over logged data. Ships with clearly-marked placeholder constants
+  that must be replaced by a real calibration run.
+
+### Run procedure
+
+```bash
+# 1. Laptop: start the listener (leave running for the whole session)
+node apps/robot/scripts/telemetry.mjs
+
+# 2. Check LAPTOP_HOST in step12/step13 matches this Mac (ipconfig getifaddr en0), then push:
+node apps/robot/scripts/push.mjs <board-ip> apps/robot/steps/step12_loudness_calibration.py
+#    ...follow the LED prompts (person + robot in the room). ~45 seconds total.
+
+# 3. Analyze (log path is printed by telemetry.mjs):
+node apps/robot/scripts/analyze-calibration.mjs local-data/robot-telemetry/<timestamp>.jsonl
+
+# 4. Paste the printed constants block into steps/step13_loudness_drive_calibrated.py, then:
+node apps/robot/scripts/push.mjs <board-ip> apps/robot/steps/step13_loudness_drive_calibrated.py
+#    ...and tune against the live telemetry in the log, not against feel.
+```
+
+The architecture decision left open in item 4 above (alternation vs. self-noise subtraction)
+should be revisited after step 3: if the analyzer shows `delta/rpm` roughly constant, v5's
+subtraction model is back on the table with properly-measured constants; if not, v8's
+alternation stands.

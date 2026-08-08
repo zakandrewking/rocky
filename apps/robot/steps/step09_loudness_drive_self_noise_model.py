@@ -55,7 +55,8 @@ def tick():
         return
 
     # Only ever re-probe while already stopped, so calibration never interrupts real driving.
-    if _state["rpm"] == 0 and utime.ticks_diff(now, _state["last_calibration"]) > RECALIBRATE_EVERY_MS:
+    since_calibration = utime.ticks_diff(now, _state["last_calibration"])
+    if _state["rpm"] == 0 and since_calibration > RECALIBRATE_EVERY_MS:
         calibrate()
 
     loudness = cyberpi.get_loudness()
@@ -71,6 +72,7 @@ def tick():
     cyberpi.led.on(brightness, 0, 255 - brightness, id="all")
     cyberpi.display.clear()
     cyberpi.display.show_label(
-        "L:{} self:{} ext:{}".format(loudness, int(predicted_self_noise), int(external)), 10, 0, 10, 0
+        "L:{} self:{} ext:{}".format(loudness, int(predicted_self_noise), int(external)),
+        10, 0, 10, 0,
     )
     cyberpi.display.show_label("k100:{} rpm:{}".format(int(_state["k"] * 100), rpm), 10, 0, 30, 1)
