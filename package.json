@@ -28,7 +28,8 @@
     "cyberpi:flash-rocky": "bash apps/cyberpi/scripts/cyberpi-flash-rocky.sh",
     "cyberpi:ota": "bash apps/cyberpi/scripts/cyberpi-ota.sh",
     "device-api": "pnpm --filter @rocky/device-api start",
-    "robot:check": "python3 -m py_compile apps/robot/device/rocky_agent.py",
+    "robot:check": "python3 -m py_compile apps/robot/device/*.py apps/robot/steps/*.py && node --check apps/robot/scripts/push.mjs",
+    "robot:push": "node apps/robot/scripts/push.mjs",
     "test": "pnpm --filter @rocky/desktop test && pnpm --filter @rocky/device-api test && pnpm --filter @rocky/robot test",
     "typecheck": "pnpm --filter @rocky/desktop typecheck && pnpm --filter @rocky/device-api typecheck && pnpm --filter @rocky/robot typecheck",
     "check": "pnpm lint && pnpm scripts:check && pnpm typecheck && pnpm test && pnpm build"

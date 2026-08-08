@@ -10,6 +10,7 @@ in, so 1-3 are the only ones actually run so far. Fill in the Result column as t
 | 2 | `robot.ts` unit tests against `MockTransport`: acks, timeouts, heartbeats, error replies, disconnect | No | **PASS** — 8 tests |
 | 3 | `transport.ts` `TcpTransport` against a real local TCP server (loopback, no board) | No | **PASS** — 5 tests |
 | 4 | **Gate:** upload a trivial standalone program to a real CyberPi and confirm a real TCP socket can be opened from it | Yes | **PASS**, both directions — `steps/step01_socket_gate.py` (inbound) and `steps/step01b_socket_gate_outbound.py` (outbound + inbound in one run). See "What actually happened" below |
+| 4b | **OTA bootstrap:** upload `device/bootstrap.py` once via mBlock, confirm it loads a pushed payload (`steps/step02_ota_payload_v1.py`) via `apps/robot/scripts/push.mjs`, and that a second push reloads it live with no further mBlock/USB interaction | Yes | |
 | 5 | `rocky_agent.py` accepts a TCP connection from a laptop running `TcpTransport`, and a `stop` command round-trips to an `ack` | Yes | |
 | 6 | Heartbeat watchdog: start a slow drive, then kill the laptop-side connection mid-motion, confirm the agent stops on its own within one watchdog interval | Yes | |
 | 7 | Confirm whether `mbot2.straight()`/`mbot2.turn()` block the interpreter until the maneuver finishes. Decides whether `rocky_agent.py`'s `drive_speed`-based interruptible loop is necessary, or whether the simpler blocking calls are safe after all | Yes | |

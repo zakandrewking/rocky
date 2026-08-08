@@ -33,6 +33,16 @@ crashing.**
   (don't use it for IP discovery), and uploading a new program while a previous one's unbounded
   loop is still running can stall the transfer indefinitely — press the board's Home button before
   every re-upload. Both documented in `apps/robot/STEPS.md`.
+- [ ] **Run `apps/robot/STEPS.md`'s step 4b on real hardware**: upload `device/bootstrap.py` once
+  via mBlock, confirm it loads `steps/step02_ota_payload_v1.py` pushed via `scripts/push.mjs`, and
+  that a second push reloads it live with no further mBlock/USB. Built on the confirmed-working
+  socket + file-I/O primitives from step 4; untested on hardware yet.
+- [ ] Add Python lint/type-check infra (`uv` + `ruff` + `basedpyright`, `pyproject.toml` +
+  `typings/`): done and verified — ruff found and fixed 2 real bugs project-wide (an unused
+  import, an SCons global false-positive), and permissive stubs cleared basedpyright's false
+  `cyberpi.display` attribute error in Zed. Not yet done: wire `uv run ruff`/`basedpyright` into
+  `pnpm check`, and add `pytest` coverage for `rocky_agent.py`'s pure helpers (needs a
+  `if __name__ == "__main__":` guard first so the module is importable without hitting hardware).
 - [ ] Confirm whether `mbot2.straight()`/`turn()` actually block the interpreter, which decides
   whether the `drive_speed`-based interruptible loop is necessary.
 - [ ] Calibrate drive_speed RPM-to-cm/s and deg/s, and the em1/em2-to-wheel sign convention.

@@ -73,12 +73,29 @@ it's manual (through the mBlock app), all-or-nothing, and has no rollback story.
 
 `apps/cyberpi` already solved OTA properly — `pnpm cyberpi:ota`, atomic `ota_0`/`ota_1`
 partitions, no USB, verified on real hardware — but that's on **custom ESP-IDF firmware**, a
-different world from the MicroPython program this plan runs under stock CyberOS. **Decision:**
-for Phase 1-3, iterate via mBlock's manual Wi-Fi upload; it's slower than a scripted `rockyctl
-push` but real and already available, and building a scripted equivalent for a single MicroPython
-file isn't worth it yet. If `apps/robot` ever needs scripted OTA with rollback, the honest fallback
-is porting the motion agent onto `apps/cyberpi`'s existing native-firmware OTA plumbing rather
-than inventing a second one — revisit only if manual re-uploads actually become the bottleneck.
+different world from the MicroPython program this plan runs under stock CyberOS.
+
+**Update, once the socket gate (STEPS.md step 4) actually passed on real hardware**: scripted OTA
+turned out to be buildable ourselves, without mBlock and without custom firmware. The gate proved
+both a real bidirectional TCP socket *and* working file I/O (`os.listdir`/`stat`/etc. were already
+in use elsewhere) are available in an uploaded stock-CyberOS program — which are exactly the two
+primitives a scripted push needs.
+
+The design: `device/bootstrap.py` is a small, rarely-changing loader, installed once via mBlock —
+matching the original plan's "install the bootstrap manually through mBlock once." From then on,
+`scripts/push.mjs` sends new code over the network; the loader writes it to a payload file and
+reloads it, no mBlock or USB involved again. The one thing that matters for safety: the loader
+owns its push-listener unconditionally, calling the payload's `tick()` once per loop iteration
+rather than handing off control — so a payload that throws gets dropped without ever stopping the
+loader's own ability to receive the next (fixed) push. Losing that would mean a single bad push
+bricks remote recovery, right back to a USB cable.
+
+This is not the atomic-partition, rollback-capable OTA `apps/cyberpi` has — there's no A/B
+payload slot, no version reporting, no rollback if a push itself is malformed enough to fail
+writing cleanly. If that ever matters, the fallback is still porting the motion agent onto
+`apps/cyberpi`'s existing native-firmware OTA plumbing. But for iteration speed during
+development, this closes the actual gap: `apps/robot/STEPS.md`'s step 4b is where this got proven
+on real hardware.
 
 ### AI goals × mBot2 Shield obstacle avoidance — how do they integrate?
 
