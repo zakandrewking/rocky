@@ -80,7 +80,7 @@ def load_payload():
     except OSError:
         return None
 
-    namespace = {"__name__": "rocky_payload"}
+    namespace = {"__name__": "rocky_payload"}  # type: dict[str, object]
     try:
         exec(compile(code, PAYLOAD_PATH, "exec"), namespace)
     except Exception as error:
@@ -108,7 +108,7 @@ while True:
 
     if payload and "tick" in payload:
         try:
-            payload["tick"]()
+            payload["tick"]()  # pyright: ignore[reportCallIssue]
         except Exception as error:
             print("payload tick raised:", error)
             payload = None  # stop calling a payload that's throwing; keep the loop (and pushes) alive

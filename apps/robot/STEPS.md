@@ -10,7 +10,7 @@ in, so 1-3 are the only ones actually run so far. Fill in the Result column as t
 | 2 | `robot.ts` unit tests against `MockTransport`: acks, timeouts, heartbeats, error replies, disconnect | No | **PASS** — 8 tests |
 | 3 | `transport.ts` `TcpTransport` against a real local TCP server (loopback, no board) | No | **PASS** — 5 tests |
 | 4 | **Gate:** upload a trivial standalone program to a real CyberPi and confirm a real TCP socket can be opened from it | Yes | **PASS**, both directions — `steps/step01_socket_gate.py` (inbound) and `steps/step01b_socket_gate_outbound.py` (outbound + inbound in one run). See "What actually happened" below |
-| 4b | **OTA bootstrap:** upload `device/bootstrap.py` once via mBlock, confirm it loads a pushed payload (`steps/step02_ota_payload_v1.py`) via `apps/robot/scripts/push.mjs`, and that a second push reloads it live with no further mBlock/USB interaction | Yes | |
+| 4b | **OTA bootstrap:** upload `device/bootstrap.py` once via mBlock, confirm it loads a pushed payload (`steps/step02_ota_payload_v1.py`) via `apps/robot/scripts/push.mjs`, and that a second push reloads it live with no further mBlock/USB interaction | Yes | **PASS** — pushed three times total, counter reset and climbed again each time, including with the USB cable fully unplugged. Confirmed wireless, not just mBlock-free |
 | 5 | `rocky_agent.py` accepts a TCP connection from a laptop running `TcpTransport`, and a `stop` command round-trips to an `ack` | Yes | |
 | 6 | Heartbeat watchdog: start a slow drive, then kill the laptop-side connection mid-motion, confirm the agent stops on its own within one watchdog interval | Yes | |
 | 7 | Confirm whether `mbot2.straight()`/`mbot2.turn()` block the interpreter until the maneuver finishes. Decides whether `rocky_agent.py`'s `drive_speed`-based interruptible loop is necessary, or whether the simpler blocking calls are safe after all | Yes | |
@@ -57,6 +57,17 @@ Once the board was in a good state (post power-cycle), both directions worked wi
 issues: outbound connect-and-send succeeded twice in a row, and one inbound accept-and-reply
 succeeded, confirmed from the laptop side both by a targeted port scan finding the board's real
 address and by watching the expected message arrive on a listening socket.
+
+## What actually happened running step 4b (2026-08-08)
+
+Passed cleanly, no surprises this time — `device/bootstrap.py` was uploaded once via mBlock
+(pressing Home first, per the step-4 lesson above), came up showing `Ready. Push :8766`, and
+`scripts/push.mjs` against the board's address (found the same way as step 4, a port scan) wrote
+and reloaded `step02_ota_payload_v1.py` three times in a row — each push's on-screen counter reset
+to 1 and climbed again. The third push was with the USB cable physically disconnected, confirming
+this is genuinely wireless iteration, not merely mBlock-free. `PLAN.md`'s OTA answer is updated
+accordingly: scripted push-based iteration is real on stock CyberOS, not just mBlock's manual
+Wi-Fi upload mode.
 
 ## Running a step
 

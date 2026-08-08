@@ -33,10 +33,10 @@ crashing.**
   (don't use it for IP discovery), and uploading a new program while a previous one's unbounded
   loop is still running can stall the transfer indefinitely — press the board's Home button before
   every re-upload. Both documented in `apps/robot/STEPS.md`.
-- [ ] **Run `apps/robot/STEPS.md`'s step 4b on real hardware**: upload `device/bootstrap.py` once
-  via mBlock, confirm it loads `steps/step02_ota_payload_v1.py` pushed via `scripts/push.mjs`, and
-  that a second push reloads it live with no further mBlock/USB. Built on the confirmed-working
-  socket + file-I/O primitives from step 4; untested on hardware yet.
+- [x] **Run `apps/robot/STEPS.md`'s step 4b on real hardware**: confirmed — `device/bootstrap.py`
+  uploaded once via mBlock, then `scripts/push.mjs` reloaded a test payload three times in a row
+  with zero further mBlock/USB, including one push with the USB cable fully disconnected. Scripted
+  OTA is real on stock CyberOS; `PLAN.md`'s OTA answer updated accordingly.
 - [ ] Add Python lint/type-check infra (`uv` + `ruff` + `basedpyright`, `pyproject.toml` +
   `typings/`): done and verified — ruff found and fixed 2 real bugs project-wide (an unused
   import, an SCons global false-positive), and permissive stubs cleared basedpyright's false
