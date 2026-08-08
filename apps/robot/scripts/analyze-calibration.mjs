@@ -16,9 +16,16 @@ import { readFileSync } from "node:fs";
 
 // Product choice, not measurement: where each measured vocal effort should land on the 0..1
 // speed scale. Talking putters along, being loud is clearly moving, a typical scream saturates.
-// (1.0 anchors at the scream phase's 25th percentile rather than its median so an ordinary
-// scream comfortably reaches max speed instead of only the loudest half of one.)
 const LEVEL_TARGETS = { talk: 0.35, loud: 0.7, scream: 1.0 };
+
+// Real calibration runs (2026-08-08) showed loud/scream phases are NOT steady tones -- a person
+// screaming or talking loudly does it in bursts (words, breaths), so even the "scream" phase's
+// raw samples spend a lot of time near the ambient floor between bursts. The median of a bursty
+// phase lands in the quiet gaps, not the vocal effort itself -- using it as an anchor recreated
+// v7's binary feel (a real run produced a non-monotonic curve this way). Anchors below instead
+// start at a percentile high enough to represent "the level reached while actually making the
+// sound" and escalate further only if needed to stay strictly above the previous anchor.
+const ANCHOR_PERCENTILES = [75, 80, 85, 90, 95];
 
 const logFile = process.argv[2];
 if (!logFile) {
@@ -60,6 +67,7 @@ function stats(records) {
     median: percentile(values, 50),
     p90: percentile(values, 90),
     max: values[values.length - 1],
+    sorted: values,
   };
 }
 
@@ -93,29 +101,45 @@ console.log(`ambient floor: median ${round1(ambient.median)}, jitter p10..p90 ${
 
 const anchors = [];
 // Ambient's own jitter must map to level 0 or the robot creeps on background noise alone.
-anchors.push([round1(ambient.p90 - ambient.median), 0.0]);
+let prevDelta = round1(ambient.p90 - ambient.median);
+anchors.push([prevDelta, 0.0]);
+console.log(`ambient jitter ceiling (level 0 anchor): delta ${prevDelta}`);
+
 for (const [phase, level] of Object.entries(LEVEL_TARGETS)) {
   const s = phaseStats.get(phase);
   if (!s) {
     console.warn(`missing '${phase}' phase -- skipping its anchor`);
     continue;
   }
-  const anchorValue = level === 1.0 ? s.p25 : s.median;
-  anchors.push([round1(anchorValue - ambient.median), level]);
-  console.log(
-    `${phase.padEnd(7)} delta above floor: median ${round1(s.median - ambient.median)}` +
-      (level === 1.0 ? ` (anchor uses p25: ${round1(s.p25 - ambient.median)})` : ""),
-  );
-}
-anchors.sort((a, b) => a[0] - b[0]);
 
-const deltas = anchors.map(([delta]) => delta);
-const monotonic = deltas.every((delta, index) => index === 0 || delta > deltas[index - 1]);
-if (!monotonic) {
-  console.warn(
-    "\nWARNING: anchors are not strictly increasing -- the phases don't separate cleanly." +
-      "\nEither the sensor saturates (log-like ceiling) or the session was noisy. Re-run" +
-      "\ncalibration before trusting this curve.",
+  let chosenPercentile = null;
+  let delta = null;
+  for (const p of ANCHOR_PERCENTILES) {
+    const candidate = round1(percentile(s.sorted, p) - ambient.median);
+    if (candidate > prevDelta) {
+      chosenPercentile = p;
+      delta = candidate;
+      break;
+    }
+  }
+  if (delta === null) {
+    // Even the top percentile didn't clear the previous anchor -- this phase didn't separate
+    // from the one before it. Keep going (nudge past prevDelta) but flag it loudly: the fix is
+    // re-running calibration with more contrast (louder/closer), not trusting this curve blindly.
+    chosenPercentile = ANCHOR_PERCENTILES[ANCHOR_PERCENTILES.length - 1];
+    delta = round1(prevDelta + 1);
+    console.warn(
+      `\nWARNING: '${phase}' phase never exceeded the previous anchor (even at p${chosenPercentile})` +
+        ` -- it didn't register as distinctly louder. Anchor forced to ${delta}; re-run` +
+        ` calibration with more contrast (louder, or closer to the mic) before trusting this.`,
+    );
+  }
+
+  anchors.push([delta, level]);
+  prevDelta = delta;
+  console.log(
+    `${phase.padEnd(7)} anchor: p${chosenPercentile} delta above floor = ${delta} ` +
+      `(median delta was ${round1(s.median - ambient.median)})`,
   );
 }
 

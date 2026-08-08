@@ -30,12 +30,28 @@ except ImportError:
     import socket
 
 # ============================== CALIBRATED CONSTANTS =========================================
-# PLACEHOLDERS until a real calibration run replaces them: push step12, then paste the constants
-# block that scripts/analyze-calibration.mjs prints. Do not hand-tune these -- that's the v1-v7
-# mistake this whole file exists to end.
-SETTLE_MS = 120
-CURVE = ((2.0, 0.0), (20.0, 0.35), (45.0, 0.7), (70.0, 1.0))  # (loudness above floor, level)
-FLOOR_REF = 12.0  # calibration session's ambient median; only used for a startup sanity display
+# Base values from a real calibration run (2026-08-08,
+# local-data/robot-telemetry/2026-08-08T20-40-13-496Z.jsonl) via
+# steps/step12_loudness_calibration.py + scripts/analyze-calibration.mjs -- not hand-tuned by
+# feel, the v1-v7 mistake this file exists to end. The run surfaced something v1-v7 never
+# measured: loud speech and screaming are bursty, not steady tones (words/breaths), so anchors
+# are taken at each phase's 75th+ percentile -- "the level reached while actually making the
+# sound" -- not the median, which lands in the gaps between bursts. See
+# analyze-calibration.mjs's ANCHOR_PERCENTILES comment for why.
+#
+# The top two anchors were then retuned against a live real-time test (same day, watching
+# telemetry while talking/driving): the calibration-only curve put loudness 40-50 at only
+# ~0.5-0.6 speed, which felt too slow against the stated expectation that ~40-50 should drive
+# "pretty fast and reliably forward." Correction after a second look: max speed should still be
+# reserved for the *measured* "loud" level (delta 80, its 75th percentile -- see above), not
+# handed out at 50. So 40 lands at "pretty fast but not maxed" (0.85) and true max (1.0) waits
+# for 80, the real loud-talking anchor -- reconciling both pieces of live feedback instead of
+# just the first. Deliberate, data-informed adjustments made while watching live numbers -- not
+# blind guesses -- but if the feel drifts again, retune this pair against fresh telemetry rather
+# than re-guessing from scratch.
+SETTLE_MS = 180
+CURVE = ((3.0, 0.0), (6.0, 0.35), (40.0, 0.85), (80.0, 1.0))  # (loudness above floor, level)
+FLOOR_REF = 0.0  # calibration session's ambient median; only used for a startup sanity display
 # ==============================================================================================
 
 LAPTOP_HOST = "192.168.1.138"  # telemetry (optional); check `ipconfig getifaddr en0`
@@ -85,19 +101,11 @@ def _connect_telemetry():
         _state["sock"] = None
 
 
-def _send_telemetry(loudness):
+def _send_raw(line):
     if _state["sock"] is None:
         return
     try:
-        _state["sock"].sendall(
-            '{{"t":{},"phase":"live","loud":{},"floor":{},"level":{},"rpm":{}}}\n'.format(
-                utime.ticks_ms(),
-                loudness,
-                _state["floor"],
-                round(_state["level"], 3),
-                _state["rpm"],
-            ).encode()
-        )
+        _state["sock"].sendall((line + "\n").encode())
     except Exception:
         try:
             _state["sock"].close()
@@ -106,11 +114,33 @@ def _send_telemetry(loudness):
         _state["sock"] = None  # laptop went away; keep driving standalone
 
 
+def _send_telemetry(loudness):
+    _send_raw(
+        '{{"t":{},"phase":"live","loud":{},"floor":{},"level":{},"rpm":{}}}'.format(
+            utime.ticks_ms(), loudness, _state["floor"], round(_state["level"], 3), _state["rpm"]
+        )
+    )
+
+
+def _send_telemetry_event(fields_json):
+    """fields_json: a JSON object literal (with braces) of event-specific fields; gets a
+    timestamp merged in."""
+    _send_raw('{{"t":{},{}'.format(utime.ticks_ms(), fields_json[1:]))
+
+
 def _listen_once(now):
     loudness = cyberpi.get_loudness()
 
     if _state["floor"] is None:
         _state["floor"] = loudness
+        # One-time sanity check: how far has ambient noise drifted from the calibration
+        # session's floor? A big drift means CURVE's anchors (measured as deltas above THAT
+        # session's floor) may need a fresh calibration run, not a code change.
+        _send_telemetry_event(
+            '{{"event":"floor_check","floor":{},"floor_ref":{},"drift":{}}}'.format(
+                loudness, FLOOR_REF, round(loudness - FLOOR_REF, 1)
+            )
+        )
     else:
         _state["floor"] = min(loudness, _state["floor"] + FLOOR_DRIFT_PER_LISTEN)
 
