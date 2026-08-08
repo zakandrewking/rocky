@@ -33,7 +33,8 @@ is unmissable, and deliberately does not duplicate the rest, so the two cannot d
 | Path | What it is |
 | --- | --- |
 | `apps/desktop` | the macOS Electron voice app — the Rocky people actually use |
-| `apps/cyberpi` | feasibility spike for Rocky on a Makeblock mBot2; start at `STEPS.md` |
+| `apps/cyberpi` | native-firmware track: on-device realtime audio for the mBot2/CyberPi; start at `STEPS.md` |
+| `apps/robot` | networked-body track: laptop-brain + thin CyberOS motion agent for the mBot2; start at `PLAN.md` |
 | `services/device-api` | backend for the robot; keeps the OpenAI key off the device |
 | `services/voice-clone` | experimental loopback-only local TTS worker |
 | `scripts/` | evals, the text-only personality lab, and local tooling |

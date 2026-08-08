@@ -127,6 +127,8 @@ pnpm cyberpi:backup # dump the CyberPi's entire flash before any custom firmware
 pnpm cyberpi:restore # write a backup back to the CyberPi (typed confirmation required)
 pnpm cyberpi:flash-rocky # build and flash the native firmware over USB
 pnpm cyberpi:ota # push a new build to the CyberPi over Wi-Fi, no USB required
+pnpm --filter @rocky/robot test # laptop-side robot SDK unit tests, no hardware needed
+pnpm robot:check # syntax-check the CyberOS device agent
 pnpm dist:mac  # create unsigned macOS DMG, zip, and unpacked app artifacts
 ```
 
@@ -147,6 +149,13 @@ board — see [`apps/cyberpi/docs/recovery.md`](apps/cyberpi/docs/recovery.md) a
 `services/device-api` is the backend the robot talks to. The OpenAI key stays on your computer and
 the robot gets a short-lived client secret instead, because an mBot2 is a thing a child carries
 around. Rocky's persona is imported from the desktop app rather than copied.
+
+A second, independent track, [`apps/robot`](apps/robot/README.md), gives Rocky a **networked**
+body instead: the laptop stays the brain (voice, planning, memory — all unchanged), and a thin
+CyberOS agent on the CyberPi only drives the mBot2 Shield's motors and sensors over Wi-Fi. North
+star: navigate a room, find a person, follow them, and talk to them, without crashing. See
+[`apps/robot/PLAN.md`](apps/robot/PLAN.md) for the architecture and how it relates to
+`apps/cyberpi`'s native-firmware audio work.
 
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.
