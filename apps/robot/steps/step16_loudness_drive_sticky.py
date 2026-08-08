@@ -61,15 +61,31 @@ try:
 except ImportError:
     import socket
 
+# Same defensive pattern device/rocky_agent.py already established for this hardware: a base
+# mBot2 kit may not have the ultrasonic accessory attached, so don't assume it's there.
+try:
+    from mbuild import ultrasonic2
+
+    HAS_ULTRASONIC = True
+except ImportError:
+    HAS_ULTRASONIC = False
+
+
+def _distance_cm():
+    if not HAS_ULTRASONIC:
+        return -1
+    return ultrasonic2.get_distance()
+
 # ============================== CALIBRATED CONSTANTS (measured) ==============================
 # Live feedback: the original (3,0)->(6,0.35) jump was too coarse -- almost all of a real "talk"
 # phase's dynamic range (measured 0-18 above floor) fell inside that single 3-unit step, so soft
 # vs. louder talking barely differed in speed. Two extra anchors (12, 25) spread resolution across
 # that same measured range instead of jumping straight to "moderately fast." Top anchor lowered
-# from a measured 80 to 50 per live feedback ("increase sensitivity for getting to max speed") --
-# a product choice to make max speed easier to reach, no longer the raw measured loud-talking
-# level itself.
-CURVE = ((3.0, 0.0), (6.0, 0.15), (12.0, 0.35), (25.0, 0.6), (40.0, 0.85), (50.0, 1.0))
+# twice per live feedback ("increase sensitivity for getting to max speed", then "further increase
+# sensitivity") from a measured 80 down to 50 then 32 -- a product choice about how easy max speed
+# should be to reach, no longer the raw measured loud-talking level. The (3,0) floor-jitter anchor
+# is left alone throughout -- that one's about the sensor's own noise floor, not voice sensitivity.
+CURVE = ((3.0, 0.0), (5.0, 0.15), (9.0, 0.35), (18.0, 0.6), (27.0, 0.85), (32.0, 1.0))
 SELF_NOISE = ((0.0, 0.0), (20.0, 42.0), (40.0, 65.0), (60.0, 83.0))  # used during any
 # motors-on state (see header) to detect a louder-than-expected sound; NOT used in "listening",
 # where motors are already off and subtraction isn't needed. Caveat carried from v10: measured
@@ -139,6 +155,16 @@ LAPTOP_PORT = 8767
 MAX_RPM = 150
 MIN_RPM = 10  # below this the encoder motors whine without really moving
 MIN_LEVEL = 0.05  # minimum CURVE level while listening that counts as "a clear reading"
+
+# Basic collision avoidance: same value device/rocky_agent.py already uses for this same sensor
+# and hardware (see PLAN.md's "AI goals x mBot2 Shield obstacle avoidance"). Checked every tick
+# while driving forward, taking priority over everything else -- an obstacle is a hard safety
+# override, not a loudness consideration. Only covers "driving" (translating forward): the mBot2
+# has a single fixed, forward-facing ultrasonic sensor (PLAN.md), so there's no way to see what's
+# behind it during the startled flee's backward retreat -- a real hardware limit, not an
+# oversight. Reacts by stopping and turning, reusing the existing turn-around path (see
+# _tick_driving) rather than adding a new one.
+OBSTACLE_STOP_CM = 15
 
 FLOOR_SEED_SAMPLES = 8
 FLOOR_SEED_INTERVAL_MS = 25
@@ -234,10 +260,27 @@ def _enter(mode, now):
     _state["mode_start"] = now
 
 
+def _ext_repr(external):
+    """JSON-safe representation of an optional external reading (see _sensed_level)."""
+    return "null" if external is None else round(external, 1)
+
+
 def _sensed_level(rpm_magnitude):
     """Self-noise-subtracted CURVE level given some known RPM magnitude currently commanded --
-    lets any motors-on state notice a genuinely louder sound and react (see module header)."""
+    lets any motors-on state notice a genuinely louder sound and react (see module header).
+
+    Returns (None, loudness, None) when rpm_magnitude exceeds SELF_NOISE's calibrated range
+    (60). _interp would otherwise silently clamp to the 60 RPM self-noise value (83) for any
+    higher RPM, badly UNDER-estimating real self-noise up there -- and TURN_RPM/JUMP_RPM/FLEE_RPM
+    and driving's own committed rpm now regularly exceed 60 since MAX_RPM was raised to 150. That
+    under-estimate was mistaking the robot's own motor noise for a real surprise at every one of
+    these higher speeds, reintroducing the original v3 feedback-loop bug -- a real regression
+    caught live (2026-08-08): a "yellow (turning/recovering) <-> blue (listening) spin loop" with
+    no sound involved at all. Refusing to guess beyond measured data is safer than a bad guess.
+    """
     loudness = cyberpi.get_loudness()
+    if rpm_magnitude > SELF_NOISE[-1][0]:
+        return None, loudness, None
     self_noise = _interp(SELF_NOISE, rpm_magnitude)
     external = max(0.0, loudness - _state["floor"] - self_noise)
     return _interp(CURVE, external), loudness, external
@@ -295,6 +338,14 @@ def _tick_listening(now):
 
 
 def _tick_driving(now):
+    distance = _distance_cm()
+    if HAS_ULTRASONIC and 0 <= distance < OBSTACLE_STOP_CM:
+        mbot2.drive_speed(0, 0)
+        _state["return_to"] = "turning"
+        _enter("settling", now)
+        _send_telemetry(',"obstacle_cm":{}'.format(distance))
+        return
+
     if utime.ticks_diff(now, _state["drive_started"]) >= DRIVE_TIMEOUT_MS:
         mbot2.drive_speed(0, 0)
         _state["return_to"] = "turning"
@@ -302,12 +353,12 @@ def _tick_driving(now):
         return
 
     candidate_level, loudness, external = _sensed_level(_state["rpm"])
-    if candidate_level > _state["level"]:  # louder than the current commitment -- escalate
+    if candidate_level is not None and candidate_level > _state["level"]:  # louder -- escalate
         _start_driving(candidate_level, now)  # refreshes mode_start, so the sustain check below
-        _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
         return
-    # A quieter-or-equal reading is ignored on purpose -- the commitment holds steady rather than
-    # decaying or jittering with every tick's noise.
+    # A quieter-or-equal reading (or an untrusted one -- see _sensed_level) is ignored on purpose:
+    # the commitment holds steady rather than decaying or jittering with every tick's noise.
 
     if utime.ticks_diff(now, _state["mode_start"]) >= _state["sustain_ms"]:
         mbot2.drive_speed(0, 0)
@@ -316,7 +367,7 @@ def _tick_driving(now):
         _enter("settling", now)
         return
     mbot2.drive_speed(_state["rpm"], -_state["rpm"])
-    _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+    _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
 
 
 def _tick_settling(now):
@@ -335,9 +386,9 @@ def _tick_settling(now):
 
 def _tick_turning(now):
     level, loudness, external = _sensed_level(TURN_RPM)
-    if level > MIN_LEVEL:  # a surprise mid-turn takes priority -- see module header
+    if level is not None and level > MIN_LEVEL:  # a surprise mid-turn takes priority
         _start_driving(level, now)
-        _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
         return
 
     elapsed = utime.ticks_diff(now, _state["mode_start"])
@@ -355,9 +406,9 @@ def _tick_startled(now):
     elapsed = utime.ticks_diff(now, _state["mode_start"])
     jumping = elapsed < JUMP_MS
     level, loudness, external = _sensed_level(JUMP_RPM if jumping else FLEE_RPM)
-    if level > MIN_LEVEL:  # a surprise mid-flee takes priority -- see module header
+    if level is not None and level > MIN_LEVEL:  # a surprise mid-flee takes priority
         _start_driving(level, now)
-        _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
         return
 
     if jumping:
@@ -385,9 +436,9 @@ def _tick_recovering(now):
     duration, rpm, _, _ = RECOVER_SCHEDULE[idx]
 
     level, loudness, external = _sensed_level(abs(rpm))
-    if level > MIN_LEVEL:  # a surprise mid-wobble takes priority -- see module header
+    if level is not None and level > MIN_LEVEL:  # a surprise mid-wobble takes priority
         _start_driving(level, now)
-        _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
+        _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
         return
 
     if utime.ticks_diff(now, _state["recover_seg_start"]) >= duration:
