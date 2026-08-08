@@ -1,0 +1,17 @@
+{
+  "name": "@rocky/robot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Laptop-side SDK for talking to Rocky's networked mBot2 robot body",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
