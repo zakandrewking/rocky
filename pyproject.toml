@@ -1,0 +1,40 @@
+[project]
+name = "rocky-python-tooling"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = ["ruff>=0.8", "pytest>=8", "basedpyright>=1.19"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+# Pyflakes checks (F) only look at names actually referenced in a file, never at whether an
+# imported module resolves for real -- so `import cyberpi` / `import mbot2` on a machine that has
+# neither installed is not a lint error. This is exactly the check that would have caught the
+# apps/robot/steps/step01_socket_gate.py upload failure: a name (utime) used without being
+# imported. Undefined-name and unused-import bugs in device scripts are otherwise invisible until
+# a real board rejects the upload.
+select = ["E", "F", "W"]
+
+[tool.pyright]
+# device/steps code only runs as MicroPython on the CyberPi; it can never be executed as CPython,
+# so this drives editor diagnostics (Zed, VS Code, etc.) rather than a runnable check.
+include = [
+    "apps/cyberpi/steps",
+    "apps/cyberpi/pre_build_wifi_credentials.py",
+    "apps/robot/device",
+    "apps/robot/steps",
+    "services/voice-clone",
+]
+stubPath = "typings"
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+# These modules only ever exist as MicroPython firmware; a stub is all there will ever be.
+reportMissingModuleSource = false

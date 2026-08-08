@@ -2,11 +2,13 @@
 # so the real Wi-Fi password lives in the same gitignored place as every other
 # secret in this repo (OPENAI_API_KEY, ROCKY_DEVICE_TOKENS, ...) rather than in
 # a committed sdkconfig or platformio.ini.
-Import("env")
+# Import and env are SCons/PlatformIO globals injected into this script's namespace at build
+# time -- real at runtime, invisible to any static checker.
+Import("env")  # noqa: F821  # pyright: ignore[reportUndefinedVariable]
 
 import os
 
-PROJECT_DIR = env.subst("$PROJECT_DIR")
+PROJECT_DIR = env.subst("$PROJECT_DIR")  # noqa: F821  # pyright: ignore[reportUndefinedVariable]
 
 
 def find_repo_root(start):

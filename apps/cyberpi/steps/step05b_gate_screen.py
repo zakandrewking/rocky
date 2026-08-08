@@ -26,7 +26,6 @@ WHAT TO LOOK FOR
 
 import gc
 import os
-import sys
 import time
 
 import cyberpi
