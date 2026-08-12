@@ -1,41 +1,61 @@
 # Rocky's thin robot-body agent for stock CyberOS (mBot2 + CyberPi).
 #
-# UNTESTED ON HARDWARE: written with no board attached to this environment. Every call here is
-# taken from real sources (see ../docs/mbuild-api-surface.md) but the wiring between them —
-# whether this actually drives the robot correctly — has not been run. Do not trust it past
-# apps/robot/STEPS.md's step 5. Standalone on purpose, like apps/cyberpi's step files: mBlock
-# uploads one program at a time, so this pastes in whole with no imports from siblings.
+# A bootstrap.py PAYLOAD, not a standalone program: push it with
+#   node apps/robot/scripts/push.mjs <board-ip> apps/robot/device/rocky_agent.py
+# bootstrap.py must already be running on the board (uploaded once via mBlock, see its own
+# header) -- it owns Wi-Fi and the push listener, and calls this file's tick() once per loop
+# iteration forever. This file must never block for more than about one DRIVE_BURST_MS chunk
+# inside a single tick() call, or bootstrap's own push-listener and this file's own heartbeat
+# watchdog both stop being checked for that long. See docs/mbuild-api-surface.md for why
+# mbot2.straight()/turn() (which block until the maneuver finishes) are avoided in favor of
+# mbot2.drive_speed(), driven here in short interruptible bursts instead.
 #
 # Wire protocol: newline-delimited JSON over a plain TCP socket, matching apps/robot/src/protocol.ts
-# on the laptop side. See docs/mbuild-api-surface.md for why not WebSocket/MQTT (unconfirmed
-# whether a WS handshake is practical here; a raw socket is the least capable thing that still
-# works, and that's all this needs).
+# on the client side (laptop or iOS) -- same protocol either way, this file doesn't know which
+# kind of client connected.
+#
+# Only one drive/turn may be in flight at a time -- a second one while busy gets an immediate
+# "busy" error rather than being queued, which keeps the tick()-driven state machine below simple.
+# `stop` always wins: it cancels an in-progress action on the very next tick, from any client.
 
 import cyberpi
 import mbot2
 import ujson
 import utime
 
-# --- Configuration: fill in before uploading ---
-WIFI_SSID = ""
-WIFI_PASSWORD = ""
+try:
+    import usocket as socket
+except ImportError:
+    import socket
+
+# mbuild accessory sensors, weaker evidence tier -- see docs/mbuild-api-surface.md. Wrapped in
+# try/except everywhere they're used, since it's unconfirmed these import cleanly, and a base
+# mBot2 kit may not have every accessory attached.
+try:
+    from mbuild import ultrasonic2, quad_rgb_sensor
+
+    HAS_ULTRASONIC = True
+except ImportError:
+    HAS_ULTRASONIC = False
+
 TCP_PORT = 8765
 
-# Heartbeat: the laptop sends {"type":"heartbeat"} on an interval (see robot.ts). If none arrives
-# within this window, stop the motors and wait for a fresh connection. This is what keeps a
-# dropped Wi-Fi link from leaving the robot driving blind — the whole reason the design in
-# PLAN.md puts safety on the device, not the network.
+# Heartbeat: a connected client sends {"type":"heartbeat"} on an interval (see robot.ts /
+# RobotProtocol.swift). If none arrives within this window, stop the motors and wait for a fresh
+# connection. This is what keeps a dropped Wi-Fi link from leaving the robot driving blind -- the
+# whole reason safety lives on the device, not the network.
 HEARTBEAT_TIMEOUT_MS = 2000
 
 # Obstacle-avoidance reflex: stop a commanded drive immediately if the ultrasonic sensor reports
-# less than this many cm, regardless of what the laptop asked for. See PLAN.md, "AI goals x mBot2
+# less than this many cm, regardless of what the client asked for. See PLAN.md, "AI goals x mBot2
 # Shield obstacle avoidance."
 OBSTACLE_STOP_CM = 15
 
 # mbot2.drive_speed(em1, em2) is not time- or distance-boxed (unlike mbot2.straight()/turn(),
 # which appear to block until the maneuver finishes -- see docs/mbuild-api-surface.md). Driving in
-# short bursts here, polling the ultrasonic between them, is what makes the obstacle reflex and
-# the heartbeat watchdog able to cut power quickly instead of only between blocking calls.
+# short bursts, one per tick(), is what makes the obstacle reflex and the heartbeat watchdog able
+# to cut power quickly instead of only between blocking calls -- and what keeps a single tick()
+# call bounded instead of looping internally for the whole commanded distance/angle.
 DRIVE_BURST_MS = 100
 
 # UNCONFIRMED (apps/robot/STEPS.md step 8): sign convention and left/right mapping for
@@ -50,88 +70,51 @@ MAX_RPM = 100
 CM_PER_SECOND_AT_MAX_RPM = 30.0
 DEGREES_PER_SECOND_AT_MAX_RPM = 90.0
 
-# mbuild accessory sensors, weaker evidence tier -- see docs/mbuild-api-surface.md. Wrapped in
-# try/except everywhere they're used, since it's unconfirmed these import cleanly, and a base
-# mBot2 kit may not have every accessory attached.
-try:
-    from mbuild import ultrasonic2, quad_rgb_sensor
-
-    HAS_ULTRASONIC = True
-except ImportError:
-    HAS_ULTRASONIC = False
-
-try:
-    import usocket as socket
-except ImportError:
-    import socket
+_server = None
+_conn = None
+_buffered = ""
+_last_heartbeat = 0
+_action = None  # None, or an in-progress drive/turn dict (see _start_drive/_start_turn)
+_booted = False
 
 
-def connect_wifi():
-    cyberpi.display.show_label("Rocky: connecting Wi-Fi", 12, 0, 0, 0)
-    if not cyberpi.wifi.is_connect():
-        cyberpi.wifi.connect(WIFI_SSID, WIFI_PASSWORD)
-        while not cyberpi.wifi.is_connect():
-            utime.sleep_ms(200)
+def _boot():
+    global _server, _booted
+    _server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    _server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    _server.bind(("0.0.0.0", TCP_PORT))
+    _server.listen(1)
+    _server.settimeout(0)  # non-blocking accept() -- this is a payload, not the owner of the loop
     cyberpi.display.clear()
-    cyberpi.display.show_label("Rocky: Wi-Fi up", 12, 0, 0, 0)
+    cyberpi.display.show_label("Rocky motion :{}".format(TCP_PORT), 12, 0, 0, 0)
+    cyberpi.led.on(0, 255, 0, id="all")
+    _booted = True
 
 
 def read_distance_cm():
     if not HAS_ULTRASONIC:
         return -1
-    return ultrasonic2.get_distance()
+    try:
+        return ultrasonic2.get_distance()
+    except Exception:
+        return -1
+
+
+def read_line_sensors():
+    if not HAS_ULTRASONIC:
+        return []
+    try:
+        # get_reflect() doesn't exist on this firmware -- confirmed live on real hardware
+        # (2026-08-08, steps/step16_loudness_drive_sticky.py's touch-detection work): dir() has no
+        # such method, and get_all_data()'s first 4 elements are the real per-channel readings
+        # (get_intensity(1) matched get_all_data()[0] exactly).
+        return list(quad_rgb_sensor.get_all_data()[0:2])
+    except Exception:
+        return []
 
 
 def stop_motors():
     mbot2.drive_speed(0, 0)
-
-
-def drive_burst(speed_pct, forward):
-    """One DRIVE_BURST_MS chunk of driving, aborted early if the ultrasonic reflex trips."""
-    rpm = (speed_pct / 100.0) * MAX_RPM
-    if not forward:
-        rpm = -rpm
-    em1 = rpm * DRIVE_RPM_SIGN[0]
-    em2 = rpm * DRIVE_RPM_SIGN[1]
-    mbot2.drive_speed(em1, em2)
-
-    start = utime.ticks_ms()
-    while utime.ticks_diff(utime.ticks_ms(), start) < DRIVE_BURST_MS:
-        distance = read_distance_cm()
-        if forward and HAS_ULTRASONIC and 0 <= distance < OBSTACLE_STOP_CM:
-            stop_motors()
-            return False  # tripped the reflex; caller should stop and report
-        utime.sleep_ms(10)
-
-    stop_motors()
-    return True
-
-
-def drive_cm(distance_cm, speed_pct):
-    """Drives in DRIVE_BURST_MS bursts so the obstacle reflex can cut in between them, rather
-    than one long blocking mbot2.straight() call. See docs/mbuild-api-surface.md."""
-    forward = distance_cm >= 0
-    cm_per_burst = CM_PER_SECOND_AT_MAX_RPM * (speed_pct / 100.0) * (DRIVE_BURST_MS / 1000.0)
-    remaining = abs(distance_cm)
-    while remaining > 0:
-        if not drive_burst(speed_pct, forward):
-            return False  # obstacle reflex stopped us short
-        remaining -= cm_per_burst
-    return True
-
-
-def turn_degrees(degrees, speed_pct):
-    clockwise = degrees >= 0
-    rpm = (speed_pct / 100.0) * MAX_RPM
-    if not clockwise:
-        rpm = -rpm
-    em1 = rpm * TURN_RPM_SIGN[0]
-    em2 = rpm * TURN_RPM_SIGN[1]
-    seconds = abs(degrees) / max(DEGREES_PER_SECOND_AT_MAX_RPM * (speed_pct / 100.0), 1)
-
-    mbot2.drive_speed(em1, em2)
-    utime.sleep_ms(int(seconds * 1000))
-    stop_motors()
 
 
 def set_face(face):
@@ -151,20 +134,101 @@ def set_lights(r, g, b):
     cyberpi.led.on(r, g, b, id="all")
 
 
-def read_line_sensors():
-    if not HAS_ULTRASONIC:
-        return []
-    try:
-        # get_reflect() doesn't exist on this firmware -- confirmed live on real hardware
-        # (2026-08-08, apps/robot/steps/step16_loudness_drive_sticky.py's touch-detection work):
-        # dir(quad_rgb_sensor) has no such method, and get_all_data()'s first 4 elements are the
-        # real per-channel readings (get_intensity(1) matched get_all_data()[0] exactly).
-        return list(quad_rgb_sensor.get_all_data()[0:2])
-    except Exception:
-        return []
+def drive_burst(speed_pct, forward):
+    """One DRIVE_BURST_MS chunk of driving, aborted early if the ultrasonic reflex trips.
+    Returns False if the reflex tripped, True if the burst completed normally."""
+    rpm = (speed_pct / 100.0) * MAX_RPM
+    if not forward:
+        rpm = -rpm
+    em1 = rpm * DRIVE_RPM_SIGN[0]
+    em2 = rpm * DRIVE_RPM_SIGN[1]
+    mbot2.drive_speed(em1, em2)
+
+    start = utime.ticks_ms()
+    while utime.ticks_diff(utime.ticks_ms(), start) < DRIVE_BURST_MS:
+        distance = read_distance_cm()
+        if forward and HAS_ULTRASONIC and 0 <= distance < OBSTACLE_STOP_CM:
+            stop_motors()
+            return False
+        utime.sleep_ms(10)
+
+    stop_motors()
+    return True
+
+
+def turn_burst(speed_pct, clockwise, burst_ms):
+    """One burst_ms chunk of turning (no obstacle reflex -- turning in place doesn't translate
+    the robot into new space the way driving forward does)."""
+    rpm = (speed_pct / 100.0) * MAX_RPM
+    if not clockwise:
+        rpm = -rpm
+    em1 = rpm * TURN_RPM_SIGN[0]
+    em2 = rpm * TURN_RPM_SIGN[1]
+    mbot2.drive_speed(em1, em2)
+    utime.sleep_ms(burst_ms)
+    stop_motors()
+
+
+def _start_drive(distance_cm, speed_pct, command_id, send):
+    global _action
+    _action = {
+        "kind": "drive",
+        "forward": distance_cm >= 0,
+        "speed": speed_pct,
+        "remaining_cm": abs(distance_cm),
+        "id": command_id,
+        "send": send,
+    }
+
+
+def _start_turn(degrees, speed_pct, command_id, send):
+    global _action
+    total_ms = abs(degrees) / max(DEGREES_PER_SECOND_AT_MAX_RPM * (speed_pct / 100.0), 1) * 1000.0
+    _action = {
+        "kind": "turn",
+        "clockwise": degrees >= 0,
+        "speed": speed_pct,
+        "remaining_ms": total_ms,
+        "id": command_id,
+        "send": send,
+    }
+
+
+def _pump_action():
+    """Advances the in-progress drive/turn by exactly one burst, then returns -- tick() gets
+    called again by bootstrap.py's own loop for the next burst. This is what keeps a multi-second
+    drive/turn from blocking the push-listener the way one long synchronous call would."""
+    global _action
+    if _action is None:
+        return
+
+    if _action["kind"] == "drive":
+        ok = drive_burst(_action["speed"], _action["forward"])
+        if not ok:
+            _action["send"](
+                {"type": "error", "id": _action["id"], "ok": False, "message": "obstacle stop"}
+            )
+            _action = None
+            return
+        cm_per_burst = (
+            CM_PER_SECOND_AT_MAX_RPM * (_action["speed"] / 100.0) * (DRIVE_BURST_MS / 1000.0)
+        )
+        _action["remaining_cm"] -= cm_per_burst
+        if _action["remaining_cm"] <= 0:
+            _action["send"]({"type": "ack", "id": _action["id"], "ok": True})
+            _action = None
+
+    elif _action["kind"] == "turn":
+        chunk_ms = min(DRIVE_BURST_MS, _action["remaining_ms"])
+        turn_burst(_action["speed"], _action["clockwise"], int(chunk_ms))
+        _action["remaining_ms"] -= chunk_ms
+        if _action["remaining_ms"] <= 0:
+            _action["send"]({"type": "ack", "id": _action["id"], "ok": True})
+            _action = None
 
 
 def handle_command(command, send):
+    global _action
     command_type = command.get("type")
     command_id = command.get("id")
 
@@ -172,15 +236,17 @@ def handle_command(command, send):
         return  # no reply needed; receipt alone resets the watchdog
 
     if command_type == "drive":
-        ok = drive_cm(command["distanceCm"], command["speed"])
-        if ok:
-            send({"type": "ack", "id": command_id, "ok": True})
-        else:
-            send({"type": "error", "id": command_id, "ok": False, "message": "obstacle stop"})
+        if _action is not None:
+            send({"type": "error", "id": command_id, "ok": False, "message": "busy"})
+            return
+        _start_drive(command["distanceCm"], command["speed"], command_id, send)
     elif command_type == "turn":
-        turn_degrees(command["degrees"], command["speed"])
-        send({"type": "ack", "id": command_id, "ok": True})
+        if _action is not None:
+            send({"type": "error", "id": command_id, "ok": False, "message": "busy"})
+            return
+        _start_turn(command["degrees"], command["speed"], command_id, send)
     elif command_type == "stop":
+        _action = None  # cancel any in-progress drive/turn -- stop always wins
         stop_motors()
         send({"type": "ack", "id": command_id, "ok": True})
     elif command_type == "setFace":
@@ -197,54 +263,79 @@ def handle_command(command, send):
         send({"type": "error", "id": command_id, "ok": False, "message": "unknown command"})
 
 
-def run_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("0.0.0.0", TCP_PORT))
-    server.listen(1)
-    server.settimeout(1)
-    cyberpi.display.show_label("Rocky: listening :{}".format(TCP_PORT), 12, 0, 0, 0)
-
-    while True:
+def _make_send(connection):
+    def send(message):
         try:
-            connection, _addr = server.accept()
-        except OSError:
-            continue  # accept() timeout; loop so this stays responsive to a future Ctrl-C
-
-        connection.settimeout(0.1)
-        set_face("idle")
-        buffered = ""
-        last_heartbeat = utime.ticks_ms()
-
-        def send(message):
             connection.sendall(ujson.dumps(message) + "\n")
+        except Exception:
+            pass  # the client is gone; the next tick's heartbeat-timeout check cleans this up
 
-        while True:
-            if utime.ticks_diff(utime.ticks_ms(), last_heartbeat) > HEARTBEAT_TIMEOUT_MS:
-                stop_motors()
-                set_face("error")
-                break  # drop back to accept(), waiting for a fresh connection
+    return send
 
+
+def _pump_network():
+    """One non-blocking step of connection/command handling per tick(). Accepts at most one new
+    connection, processes at most whatever's already buffered from recv(), and checks the
+    heartbeat watchdog -- never waits for any of these."""
+    global _conn, _buffered, _last_heartbeat, _action
+
+    if _server is None:
+        return  # tick() only calls this after _boot() has run
+
+    if _conn is None:
+        try:
+            connection, _addr = _server.accept()
+        except OSError:
+            return  # nothing pending this tick
+        connection.settimeout(0)
+        _conn = connection
+        _buffered = ""
+        _last_heartbeat = utime.ticks_ms()
+        _action = None
+        set_face("idle")
+        return
+
+    if utime.ticks_diff(utime.ticks_ms(), _last_heartbeat) > HEARTBEAT_TIMEOUT_MS:
+        stop_motors()
+        _action = None
+        set_face("error")
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = None
+        return
+
+    try:
+        chunk = _conn.recv(1024)
+    except OSError:
+        chunk = None  # nothing to read this tick
+
+    if chunk:
+        _buffered += chunk.decode("utf-8")
+        while "\n" in _buffered:
+            line, _buffered = _buffered.split("\n", 1)
+            if not line:
+                continue
+            _last_heartbeat = utime.ticks_ms()
             try:
-                chunk = connection.recv(1024)
-            except OSError:
-                chunk = None  # recv() timeout; still need to check the heartbeat clock above
-
-            if chunk:
-                buffered += chunk.decode("utf-8")
-                while "\n" in buffered:
-                    line, buffered = buffered.split("\n", 1)
-                    if not line:
-                        continue
-                    last_heartbeat = utime.ticks_ms()
-                    command = ujson.loads(line)
-                    handle_command(command, send)
-            elif chunk == b"":
-                stop_motors()
-                break  # the laptop closed the connection
-
-        connection.close()
+                command = ujson.loads(line)
+            except Exception:
+                continue
+            handle_command(command, _make_send(_conn))
+    elif chunk == b"":
+        stop_motors()
+        _action = None
+        try:
+            _conn.close()
+        except Exception:
+            pass
+        _conn = None
 
 
-connect_wifi()
-run_server()
+def tick():
+    if not _booted:
+        _boot()
+        return
+    _pump_network()
+    _pump_action()
