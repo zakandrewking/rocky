@@ -30,7 +30,10 @@
     "device-api": "pnpm --filter @rocky/device-api start",
     "robot:check": "python3 -m py_compile apps/robot/device/*.py apps/robot/steps/*.py && node --check apps/robot/scripts/push.mjs",
     "robot:push": "node apps/robot/scripts/push.mjs",
-    "test": "pnpm --filter @rocky/desktop test && pnpm --filter @rocky/device-api test && pnpm --filter @rocky/robot test",
+    "ios:check": "cd apps/ios && xcodegen generate",
+    "ios:test": "cd apps/ios && xcodegen generate && xcodebuild -project Rocky.xcodeproj -scheme Rocky -destination 'platform=iOS Simulator,name=iPhone 17' -configuration Debug test",
+    "ios:deploy": "bash apps/ios/scripts/deploy.sh",
+    "test": "pnpm --filter @rocky/desktop test && pnpm --filter @rocky/device-api test && pnpm --filter @rocky/robot test && pnpm ios:test",
     "typecheck": "pnpm --filter @rocky/desktop typecheck && pnpm --filter @rocky/device-api typecheck && pnpm --filter @rocky/robot typecheck",
     "check": "pnpm lint && pnpm scripts:check && pnpm typecheck && pnpm test && pnpm build"
   }
