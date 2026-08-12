@@ -13,6 +13,8 @@ targets:
     platform: iOS
     sources:
       - path: Rocky/Sources
+    resources:
+      - path: Rocky/Resources
     info:
       path: Generated/Rocky-Info.plist
       properties:
@@ -28,8 +30,9 @@ targets:
         PRODUCT_NAME: Rocky
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 3J4JG2Y65W
+        DEVELOPMENT_TEAM: Z8KZ48J5SW
         GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   RockyTests:
     type: bundle.unit-test
     platform: iOS

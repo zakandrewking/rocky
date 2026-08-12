@@ -61,13 +61,23 @@ if [ -z "$APP_PATH" ]; then
 fi
 
 echo "==> Finding \"$DEVICE_NAME\" via devicectl for install/launch"
-DEVICECTL_LINE=$(xcrun devicectl list devices 2>/dev/null | grep -F "$DEVICE_NAME" | grep -i "paired" | head -n1)
+# devicectl's State column varies ("available (paired)", "connected", ...) depending on whether
+# the device is actively in an active debugging session -- match on the name only; xcodebuild
+# already proved this device is reachable by getting this far.
+DEVICECTL_LINE=$(xcrun devicectl list devices 2>/dev/null | grep -F "$DEVICE_NAME" | grep -vi "unavailable\|unpaired" | head -n1)
 if [ -z "$DEVICECTL_LINE" ]; then
-  echo "Built fine, but devicectl doesn't see \"$DEVICE_NAME\" as paired -- can't install/launch." >&2
+  echo "Built fine, but devicectl doesn't see \"$DEVICE_NAME\" -- can't install/launch." >&2
   echo "Check: xcrun devicectl list devices" >&2
   exit 1
 fi
-DEVICECTL_ID=$(echo "$DEVICECTL_LINE" | awk '{print $(NF-2)}')
+# Positional field-counting (awk '{print $N}') breaks because device names/models contain
+# spaces ("Zachary's iPhone", "iPhone 14 Pro (iPhone15,2)") -- match the UUID's fixed shape
+# instead, wherever it lands.
+DEVICECTL_ID=$(echo "$DEVICECTL_LINE" | grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' | head -n1)
+if [ -z "$DEVICECTL_ID" ]; then
+  echo "Couldn't parse a device id out of: $DEVICECTL_LINE" >&2
+  exit 1
+fi
 
 echo "==> Installing $APP_PATH"
 xcrun devicectl device install app --device "$DEVICECTL_ID" "$APP_PATH"
