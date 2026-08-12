@@ -127,8 +127,12 @@ pnpm cyberpi:backup # dump the CyberPi's entire flash before any custom firmware
 pnpm cyberpi:restore # write a backup back to the CyberPi (typed confirmation required)
 pnpm cyberpi:flash-rocky # build and flash the native firmware over USB
 pnpm cyberpi:ota # push a new build to the CyberPi over Wi-Fi, no USB required
-pnpm --filter @rocky/robot test # laptop-side robot SDK unit tests, no hardware needed
-pnpm robot:check # syntax-check the CyberOS device agent
+pnpm --filter @rocky/robot test # robot SDK unit tests, no hardware needed
+pnpm robot:check # syntax-check the CyberOS device agent and its OTA payloads
+pnpm robot:push # push a new payload to a live CyberPi (needs bootstrap.py already on the board)
+pnpm ios:check # regenerate Rocky.xcodeproj from apps/ios/project.yml
+pnpm ios:test # run the iOS app's unit tests on the Simulator
+pnpm ios:deploy # build, install, and launch Rocky on a paired iPhone over Wi-Fi
 pnpm dist:mac  # create unsigned macOS DMG, zip, and unpacked app artifacts
 ```
 
@@ -151,11 +155,13 @@ the robot gets a short-lived client secret instead, because an mBot2 is a thing 
 around. Rocky's persona is imported from the desktop app rather than copied.
 
 A second, independent track, [`apps/robot`](apps/robot/README.md), gives Rocky a **networked**
-body instead: the laptop stays the brain (voice, planning, memory — all unchanged), and a thin
-CyberOS agent on the CyberPi only drives the mBot2 Shield's motors and sensors over Wi-Fi. North
-star: navigate a room, find a person, follow them, and talk to them, without crashing. See
+body instead: a thin CyberOS agent on the CyberPi drives the mBot2 Shield's motors and sensors
+over Wi-Fi, controlled by [`apps/ios`](apps/ios/README.md) — an iPhone mounted on or near the
+robot, using its own mic/speaker/camera rather than the laptop's or the CyberPi's. North star:
+navigate a room, find a person, follow them, and talk to them, without crashing. See
 [`apps/robot/PLAN.md`](apps/robot/PLAN.md) for the architecture and how it relates to
-`apps/cyberpi`'s native-firmware audio work.
+`apps/cyberpi`'s native-firmware audio work, and [`apps/ios/README.md`](apps/ios/README.md) for
+the current minimal-voice-control milestone and how OTA works in both directions.
 
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.

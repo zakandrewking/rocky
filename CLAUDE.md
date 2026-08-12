@@ -34,7 +34,8 @@ is unmissable, and deliberately does not duplicate the rest, so the two cannot d
 | --- | --- |
 | `apps/desktop` | the macOS Electron voice app — the Rocky people actually use |
 | `apps/cyberpi` | native-firmware track: on-device realtime audio for the mBot2/CyberPi; start at `STEPS.md` |
-| `apps/robot` | networked-body track: laptop-brain + thin CyberOS motion agent for the mBot2; start at `PLAN.md` |
+| `apps/robot` | networked-body track: thin CyberOS motion agent for the mBot2; start at `PLAN.md` |
+| `apps/ios` | Rocky's brain on an iPhone — mic/speaker/camera/face for the robot body; start at `README.md` |
 | `services/device-api` | backend for the robot; keeps the OpenAI key off the device |
 | `services/voice-clone` | experimental loopback-only local TTS worker |
 | `scripts/` | evals, the text-only personality lab, and local tooling |
