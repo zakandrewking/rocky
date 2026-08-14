@@ -80,12 +80,35 @@ crashing.**
     also switched back to partial-result matching with a once-per-cycle debounce, since matching
     only on `isFinal` (an earlier, less-informed fix) starved real commands entirely once final
     results turned out to be unreliable.
+- [x] Fixed a real "Stop Listening doesn't stop" bug: recognition cycles restart automatically on
+  every error/final (happening every 1-2 seconds per `session.log`), so a completion callback
+  from the cycle active *before* the user tapped Stop was very likely already queued and would
+  restart listening again right after `stop()` tore things down. Fixed with a cycle id that every
+  completion callback checks against the current one before acting — a stale callback is now a
+  guaranteed no-op regardless of queuing order. Also put real usage instructions directly in the
+  app (what to say, that there's no need to pause before speaking) instead of leaving that to be
+  asked about.
 - [ ] IP discovery beacon (`rocky_agent.py`'s `_beacon_discovery`, `RobotDiscovery.swift`) still
   unconfirmed — a UDP broadcast sent from the board never arrived at a listener on the laptop
-  across several checks. Made more robust without live confirmation (robot was powered off):
-  sends to both the limited (255.255.255.255) and computed subnet-directed broadcast address, and
-  shows the board's own detected IP directly on screen as a fallback either way. Needs a live
-  check next time the robot's on — read the beacon counter/IP off the screen.
+  across several checks, both before and after making it more robust (sends to both the limited
+  and computed subnet-directed broadcast address). The board's own self-IP detection also failed
+  live (`ip: unknown` on screen) — confirmed *two* different tricks both fail on this firmware,
+  not just the one STEPS.md already flagged.
+  - **Real incident**: tried a third approach (deriving the IP from a live TCP connection's own
+    `getsockname()`, called inside `_pump_network()`'s accept branch) and it froze the entire
+    board — not just that connection, everything, including `bootstrap.py`'s own OTA push
+    listener, since this firmware's MicroPython is single-threaded and `tick()` never returned.
+    No network-based recovery was possible; needed a physical power cycle. Reverted immediately
+    and documented directly in `_detect_local_ip()`'s docstring: never add an untested API call
+    inside the accept-connection hot path without proving it doesn't block first, in total
+    isolation (a `step17_debug_sleep.py`-style throwaway payload) — the discipline `apps/robot/
+    steps/` already exists for and this skipped.
+  - **Action needed before anything else next session**: the board's flash still has the *buggy*
+    payload from before the freeze (the fix was written and committed but never successfully
+    pushed — the freeze happened first). The moment the board is back on Wi-Fi, push the current
+    `rocky_agent.py` via `scripts/push.mjs` (safe — goes through `bootstrap.py`'s separate OTA
+    listener, port 8766, not the buggy payload's own connection-accept code) *before* connecting
+    anything to the motion port (8765), which is what triggers the freeze.
 - [x] Auto-connect (not just auto-fill) the moment discovery finds the robot, so the only manual
   step left is tapping "Start Listening" — untested pending the beacon issue above.
 - [ ] Add real OpenAI Realtime voice to `apps/ios`, replacing the fixed command-word vocabulary,
