@@ -79,9 +79,13 @@ struct ContentView: View {
             discovery.start()
         }
         .onChange(of: discovery.discoveredHost) { _, newHost in
-            if let newHost, host.isEmpty {
-                host = newHost
-            }
+            // Auto-connect, not just auto-fill: the point of discovery is not having to do
+            // anything by hand. Only when the host field was genuinely empty (no manually-typed
+            // address to respect) and nothing's already connecting/connected -- a fresh beacon
+            // arriving mid-session shouldn't yank an existing session out from under the user.
+            guard let newHost, host.isEmpty, connectionState == .disconnected else { return }
+            host = newHost
+            Task { await toggleConnection() }
         }
     }
 
