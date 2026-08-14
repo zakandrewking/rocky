@@ -81,14 +81,7 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
             recognitionRequest = nil
             return
         }
-        // Captures `request` directly, NOT `self` -- installTap's callback runs on a real-time
-        // audio thread, and `self` is @MainActor. Touching `self.recognitionRequest` from there
-        // is exactly the crash this had: an off-main-actor access to main-actor-isolated state,
-        // fatal under this project's strict-concurrency build setting. `request` itself is a
-        // plain object (not actor-isolated) and `append(_:)` is documented as safe off-main.
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            request.append(buffer)
-        }
+        Self.installTap(on: inputNode, format: format, request: request)
 
         audioEngine.prepare()
         do {
@@ -107,6 +100,23 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
             Task { @MainActor in
                 self?.handleRecognitionUpdate(text: text, isFinal: isFinal, error: error)
             }
+        }
+    }
+
+    /// A second confirmed crash, same class as requestSpeechAuthorization() above but a sharper
+    /// lesson: this closure captures ONLY `request` (a plain, non-actor object), never `self` --
+    /// and it still crashed. What matters is not what a closure captures but *where it's written*:
+    /// a closure literal inside a @MainActor method's body defaults to MainActor-isolated purely
+    /// from lexical context, because AVAudioNodeTapBlock isn't marked @Sendable in the SDK. iOS
+    /// invokes the tap from a real-time audio thread, never main, so the isolation check traps.
+    /// `nonisolated static` is the fix, same as everywhere else in this file.
+    nonisolated private static func installTap(
+        on inputNode: AVAudioInputNode,
+        format: AVAudioFormat,
+        request: SFSpeechAudioBufferRecognitionRequest
+    ) {
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
         }
     }
 
