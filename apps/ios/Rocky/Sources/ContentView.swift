@@ -48,6 +48,13 @@ struct ContentView: View {
             if let discovered = discovery.discoveredHost, discovered != host {
                 Button("Found robot at \(discovered) — use it") { host = discovered }
                     .font(.caption)
+            } else if discovery.isScanning {
+                // The beacon (fast, passive) gets a few seconds before this active TCP scan
+                // kicks in as a fallback -- worth surfacing, since a network scan taking a
+                // couple of seconds shouldn't look like nothing is happening.
+                Text("Scanning network for robot…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Button(recognizer.isListening ? "Stop Listening" : "Start Listening") {
