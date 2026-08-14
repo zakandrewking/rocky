@@ -86,6 +86,8 @@ _booted = False
 _discovery_sock = None
 _last_beacon = 0
 _beacon_count = 0
+_local_ip = None
+_subnet_broadcast = None
 
 
 # On-screen status, so watching the board's own display is enough to follow along without
@@ -107,13 +109,38 @@ def _set_result_line(text):
     cyberpi.display.show_label(text, 12, 0, 48, 3)
 
 
+def _detect_local_ip():
+    """STEPS.md already found network.WLAN().ifconfig() unreliable on this firmware (returns
+    "0.0.0.0" even on a working connection). This is a different, more reliable trick: "connect"
+    a UDP socket to some external address -- for UDP this only consults the routing table and
+    sends no packet -- then read back what local address the OS picked for that route. Common
+    enough to be a standard idiom in both CPython and MicroPython network code."""
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("8.8.8.8", 80))
+        ip = probe.getsockname()[0]
+        probe.close()
+        return ip if ip and ip != "0.0.0.0" else None
+    except Exception:
+        return None
+
+
 def _boot():
-    global _server, _discovery_sock, _booted
+    global _server, _discovery_sock, _local_ip, _subnet_broadcast, _booted
     _server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     _server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     _server.bind(("0.0.0.0", TCP_PORT))
     _server.listen(1)
     _server.settimeout(0)  # non-blocking accept() -- this is a payload, not the owner of the loop
+
+    _local_ip = _detect_local_ip()
+    if _local_ip:
+        # Shown directly on screen as a fallback if broadcast discovery never works out: worst
+        # case, read the IP off the board and type it in once, rather than hunting through a
+        # router's client list or `arp -a` from a laptop.
+        octets = _local_ip.split(".")
+        if len(octets) == 4:
+            _subnet_broadcast = "{}.{}.{}.255".format(octets[0], octets[1], octets[2])
 
     try:
         _discovery_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -129,8 +156,13 @@ def _boot():
     cyberpi.display.clear()
     _set_status("Rocky motion :{}".format(TCP_PORT))
     _set_connection_line("waiting for client")
+    _set_ip_line("ip: {}".format(_local_ip) if _local_ip else "ip: unknown")
     cyberpi.led.on(0, 255, 0, id="all")
     _booted = True
+
+
+def _set_ip_line(text):
+    cyberpi.display.show_label(text, 10, 0, 112, 6)
 
 
 def _set_beacon_line(text):
@@ -141,7 +173,14 @@ def _beacon_discovery():
     """Broadcasts a small 'here I am' UDP packet at most once per DISCOVERY_INTERVAL_MS, so
     RobotDiscovery.swift can find this board's IP without it being typed in by hand. Shows a
     live send counter on screen -- the first time this ran, nothing arrived on the laptop side
-    with no way to tell whether that meant "not sending" or "sending but not received"."""
+    with no way to tell whether that meant "not sending" or "sending but not received".
+
+    Sends to both the limited broadcast address (255.255.255.255) and, when known, the subnet-
+    directed broadcast (e.g. 192.168.1.255) -- unconfirmed which one this firmware's network
+    stack actually floods to other Wi-Fi clients, so try both rather than guess. The payload
+    also carries the IP directly, not just relying on the sender address of the UDP packet
+    itself, in case that ever turns out to differ from what the app sees (e.g. through some NAT/
+    relay quirk) -- cheap redundancy for a value that's already known."""
     global _last_beacon, _beacon_count
     if _discovery_sock is None:
         return
@@ -149,13 +188,25 @@ def _beacon_discovery():
     if utime.ticks_diff(now, _last_beacon) < DISCOVERY_INTERVAL_MS:
         return
     _last_beacon = now
-    message = ujson.dumps({"service": "rocky-robot", "tcpPort": TCP_PORT})
-    try:
-        _discovery_sock.sendto(message.encode(), ("255.255.255.255", DISCOVERY_PORT))
+    message = ujson.dumps({"service": "rocky-robot", "tcpPort": TCP_PORT, "ip": _local_ip})
+    targets = ["255.255.255.255"]
+    if _subnet_broadcast:
+        targets.append(_subnet_broadcast)
+
+    sent = 0
+    last_error = None
+    for target in targets:
+        try:
+            _discovery_sock.sendto(message.encode(), (target, DISCOVERY_PORT))
+            sent += 1
+        except Exception as error:
+            last_error = error
+
+    if sent:
         _beacon_count += 1
-        _set_beacon_line("beacon #{}".format(_beacon_count))
-    except Exception as error:
-        _set_beacon_line("beacon err: {}".format(str(error)[:16]))
+        _set_beacon_line("beacon #{} ({})".format(_beacon_count, sent))
+    elif last_error is not None:
+        _set_beacon_line("beacon err: {}".format(str(last_error)[:16]))
 
 
 def read_distance_cm():
