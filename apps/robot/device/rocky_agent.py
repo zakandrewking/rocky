@@ -20,9 +20,11 @@
 
 import cyberpi
 import mbot2
-import network
 import ujson
 import utime
+
+# Deliberately NO `import network` -- see the block comment above _boot(): touching the standard
+# `network` module on this firmware is the prime suspect for the 2026-08-13/14 board freezes.
 
 try:
     import usocket as socket
@@ -87,8 +89,6 @@ _booted = False
 _discovery_sock = None
 _last_beacon = 0
 _beacon_count = 0
-_local_ip = None
-_subnet_broadcast = None
 
 
 # On-screen status, so watching the board's own display is enough to follow along without
@@ -110,65 +110,37 @@ def _set_result_line(text):
     cyberpi.display.show_label(text, 12, 0, 48, 3)
 
 
-def _detect_local_ip():
-    """Two independent tricks, tried in order -- confirmed live on real hardware (2026-08-13)
-    that neither alone is reliable here. The UDP "connect"-then-getsockname() idiom (connect
-    sends no packet for UDP, just consults the routing table) returned "ip: unknown" when this
-    ran for real, meaning either it raised or came back "0.0.0.0". STEPS.md separately found
-    network.WLAN().ifconfig() returning "0.0.0.0" too -- but that was checked immediately after
-    connect(), in a tight retry loop; by the time this runs, bootstrap.py's own Wi-Fi connection
-    has already been stable for a while, a meaningfully different timing context worth trying
-    again in rather than ruling out from that one data point.
-
-    A third approach was tried and reverted, not just left undone: calling getsockname() on a
-    live, already-accepted TCP connection (inside _pump_network()'s accept branch) instead of a
-    throwaway probe socket. Pushed to the real board and it froze the entire board -- not just
-    that one connection, everything, including bootstrap.py's own OTA push listener, since this
-    firmware's MicroPython runs single-threaded and tick() never returned. No network-based
-    recovery was possible; it needed a physical power cycle. Do not reintroduce a getsockname()
-    call (or any other untested API) inside the accept-connection hot path without proving it
-    doesn't block first, in total isolation (a step17_debug_sleep.py-style throwaway payload),
-    the same discipline apps/robot/steps/ already exists for. The two tricks below don't touch a
-    connection something else depends on, so a failure mode here is "returns None," not "the
-    board stops responding to anything, including the ability to push a fix."
-    """
-    try:
-        wlan = network.WLAN(network.STA_IF)
-        ip = wlan.ifconfig()[0]
-        if ip and ip != "0.0.0.0":
-            return ip
-    except Exception:
-        pass
-
-    try:
-        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        probe.connect(("8.8.8.8", 80))
-        ip = probe.getsockname()[0]
-        probe.close()
-        if ip and ip != "0.0.0.0":
-            return ip
-    except Exception:
-        pass
-
-    return None
+# THE BOARD CANNOT KNOW ITS OWN IP. Settled by source research (2026-08-14), not just probing:
+#
+# - socket.getsockname() has NEVER existed in MicroPython's ESP32 port -- verified against the
+#   socket object's actual C method table in upstream modsocket.c at v1.12, v1.17, v1.19, and
+#   master. Makeblock's firmware is a fork of this. Any getsockname() call raises AttributeError,
+#   always. (The earlier "UDP connect then getsockname" attempt here was a CPython idiom that
+#   simply doesn't exist on this platform.)
+# - network.WLAN(STA_IF).ifconfig() returns "0.0.0.0" on this firmware (proven live, STEPS.md):
+#   CyberOS manages Wi-Fi through its own private C layer, so the standard `network` module is
+#   decoupled from the real connection. WORSE -- calling network.WLAN(network.STA_IF) from the
+#   payload's boot path is the prime suspect for hanging the interpreter and eventually knocking
+#   the whole board off the network (2026-08-13/14 incident: board froze after the push that
+#   added it, and after *every* subsequent power cycle the board reached "waiting for client"
+#   then dropped off the network with no client ever connecting -- the boot-path WLAN call was
+#   the only network-touching code that ran). NEVER call into the `network` module in this file.
+# - Makeblock's published wifi API is connect() + is_connect() -- nothing else. No IP getter
+#   exists, and no community example anywhere reads the board's own IP; every known networking
+#   example is outbound-only. This is a platform property, not a missing trick.
+#
+# Consequence for discovery: the beacon does NOT include the board's IP, and doesn't need to --
+# UDP receivers learn the sender's address from the packet itself (recvfrom / NWConnection
+# endpoint), which is exactly how RobotDiscovery.swift already reads it.
 
 
 def _boot():
-    global _server, _discovery_sock, _local_ip, _subnet_broadcast, _booted
+    global _server, _discovery_sock, _booted
     _server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     _server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     _server.bind(("0.0.0.0", TCP_PORT))
     _server.listen(1)
     _server.settimeout(0)  # non-blocking accept() -- this is a payload, not the owner of the loop
-
-    _local_ip = _detect_local_ip()
-    if _local_ip:
-        # Shown directly on screen as a fallback if broadcast discovery never works out: worst
-        # case, read the IP off the board and type it in once, rather than hunting through a
-        # router's client list or `arp -a` from a laptop.
-        octets = _local_ip.split(".")
-        if len(octets) == 4:
-            _subnet_broadcast = "{}.{}.{}.255".format(octets[0], octets[1], octets[2])
 
     try:
         _discovery_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -184,13 +156,8 @@ def _boot():
     cyberpi.display.clear()
     _set_status("Rocky motion :{}".format(TCP_PORT))
     _set_connection_line("waiting for client")
-    _set_ip_line("ip: {}".format(_local_ip) if _local_ip else "ip: unknown")
     cyberpi.led.on(0, 255, 0, id="all")
     _booted = True
-
-
-def _set_ip_line(text):
-    cyberpi.display.show_label(text, 10, 0, 112, 6)
 
 
 def _set_beacon_line(text):
@@ -199,16 +166,13 @@ def _set_beacon_line(text):
 
 def _beacon_discovery():
     """Broadcasts a small 'here I am' UDP packet at most once per DISCOVERY_INTERVAL_MS, so
-    RobotDiscovery.swift can find this board's IP without it being typed in by hand. Shows a
-    live send counter on screen -- the first time this ran, nothing arrived on the laptop side
-    with no way to tell whether that meant "not sending" or "sending but not received".
-
-    Sends to both the limited broadcast address (255.255.255.255) and, when known, the subnet-
-    directed broadcast (e.g. 192.168.1.255) -- unconfirmed which one this firmware's network
-    stack actually floods to other Wi-Fi clients, so try both rather than guess. The payload
-    also carries the IP directly, not just relying on the sender address of the UDP packet
-    itself, in case that ever turns out to differ from what the app sees (e.g. through some NAT/
-    relay quirk) -- cheap redundancy for a value that's already known."""
+    RobotDiscovery.swift can find this board without its IP being typed in by hand. The packet
+    deliberately carries no IP -- the board cannot know its own (see the block comment above
+    _boot()); the receiver reads the sender's address off the packet itself, which is the one
+    address that is always correct. Shows a live send counter on screen because the first time
+    this ran, nothing arrived on the laptop side and there was no way to tell "not sending"
+    from "sending but not received". Limited broadcast (255.255.255.255) only: the subnet-
+    directed variant (192.168.1.255-style) needed self-IP knowledge this platform can't give."""
     global _last_beacon, _beacon_count
     if _discovery_sock is None:
         return
@@ -216,25 +180,13 @@ def _beacon_discovery():
     if utime.ticks_diff(now, _last_beacon) < DISCOVERY_INTERVAL_MS:
         return
     _last_beacon = now
-    message = ujson.dumps({"service": "rocky-robot", "tcpPort": TCP_PORT, "ip": _local_ip})
-    targets = ["255.255.255.255"]
-    if _subnet_broadcast:
-        targets.append(_subnet_broadcast)
-
-    sent = 0
-    last_error = None
-    for target in targets:
-        try:
-            _discovery_sock.sendto(message.encode(), (target, DISCOVERY_PORT))
-            sent += 1
-        except Exception as error:
-            last_error = error
-
-    if sent:
+    message = ujson.dumps({"service": "rocky-robot", "tcpPort": TCP_PORT})
+    try:
+        _discovery_sock.sendto(message.encode(), ("255.255.255.255", DISCOVERY_PORT))
         _beacon_count += 1
-        _set_beacon_line("beacon #{} ({})".format(_beacon_count, sent))
-    elif last_error is not None:
-        _set_beacon_line("beacon err: {}".format(str(last_error)[:16]))
+        _set_beacon_line("beacon #{}".format(_beacon_count))
+    except Exception as error:
+        _set_beacon_line("beacon err: {}".format(str(error)[:16]))
 
 
 def read_distance_cm():

@@ -88,27 +88,39 @@ crashing.**
   guaranteed no-op regardless of queuing order. Also put real usage instructions directly in the
   app (what to say, that there's no need to pause before speaking) instead of leaving that to be
   asked about.
-- [ ] IP discovery beacon (`rocky_agent.py`'s `_beacon_discovery`, `RobotDiscovery.swift`) still
-  unconfirmed — a UDP broadcast sent from the board never arrived at a listener on the laptop
-  across several checks, both before and after making it more robust (sends to both the limited
-  and computed subnet-directed broadcast address). The board's own self-IP detection also failed
-  live (`ip: unknown` on screen) — confirmed *two* different tricks both fail on this firmware,
-  not just the one STEPS.md already flagged.
-  - **Real incident**: tried a third approach (deriving the IP from a live TCP connection's own
-    `getsockname()`, called inside `_pump_network()`'s accept branch) and it froze the entire
-    board — not just that connection, everything, including `bootstrap.py`'s own OTA push
-    listener, since this firmware's MicroPython is single-threaded and `tick()` never returned.
-    No network-based recovery was possible; needed a physical power cycle. Reverted immediately
-    and documented directly in `_detect_local_ip()`'s docstring: never add an untested API call
-    inside the accept-connection hot path without proving it doesn't block first, in total
-    isolation (a `step17_debug_sleep.py`-style throwaway payload) — the discipline `apps/robot/
-    steps/` already exists for and this skipped.
-  - **Action needed before anything else next session**: the board's flash still has the *buggy*
-    payload from before the freeze (the fix was written and committed but never successfully
-    pushed — the freeze happened first). The moment the board is back on Wi-Fi, push the current
-    `rocky_agent.py` via `scripts/push.mjs` (safe — goes through `bootstrap.py`'s separate OTA
-    listener, port 8766, not the buggy payload's own connection-accept code) *before* connecting
-    anything to the motion port (8765), which is what triggers the freeze.
+- [x] **Settled by source research (2026-08-14): an uploaded program on stock CyberOS cannot
+  learn its own IP address — there is no API for it, published or discovered.** Three legs, all
+  checked against sources rather than probed: (1) `socket.getsockname()` has *never existed* in
+  MicroPython's ESP32 port — verified against the socket object's actual C method table in
+  upstream `modsocket.c` at v1.12, v1.17, v1.19, and master; Makeblock's firmware is a fork, so
+  every `getsockname()` call raises `AttributeError`, always. (2) `network.WLAN(STA_IF)
+  .ifconfig()` returns `0.0.0.0` on this firmware (already proven live in STEPS.md) because
+  CyberOS manages Wi-Fi through its own private C layer, decoupled from the standard `network`
+  module. (3) Makeblock's published wifi API is `connect()` + `is_connect()` — nothing else, and
+  zero community examples anywhere read the board's own IP; all known networking examples are
+  outbound-only. Consequence adopted: the discovery beacon carries no IP and doesn't need one —
+  the receiver reads the sender's address off the UDP packet itself, the one address that is
+  always correct. The on-screen "ip:" line is gone; "waiting for client" only ever meant "the
+  payload booted and bound its listener locally," which says nothing about Wi-Fi.
+- [ ] **Board-freeze incident, root cause CORRECTED (supersedes the earlier getsockname
+  attribution): the boot-path `network.WLAN(network.STA_IF)` call is the prime suspect.** The
+  clincher: after every post-freeze power cycle, the board reached "waiting for client" then
+  dropped off the network entirely (no ARP, no ping, port 8766 SYN-ACKs but never serviced —
+  classic hung-interpreter signature) *without any client ever connecting* — so the
+  accept-branch `getsockname()` (which anyway just raises `AttributeError` and is caught, per
+  the research above) never even ran. The only network-touching code that did run was the
+  boot-path WLAN call, fighting CyberOS's private Wi-Fi manager for the driver.
+  `rocky_agent.py` now has no `import network` at all, with the incident documented inline.
+  Remaining: actually recover the board — its flash still holds the buggy payload
+  (`bootstrap.py` re-execs it from flash on every boot, so power cycling alone can't clear it):
+  1. Start `node apps/robot/scripts/rescue.mjs 192.168.1.136 apps/robot/device/rocky_agent.py`
+     FIRST, then power the board on — it hammers the OTA port to win the race against the bad
+     payload's first tick (`check_for_push()` runs before each tick, so a connection already in
+     the backlog replaces the payload before the bad boot path executes). Roughly a coin flip
+     per boot; power cycle again and let it keep hammering if the first try misses.
+  2. Guaranteed fallback if the race can't be won: upload `steps/step18_delete_payload.py` via
+     mBlock over USB (deletes `/flash/rocky_payload.py`), press Home, re-upload
+     `device/bootstrap.py`, then a normal `push.mjs` delivers the fixed agent.
 - [x] Auto-connect (not just auto-fill) the moment discovery finds the robot, so the only manual
   step left is tapping "Start Listening" — untested pending the beacon issue above.
 - [ ] Add real OpenAI Realtime voice to `apps/ios`, replacing the fixed command-word vocabulary,
