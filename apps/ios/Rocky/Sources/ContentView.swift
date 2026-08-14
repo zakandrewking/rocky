@@ -23,6 +23,8 @@ struct ContentView: View {
         VStack(spacing: 20) {
             Text("Rocky").font(.largeTitle.bold())
 
+            instructions
+
             statusBadge
 
             HStack {
@@ -95,6 +97,18 @@ struct ContentView: View {
             host = newHost
             Task { await toggleConnection() }
         }
+    }
+
+    private var instructions: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("1. Connect below (auto-fills if the robot's found on Wi-Fi)")
+            Text("2. Tap Start Listening")
+            Text("3. Say one word: forward, back, left, right, or stop")
+            Text("No need to pause before speaking -- it's always listening. A brief pause after helps it settle on the word.")
+                .foregroundStyle(.secondary)
+        }
+        .font(.caption)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var statusBadge: some View {
