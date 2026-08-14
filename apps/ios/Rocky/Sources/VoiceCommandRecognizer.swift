@@ -41,6 +41,14 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
             return
         }
 
+        // Defensive: a stray tap left over from an earlier crash/fast stop-start would make
+        // installTap below crash outright (a hard precondition failure, not a thrown error)
+        // rather than something recoverable -- always clear it first.
+        audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest = nil
+
         do {
             try AudioSessionManager.configureForVoice()
         } catch {
@@ -57,8 +65,18 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
 
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.recognitionRequest?.append(buffer)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            lastError = "invalid input format (sampleRate=\(format.sampleRate))"
+            recognitionRequest = nil
+            return
+        }
+        // Captures `request` directly, NOT `self` -- installTap's callback runs on a real-time
+        // audio thread, and `self` is @MainActor. Touching `self.recognitionRequest` from there
+        // is exactly the crash this had: an off-main-actor access to main-actor-isolated state,
+        // fatal under this project's strict-concurrency build setting. `request` itself is a
+        // plain object (not actor-isolated) and `append(_:)` is documented as safe off-main.
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
         }
 
         audioEngine.prepare()

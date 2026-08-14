@@ -25,7 +25,12 @@ final class RobotTCPTransport: @unchecked Sendable {
         self.port = port
     }
 
-    func connect() async throws {
+    /// `.waiting(_)` is a real NWConnection state -- "can't connect right now, will keep
+    /// retrying" -- and it can sit there forever against an address nothing is listening on
+    /// (wrong IP, robot off) without ever reaching `.ready` or `.failed`. Without an explicit
+    /// timeout here, that left the UI stuck on "Connecting..." with no way out except force-
+    /// quitting the app, exactly what happened on a real device against a bad IP.
+    func connect(timeout: TimeInterval = 8) async throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw RobotError.invalidAddress("port \(port) is out of range")
         }
@@ -37,6 +42,14 @@ final class RobotTCPTransport: @unchecked Sendable {
             // connection.start(queue:) below), so this is never actually mutated concurrently --
             // the compiler just can't see across NWConnection's own threading contract.
             nonisolated(unsafe) var settled = false
+
+            queue.asyncAfter(deadline: .now() + timeout) {
+                guard !settled else { return }
+                settled = true
+                connection.cancel()
+                continuation.resume(throwing: RobotError.timedOut("connecting to \(self.host)"))
+            }
+
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
@@ -52,7 +65,8 @@ final class RobotTCPTransport: @unchecked Sendable {
                     settled = true
                     continuation.resume(throwing: RobotError.disconnected)
                 default:
-                    break
+                    break  // includes .waiting -- deliberately not treated as terminal; the
+                    // timeout above is what bounds how long a stuck-retrying connection lasts
                 }
             }
             connection.start(queue: queue)

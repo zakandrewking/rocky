@@ -85,6 +85,7 @@ _action = None  # None, or an in-progress drive/turn dict (see _start_drive/_sta
 _booted = False
 _discovery_sock = None
 _last_beacon = 0
+_beacon_count = 0
 
 
 # On-screen status, so watching the board's own display is enough to follow along without
@@ -122,6 +123,7 @@ def _boot():
         # work on this firmware (unconfirmed, like everything else in this file), fall back to
         # no beacon rather than failing boot; manual IP entry in the app still works either way.
         _discovery_sock = None
+        _set_beacon_line("socket failed")
         print("discovery socket failed:", error)
 
     cyberpi.display.clear()
@@ -131,10 +133,16 @@ def _boot():
     _booted = True
 
 
+def _set_beacon_line(text):
+    cyberpi.display.show_label(text, 10, 0, 96, 5)
+
+
 def _beacon_discovery():
     """Broadcasts a small 'here I am' UDP packet at most once per DISCOVERY_INTERVAL_MS, so
-    RobotDiscovery.swift can find this board's IP without it being typed in by hand."""
-    global _last_beacon
+    RobotDiscovery.swift can find this board's IP without it being typed in by hand. Shows a
+    live send counter on screen -- the first time this ran, nothing arrived on the laptop side
+    with no way to tell whether that meant "not sending" or "sending but not received"."""
+    global _last_beacon, _beacon_count
     if _discovery_sock is None:
         return
     now = utime.ticks_ms()
@@ -144,8 +152,10 @@ def _beacon_discovery():
     message = ujson.dumps({"service": "rocky-robot", "tcpPort": TCP_PORT})
     try:
         _discovery_sock.sendto(message.encode(), ("255.255.255.255", DISCOVERY_PORT))
-    except Exception:
-        pass  # best-effort; a missed beacon just means the next one (in ~1s) tries again
+        _beacon_count += 1
+        _set_beacon_line("beacon #{}".format(_beacon_count))
+    except Exception as error:
+        _set_beacon_line("beacon err: {}".format(str(error)[:16]))
 
 
 def read_distance_cm():
@@ -175,7 +185,9 @@ def stop_motors():
 
 
 def set_face(face):
-    cyberpi.display.clear()
+    # No cyberpi.display.clear() here -- this used to wipe the status/connection/command/result
+    # lines (ids 0-3) every time the face changed, which is often (every connect/disconnect/
+    # error). Own a distinct label id (4) instead, so this only ever touches its own line.
     labels = {
         "idle": ". _ .",
         "listening": "o _ o",
@@ -184,7 +196,7 @@ def set_face(face):
         "happy": "^ _ ^",
         "error": "x _ x",
     }
-    cyberpi.display.show_label(labels.get(face, "?"), 24, 40, 60, 0)
+    cyberpi.display.show_label(labels.get(face, "?"), 24, 40, 68, 4)
 
 
 def set_lights(r, g, b):

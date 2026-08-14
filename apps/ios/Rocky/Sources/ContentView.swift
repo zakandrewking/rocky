@@ -12,6 +12,8 @@ struct ContentView: View {
     @State private var connectionState = ConnectionState.disconnected
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
+    @State private var connectTask: Task<Void, Never>?
+    @State private var pendingController: RobotController?
 
     enum ConnectionState: Equatable {
         case disconnected, connecting, connected, failed(String)
@@ -31,10 +33,14 @@ struct ContentView: View {
                     .textInputAutocapitalization(.never)
                     .keyboardType(.decimalPad)
                     #endif
-                Button(connectionState == .connected ? "Disconnect" : "Connect") {
-                    Task { await toggleConnection() }
+                if connectionState == .connecting {
+                    Button("Cancel") { cancelConnecting() }
+                } else {
+                    Button(connectionState == .connected ? "Disconnect" : "Connect") {
+                        Task { await toggleConnection() }
+                    }
+                    .disabled(host.isEmpty)
                 }
-                .disabled(host.isEmpty || connectionState == .connecting)
             }
 
             if let discovered = discovery.discoveredHost, discovered != host {
@@ -101,15 +107,41 @@ struct ContentView: View {
         UserDefaults.standard.set(host, forKey: "robotHost")
         connectionState = .connecting
         let newController = RobotController(host: host)
-        do {
-            try await newController.connect()
-            controller = newController
-            connectionState = .connected
-            appendLog("connected to \(host)")
-        } catch {
-            connectionState = .failed(error.localizedDescription)
-            appendLog("connect failed: \(error.localizedDescription)")
+        pendingController = newController
+
+        // A plain `try await` here is exactly what got stuck on a real device: RobotTCPTransport
+        // now times out on its own (see connect(timeout:)), but wrapping the attempt in a
+        // cancellable Task also lets the Cancel button above abort immediately instead of
+        // waiting out that timeout.
+        let task = Task {
+            do {
+                try await newController.connect()
+                guard !Task.isCancelled else {
+                    await newController.disconnect()
+                    return
+                }
+                controller = newController
+                pendingController = nil
+                connectionState = .connected
+                appendLog("connected to \(host)")
+            } catch {
+                guard !Task.isCancelled else { return }
+                pendingController = nil
+                connectionState = .failed(error.localizedDescription)
+                appendLog("connect failed: \(error.localizedDescription)")
+            }
         }
+        connectTask = task
+        await task.value
+    }
+
+    private func cancelConnecting() {
+        connectTask?.cancel()
+        connectTask = nil
+        Task { await pendingController?.disconnect() }
+        pendingController = nil
+        connectionState = .disconnected
+        appendLog("connect cancelled")
     }
 
     private func toggleListening() async {
