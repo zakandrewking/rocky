@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 /// robot) works before any personality/UI investment. See apps/ios/README.md.
 struct ContentView: View {
     @StateObject private var recognizer = VoiceCommandRecognizer()
+    @StateObject private var discovery = RobotDiscovery()
     @State private var controller: RobotController?
     @State private var host = UserDefaults.standard.string(forKey: "robotHost") ?? ""
     @State private var connectionState = ConnectionState.disconnected
@@ -36,6 +37,11 @@ struct ContentView: View {
                 .disabled(host.isEmpty || connectionState == .connecting)
             }
 
+            if let discovered = discovery.discoveredHost, discovered != host {
+                Button("Found robot at \(discovered) — use it") { host = discovered }
+                    .font(.caption)
+            }
+
             Button(recognizer.isListening ? "Stop Listening" : "Start Listening") {
                 Task { await toggleListening() }
             }
@@ -63,6 +69,12 @@ struct ContentView: View {
         .onAppear {
             recognizer.onCommand = { command in
                 Task { await send(command) }
+            }
+            discovery.start()
+        }
+        .onChange(of: discovery.discoveredHost) { _, newHost in
+            if let newHost, host.isEmpty {
+                host = newHost
             }
         }
     }

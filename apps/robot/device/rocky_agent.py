@@ -40,6 +40,13 @@ except ImportError:
 
 TCP_PORT = 8765
 
+# Discovery beacon: a plain UDP broadcast rather than real mDNS/Bonjour -- Bonjour would need a
+# hand-rolled DNS-SD responder here (probing/announcing state machine, record encoding) and a
+# multicast entitlement on the iOS side (Apple has to grant it), whereas a broadcast needs
+# neither. RobotDiscovery.swift listens for this; apps/ios/README.md has the client side.
+DISCOVERY_PORT = 41900
+DISCOVERY_INTERVAL_MS = 1000
+
 # Heartbeat: a connected client sends {"type":"heartbeat"} on an interval (see robot.ts /
 # RobotProtocol.swift). If none arrives within this window, stop the motors and wait for a fresh
 # connection. This is what keeps a dropped Wi-Fi link from leaving the robot driving blind -- the
@@ -76,19 +83,69 @@ _buffered = ""
 _last_heartbeat = 0
 _action = None  # None, or an in-progress drive/turn dict (see _start_drive/_start_turn)
 _booted = False
+_discovery_sock = None
+_last_beacon = 0
+
+
+# On-screen status, so watching the board's own display is enough to follow along without
+# needing to read the laptop's logs -- four independent label slots (bootstrap.py established
+# this "clear once at boot, then update labels by id in place" pattern), plus the face glyph.
+def _set_status(text):
+    cyberpi.display.show_label(text, 12, 0, 0, 0)
+
+
+def _set_connection_line(text):
+    cyberpi.display.show_label(text, 12, 0, 16, 1)
+
+
+def _set_command_line(text):
+    cyberpi.display.show_label(text, 12, 0, 32, 2)
+
+
+def _set_result_line(text):
+    cyberpi.display.show_label(text, 12, 0, 48, 3)
 
 
 def _boot():
-    global _server, _booted
+    global _server, _discovery_sock, _booted
     _server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     _server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     _server.bind(("0.0.0.0", TCP_PORT))
     _server.listen(1)
     _server.settimeout(0)  # non-blocking accept() -- this is a payload, not the owner of the loop
+
+    try:
+        _discovery_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        _discovery_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    except Exception as error:
+        # Discovery is a convenience, not a safety-relevant feature -- if UDP broadcast doesn't
+        # work on this firmware (unconfirmed, like everything else in this file), fall back to
+        # no beacon rather than failing boot; manual IP entry in the app still works either way.
+        _discovery_sock = None
+        print("discovery socket failed:", error)
+
     cyberpi.display.clear()
-    cyberpi.display.show_label("Rocky motion :{}".format(TCP_PORT), 12, 0, 0, 0)
+    _set_status("Rocky motion :{}".format(TCP_PORT))
+    _set_connection_line("waiting for client")
     cyberpi.led.on(0, 255, 0, id="all")
     _booted = True
+
+
+def _beacon_discovery():
+    """Broadcasts a small 'here I am' UDP packet at most once per DISCOVERY_INTERVAL_MS, so
+    RobotDiscovery.swift can find this board's IP without it being typed in by hand."""
+    global _last_beacon
+    if _discovery_sock is None:
+        return
+    now = utime.ticks_ms()
+    if utime.ticks_diff(now, _last_beacon) < DISCOVERY_INTERVAL_MS:
+        return
+    _last_beacon = now
+    message = ujson.dumps({"service": "rocky-robot", "tcpPort": TCP_PORT})
+    try:
+        _discovery_sock.sendto(message.encode(), ("255.255.255.255", DISCOVERY_PORT))
+    except Exception:
+        pass  # best-effort; a missed beacon just means the next one (in ~1s) tries again
 
 
 def read_distance_cm():
@@ -233,7 +290,10 @@ def handle_command(command, send):
     command_id = command.get("id")
 
     if command_type == "heartbeat":
-        return  # no reply needed; receipt alone resets the watchdog
+        return  # no reply needed, and skip the screen log below -- heartbeats arrive every
+        # ~500ms and would just be noise over whatever's actually useful
+
+    _set_command_line("cmd: {}".format(command_type))
 
     if command_type == "drive":
         if _action is not None:
@@ -263,8 +323,21 @@ def handle_command(command, send):
         send({"type": "error", "id": command_id, "ok": False, "message": "unknown command"})
 
 
+def _log_result(message):
+    message_type = message.get("type")
+    if message_type == "ack":
+        _set_result_line("ok")
+    elif message_type == "error":
+        _set_result_line("err: {}".format(message.get("message", "?"))[:20])
+    elif message_type == "distance":
+        _set_result_line("dist: {}cm".format(message.get("cm")))
+    elif message_type == "lineSensors":
+        _set_result_line("line sensors sent")
+
+
 def _make_send(connection):
     def send(message):
+        _log_result(message)
         try:
             connection.sendall(ujson.dumps(message) + "\n")
         except Exception:
@@ -284,7 +357,7 @@ def _pump_network():
 
     if _conn is None:
         try:
-            connection, _addr = _server.accept()
+            connection, addr = _server.accept()
         except OSError:
             return  # nothing pending this tick
         connection.settimeout(0)
@@ -292,13 +365,19 @@ def _pump_network():
         _buffered = ""
         _last_heartbeat = utime.ticks_ms()
         _action = None
+        _set_connection_line("connected: {}".format(addr[0]))
+        _set_command_line("")
+        _set_result_line("")
         set_face("idle")
+        cyberpi.led.on(0, 255, 0, id="all")
         return
 
     if utime.ticks_diff(utime.ticks_ms(), _last_heartbeat) > HEARTBEAT_TIMEOUT_MS:
         stop_motors()
         _action = None
+        _set_connection_line("no heartbeat")
         set_face("error")
+        cyberpi.led.on(255, 0, 0, id="all")
         try:
             _conn.close()
         except Exception:
@@ -326,6 +405,8 @@ def _pump_network():
     elif chunk == b"":
         stop_motors()
         _action = None
+        _set_connection_line("waiting for client")
+        set_face("idle")
         try:
             _conn.close()
         except Exception:
@@ -337,5 +418,6 @@ def tick():
     if not _booted:
         _boot()
         return
+    _beacon_discovery()
     _pump_network()
     _pump_action()
