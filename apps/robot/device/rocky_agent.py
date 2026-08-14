@@ -20,6 +20,7 @@
 
 import cyberpi
 import mbot2
+import network
 import ujson
 import utime
 
@@ -110,19 +111,46 @@ def _set_result_line(text):
 
 
 def _detect_local_ip():
-    """STEPS.md already found network.WLAN().ifconfig() unreliable on this firmware (returns
-    "0.0.0.0" even on a working connection). This is a different, more reliable trick: "connect"
-    a UDP socket to some external address -- for UDP this only consults the routing table and
-    sends no packet -- then read back what local address the OS picked for that route. Common
-    enough to be a standard idiom in both CPython and MicroPython network code."""
+    """Two independent tricks, tried in order -- confirmed live on real hardware (2026-08-13)
+    that neither alone is reliable here. The UDP "connect"-then-getsockname() idiom (connect
+    sends no packet for UDP, just consults the routing table) returned "ip: unknown" when this
+    ran for real, meaning either it raised or came back "0.0.0.0". STEPS.md separately found
+    network.WLAN().ifconfig() returning "0.0.0.0" too -- but that was checked immediately after
+    connect(), in a tight retry loop; by the time this runs, bootstrap.py's own Wi-Fi connection
+    has already been stable for a while, a meaningfully different timing context worth trying
+    again in rather than ruling out from that one data point.
+
+    A third approach was tried and reverted, not just left undone: calling getsockname() on a
+    live, already-accepted TCP connection (inside _pump_network()'s accept branch) instead of a
+    throwaway probe socket. Pushed to the real board and it froze the entire board -- not just
+    that one connection, everything, including bootstrap.py's own OTA push listener, since this
+    firmware's MicroPython runs single-threaded and tick() never returned. No network-based
+    recovery was possible; it needed a physical power cycle. Do not reintroduce a getsockname()
+    call (or any other untested API) inside the accept-connection hot path without proving it
+    doesn't block first, in total isolation (a step17_debug_sleep.py-style throwaway payload),
+    the same discipline apps/robot/steps/ already exists for. The two tricks below don't touch a
+    connection something else depends on, so a failure mode here is "returns None," not "the
+    board stops responding to anything, including the ability to push a fix."
+    """
+    try:
+        wlan = network.WLAN(network.STA_IF)
+        ip = wlan.ifconfig()[0]
+        if ip and ip != "0.0.0.0":
+            return ip
+    except Exception:
+        pass
+
     try:
         probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         probe.connect(("8.8.8.8", 80))
         ip = probe.getsockname()[0]
         probe.close()
-        return ip if ip and ip != "0.0.0.0" else None
+        if ip and ip != "0.0.0.0":
+            return ip
     except Exception:
-        return None
+        pass
+
+    return None
 
 
 def _boot():
