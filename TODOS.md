@@ -43,18 +43,51 @@ crashing.**
   standalone blocking program left over from before the OTA loader existed. Fixed a real bug in
   the process: `drive`/`turn` used to loop internally for the whole commanded distance/angle,
   which could block the push-listener and the heartbeat watchdog for seconds. Now pushable with
-  the existing `scripts/push.mjs`, no mBlock/USB needed. Command-handling logic itself is still
-  queued for a live hardware run past `STEPS.md` step 5.
-- [x] Scaffold `apps/ios`: a minimal SwiftUI app (XcodeGen-generated, since there's no way to
-  drive Xcode's project GUI here) with on-device Speech-framework command words (forward/back/
-  left/right/stop) over a Swift port of `apps/robot/src`'s protocol, and a Swift port of
-  `push.mjs` for iPhone→CyberPi OTA. Verified for real: builds and passes all 11 unit tests on
-  the iOS Simulator; a real build targeting a paired physical iPhone gets all the way to install,
-  blocked only by the phone's Developer Mode toggle (one-time manual step, documented in
-  `apps/ios/README.md`, not a build problem). Signing pinned to a specific personal Apple
-  Developer team so this never lands on a work/org account's App Store Connect.
-- [ ] Actually install and run `apps/ios` on a real iPhone (Developer Mode toggle is the only
-  remaining blocker) and confirm command words drive the real robot end to end.
+  the existing `scripts/push.mjs`, no mBlock/USB needed. **Command-handling confirmed on real
+  hardware**: a direct TCP client got an instant `stop` → `ack` round trip against the live board.
+- [x] Added on-screen status (connection state, last command, last result, a beacon send counter,
+  and the board's own detected IP) directly on the CyberPi's display, so watching the robot
+  itself is enough to follow a test session — the person testing usually can't see the laptop's
+  logs. Fixed a real bug along the way: `set_face()` was calling `cyberpi.display.clear()` on
+  every face change, wiping the other status lines, and colliding label ids with the status line.
+- [x] Scaffold `apps/ios` and **install/run it on a real iPhone** — a minimal SwiftUI app
+  (XcodeGen-generated, since there's no way to drive Xcode's project GUI here) with on-device
+  Speech-framework command words (forward/back/left/right/stop) over a Swift port of
+  `apps/robot/src`'s protocol, and a Swift port of `push.mjs` for iPhone→CyberPi OTA. Signing
+  pinned to a specific personal Apple Developer team (found and fixed a wrong team ID along the
+  way — the number in a cert's display name isn't the same as its actual Team ID) so this never
+  lands on a work/org account's App Store Connect. `pnpm ios:deploy` does a full build → install →
+  launch over Wi-Fi with no Xcode GUI, cable, or App Store involved.
+- [x] Found and fixed three real bugs from live device testing, using `xcrun devicectl` to pull
+  structured crash reports and app logs straight off the phone with no Xcode GUI (same technique
+  as pulling files in general — `devicectl device info files` / `devicectl device copy from`,
+  `--domain-type systemCrashLogs` for crashes, `--domain-type appDataContainer` for the app's own
+  files):
+  - Two separate `SFSpeechRecognizer`/`AVAudioEngine` crashes (`EXC_BREAKPOINT`/`SIGTRAP`): a
+    closure written directly inside a method of a `@MainActor` class defaults to MainActor-
+    isolated purely from *where it's written*, regardless of what it captures, whenever the SDK's
+    completion-handler parameter isn't marked `@Sendable` — and both `requestAuthorization` and
+    `installTap`'s callbacks are invoked by iOS from threads that are never actually the main
+    thread. Fixed by moving each into a `nonisolated static` helper.
+  - A stuck "Connecting..." with no way to cancel: `NWConnection` has a `.waiting` state that can
+    persist forever against an unreachable address without ever calling back. Added a connect
+    timeout and a real Cancel button.
+  - Voice commands "kind of worked but not well": a pulled `session.log` showed real speech
+    reaching a partial transcript, then the task erroring with "No speech detected" before ever
+    going final — traced to tearing down and rebuilding the *entire* audio engine and tap on every
+    utterance, not just the recognition request. Now the engine/tap are set up once per listening
+    session and only the lightweight request/task pair cycles per utterance; command matching
+    also switched back to partial-result matching with a once-per-cycle debounce, since matching
+    only on `isFinal` (an earlier, less-informed fix) starved real commands entirely once final
+    results turned out to be unreliable.
+- [ ] IP discovery beacon (`rocky_agent.py`'s `_beacon_discovery`, `RobotDiscovery.swift`) still
+  unconfirmed — a UDP broadcast sent from the board never arrived at a listener on the laptop
+  across several checks. Made more robust without live confirmation (robot was powered off):
+  sends to both the limited (255.255.255.255) and computed subnet-directed broadcast address, and
+  shows the board's own detected IP directly on screen as a fallback either way. Needs a live
+  check next time the robot's on — read the beacon counter/IP off the screen.
+- [x] Auto-connect (not just auto-fill) the moment discovery finds the robot, so the only manual
+  step left is tapping "Start Listening" — untested pending the beacon issue above.
 - [ ] Add real OpenAI Realtime voice to `apps/ios`, replacing the fixed command-word vocabulary,
   reusing `services/device-api`'s ephemeral-secret pattern and desktop Rocky's persona.
 - [ ] Add Python lint/type-check infra (`uv` + `ruff` + `basedpyright`, `pyproject.toml` +
