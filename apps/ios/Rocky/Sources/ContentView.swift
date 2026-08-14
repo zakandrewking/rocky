@@ -54,6 +54,14 @@ struct ContentView: View {
             .buttonStyle(.borderedProminent)
             .disabled(connectionState != .connected)
 
+            if recognizer.isListening {
+                // The whole interaction model in one line: what to say, and that there's no
+                // separate "confirm" step -- just say a word and stop talking for a moment.
+                Text("Say: forward · back · left · right · stop")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             if !recognizer.lastRecognizedText.isEmpty {
                 Text("heard: \(recognizer.lastRecognizedText)")
                     .font(.footnote)

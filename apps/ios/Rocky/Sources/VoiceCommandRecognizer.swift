@@ -52,6 +52,18 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
     /// (waiting for `isFinal` turned out to starve real commands, see startRecognitionCycle's doc)
     /// while still firing at most once per utterance instead of once per partial update.
     private var matchedThisCycle = false
+    /// Bumped every time a cycle starts *or* stop() runs. A cycle's completion closure captures
+    /// its own id and checks it against this before doing anything (see handleRecognitionUpdate).
+    /// Needed because "Stop Listening" not actually stopping was a real, confirmed bug: cycles
+    /// restart automatically on every error/final, which -- per session.log -- was happening
+    /// every 1-2 seconds, so a completion callback from the cycle active *before* the user tapped
+    /// Stop was very likely already in flight (queued as its own Task, not yet run) at the moment
+    /// stop() executed. That stale callback would then call startRecognitionCycle() again after
+    /// stop() had already torn things down, undoing it. isListening alone doesn't fully guard
+    /// against this: stop() sets it false synchronously, but a callback queued *before* that could
+    /// still be mid-flight when it runs. Tagging + comparing against the current id is what
+    /// actually makes a stale callback a no-op regardless of queuing order.
+    private var cycleID = 0
 
     /// Must be called once, before start(), with the user's explicit consent already implied by
     /// them tapping a "listen" control -- Speech/mic permission prompts happen inside this call.
@@ -161,9 +173,11 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         requestBox.set(request)
         matchedThisCycle = false
 
+        cycleID += 1
+        let thisCycle = cycleID
         recognitionTask = Self.startRecognitionTask(recognizer: speechRecognizer, request: request) { [weak self] text, isFinal, error in
             Task { @MainActor in
-                self?.handleRecognitionUpdate(text: text, isFinal: isFinal, error: error)
+                self?.handleRecognitionUpdate(cycle: thisCycle, text: text, isFinal: isFinal, error: error)
             }
         }
     }
@@ -186,7 +200,8 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         }
     }
 
-    private func handleRecognitionUpdate(text: String?, isFinal: Bool, error: Error?) {
+    private func handleRecognitionUpdate(cycle: Int, text: String?, isFinal: Bool, error: Error?) {
+        guard cycle == cycleID else { return }  // stale callback from a superseded/stopped cycle
         if let text {
             lastRecognizedText = text
             RockyLog.write("heard (\(isFinal ? "final" : "partial")): \(text)")
@@ -212,6 +227,7 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
     func stop() {
         guard isListening else { return }
         isListening = false
+        cycleID += 1  // invalidates any in-flight completion callback immediately, see cycleID's doc
         recognitionTask?.cancel()
         recognitionTask = nil
         requestBox.set(nil)
