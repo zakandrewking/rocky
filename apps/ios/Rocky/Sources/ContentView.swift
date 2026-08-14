@@ -189,6 +189,11 @@ struct ContentView: View {
         if log.count > 50 {
             log.removeFirst(log.count - 50)
         }
+        // In-memory `log` above is only visible while the app is open and foreground -- not
+        // remotely readable and lost on backgrounding. RockyLog persists everything appendLog
+        // ever sees to a file, pulled off the device after a test session the same way crash
+        // reports are (see RockyLog.swift's header for the exact command).
+        RockyLog.write(line)
     }
 }
 

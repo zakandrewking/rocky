@@ -141,10 +141,18 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
     private func handleRecognitionUpdate(text: String?, isFinal: Bool, error: Error?) {
         if let text {
             lastRecognizedText = text
-            matchCommand(in: text)
+            RockyLog.write("heard (\(isFinal ? "final" : "partial")): \(text)")
+            // Matching on every partial result (shouldReportPartialResults growing the same
+            // utterance word by word) fired the same command repeatedly for one thing said once
+            // -- e.g. "forward" alone could match on "forward", then again as later partials
+            // still contained it. Only match once the utterance is actually final.
+            if isFinal {
+                matchCommand(in: text)
+            }
         }
         if let error {
             lastError = error.localizedDescription
+            RockyLog.write("recognition error: \(error.localizedDescription)")
         }
         // SFSpeechRecognitionTask ends on silence/timeout even with shouldReportPartialResults;
         // restart immediately so "listening" is effectively continuous, not one-shot.
@@ -169,16 +177,23 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
     /// "afterward" does not (checked as a whole-word match, not substring, to avoid that).
     private func matchCommand(in text: String) {
         let words = Set(text.lowercased().split(separator: " ").map(String.init))
+        let command: RobotVoiceCommand?
         if words.contains("stop") {
-            onCommand?(.stop)
+            command = .stop
         } else if words.contains("forward") {
-            onCommand?(.forward)
+            command = .forward
         } else if words.contains("back") || words.contains("backward") {
-            onCommand?(.backward)
+            command = .backward
         } else if words.contains("left") {
-            onCommand?(.left)
+            command = .left
         } else if words.contains("right") {
-            onCommand?(.right)
+            command = .right
+        } else {
+            command = nil
+        }
+        RockyLog.write("matched: \(command.map { "\($0)" } ?? "(none)")")
+        if let command {
+            onCommand?(command)
         }
     }
 }
