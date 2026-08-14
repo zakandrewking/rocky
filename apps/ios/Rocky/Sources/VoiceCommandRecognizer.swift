@@ -25,13 +25,24 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
     /// Must be called once, before start(), with the user's explicit consent already implied by
     /// them tapping a "listen" control -- Speech/mic permission prompts happen inside this call.
     func requestAuthorization() async -> Bool {
-        let speechStatus = await withCheckedContinuation { (continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+        let speechStatus = await Self.requestSpeechAuthorization()
+        guard speechStatus == .authorized else { return false }
+        return await AVAudioApplication.requestRecordPermission()
+    }
+
+    /// A crash, confirmed via a pulled device crash report: SFSpeechRecognizer.requestAuthorization's
+    /// completion closure, when written directly inside a method of this @MainActor class, gets
+    /// inferred as MainActor-isolated by the compiler -- but iOS actually invokes it from its own
+    /// internal TCC/permissions queue, never the main thread. The runtime's actor-isolation check
+    /// traps (EXC_BREAKPOINT/SIGTRAP) the moment the OS calls back. `nonisolated static` keeps this
+    /// closure out of the @MainActor inference entirely, regardless of whether the SDK's completion
+    /// handler type happens to be marked @Sendable.
+    nonisolated private static func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
+        await withCheckedContinuation { (continuation: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status)
             }
         }
-        guard speechStatus == .authorized else { return false }
-        return await AVAudioApplication.requestRecordPermission()
     }
 
     func start() {
@@ -92,24 +103,44 @@ final class VoiceCommandRecognizer: NSObject, ObservableObject {
         isListening = true
         lastError = nil
 
-        recognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
+        recognitionTask = Self.startRecognitionTask(recognizer: speechRecognizer, request: request) { [weak self] text, isFinal, error in
             Task { @MainActor in
-                if let result {
-                    let text = result.bestTranscription.formattedString
-                    self.lastRecognizedText = text
-                    self.matchCommand(in: text)
-                }
-                if let error {
-                    self.lastError = error.localizedDescription
-                }
-                // SFSpeechRecognitionTask ends on silence/timeout even with shouldReportPartialResults;
-                // restart immediately so "listening" is effectively continuous, not one-shot.
-                if error != nil || result?.isFinal == true {
-                    self.stop()
-                    self.start()
-                }
+                self?.handleRecognitionUpdate(text: text, isFinal: isFinal, error: error)
             }
+        }
+    }
+
+    /// Same reasoning as requestSpeechAuthorization() above -- recognitionTask's result handler has
+    /// the identical shape (a completion closure written inside a @MainActor method, invoked by the
+    /// Speech framework from its own internal queue), so it carries the same crash risk even though
+    /// this specific one hadn't crashed yet. `nonisolated static` here, hopping to @MainActor
+    /// explicitly in the caller above, rather than waiting for a second crash report to prove it.
+    /// Extracts plain values (String/Bool) rather than passing SFSpeechRecognitionResult itself
+    /// across the @Sendable/@MainActor boundary -- it's an Apple type this project doesn't control
+    /// and isn't Sendable, so the compiler rejects sending it across directly.
+    nonisolated private static func startRecognitionTask(
+        recognizer: SFSpeechRecognizer,
+        request: SFSpeechAudioBufferRecognitionRequest,
+        completion: @escaping @Sendable (String?, Bool, Error?) -> Void
+    ) -> SFSpeechRecognitionTask {
+        recognizer.recognitionTask(with: request) { result, error in
+            completion(result?.bestTranscription.formattedString, result?.isFinal ?? false, error)
+        }
+    }
+
+    private func handleRecognitionUpdate(text: String?, isFinal: Bool, error: Error?) {
+        if let text {
+            lastRecognizedText = text
+            matchCommand(in: text)
+        }
+        if let error {
+            lastError = error.localizedDescription
+        }
+        // SFSpeechRecognitionTask ends on silence/timeout even with shouldReportPartialResults;
+        // restart immediately so "listening" is effectively continuous, not one-shot.
+        if error != nil || isFinal {
+            stop()
+            start()
         }
     }
 
