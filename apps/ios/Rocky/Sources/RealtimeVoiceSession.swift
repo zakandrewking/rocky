@@ -239,30 +239,43 @@ final class RealtimeVoiceSession: ObservableObject {
         if responseStartedAt != nil { finishResponse(reason: "barge-in") }
     }
 
-    /// Rocky's own voice reaches the microphone on this platform (see
-    /// RealtimeWebRTCClient.setMicrophoneEnabled), so the mic is gated shut for as long as she is
-    /// making noise. Without this the server hears her, treats it as the user interrupting, cuts
-    /// the response off and transcribes her own words back as user speech -- which is what "slow
-    /// or does not respond" actually looked like.
+    /// Whether this character's voice bypasses WebRTC's echo canceller.
+    ///
+    /// A Hume-voiced character is played through AVAudioEngine, which is outside the
+    /// voice-processing render path, so the microphone genuinely hears her and has to be gated
+    /// shut while she speaks. A character voiced by the Realtime model arrives on the WebRTC
+    /// track itself, which *is* echo-cancelled -- gating there would buy nothing and would cost
+    /// barge-in, since a closed microphone cannot hear an interruption.
+    private var needsMicrophoneGate: Bool { hume != nil }
+
     private func setMicrophoneOpen(_ open: Bool, reason: String) {
-        guard micOpen != open else { return }
+        guard needsMicrophoneGate, micOpen != open else { return }
         micOpen = open
         client.setMicrophoneEnabled(open)
         log("mic \(open ? "open" : "closed") (\(reason))")
     }
 
-    private func handleSpeakingChange(_ speaking: Bool) {
-        self.speaking = speaking
-        if speaking {
-            if !hasSpokenOnce {
-                hasSpokenOnce = true
-                if let started = startedAt {
-                    log("READY: first sound \(Self.ms(since: started)) after the orb was tapped")
-                }
+    /// Rocky's voice and Fathom's arrive by completely different routes, so "she started
+    /// speaking" has to be detected differently: Hume reports playback, while the Realtime
+    /// model's own speech is only visible here as its transcript arriving.
+    private func noteRockyStartedSpeaking() {
+        guard !speaking else { return }
+        speaking = true
+        if !hasSpokenOnce {
+            hasSpokenOnce = true
+            if let started = startedAt {
+                log("READY: first sound \(Self.ms(since: started)) after the orb was tapped")
             }
+        }
+    }
+
+    private func handleSpeakingChange(_ speaking: Bool) {
+        if speaking {
+            noteRockyStartedSpeaking()
             setMicrophoneOpen(false, reason: "rocky speaking")
             return
         }
+        self.speaking = false
         // Playback draining is not the same as Rocky being finished: if Hume is still streaming,
         // the queue can empty briefly between chunks. Reopening the mic there would put her own
         // remaining audio straight back into the server's ear -- the exact fault this gate exists
@@ -344,6 +357,11 @@ final class RealtimeVoiceSession: ObservableObject {
     /// have finished, and nothing is actually queued, release the turn so the mic reopens.
     private func armTurnWatchdog() {
         turnWatchdog?.cancel()
+        // Only the Hume path can get stuck: it is the one that gates the microphone and plays
+        // audio this app has to track itself. When the model does its own speaking, response.done
+        // always arrives and ends the turn, so a watchdog there would only ever fire early on a
+        // long reply and cut it short.
+        guard hume != nil else { return }
         let words = responseText.split(whereSeparator: \.isWhitespace).count
         let budget = min(12_000, max(4_000, 2_000 + words * 420))
         turnWatchdog = Task { [weak self] in
@@ -470,10 +488,18 @@ final class RealtimeVoiceSession: ObservableObject {
             armFirstAudioWatchdog()
             armTurnWatchdog()
 
-        // OpenAI-voice path: the audio itself arrives on the media track, and only its transcript
-        // comes through here -- still enough to drive the chords.
+        // Realtime-voice path: the audio itself arrives on the media track, so the transcript is
+        // the only sign here that she has started talking -- and the only thing that can drive
+        // the chord layer or end the loading animation.
         case "response.output_audio_transcript.delta":
-            if let delta = event.delta { eridian?.pushTranscriptDelta(delta) }
+            if let delta = event.delta {
+                if firstAudioAt == nil, let started = responseStartedAt {
+                    firstAudioAt = Date()
+                    log("first audio \(Self.ms(since: started)) after response started")
+                }
+                noteRockyStartedSpeaking()
+                eridian?.pushTranscriptDelta(delta)
+            }
         case "response.output_audio_transcript.done":
             eridian?.flushTranscript()
 
@@ -487,6 +513,7 @@ final class RealtimeVoiceSession: ObservableObject {
             // unless there was no text, in which case nothing will ever play and waiting for
             // playback would hold the microphone shut for nothing.
             if hume == nil {
+                speaking = false
                 finishResponse(reason: "response done")
             } else if responseText.isEmpty {
                 log("response produced no text, nothing to speak — releasing the turn")

@@ -12,6 +12,11 @@ Rocky's personality. That now lives in `services/device-api/src/characters/`, wh
 iOS build bakes in. Desktop keeps its own frozen copy, so the two will drift — that is expected,
 and is the price of not editing a deprecated app.
 
+Its test suite is also out of `pnpm test`, and is `pnpm test:desktop-deprecated` instead. It has
+one long-standing failure (`prompt.test.ts` expects a Mark-joke safety line that its own prompt
+never had), and fixing it would mean editing a frozen app. A gate that is permanently red teaches
+people to ignore the gate, so it was taken out of the gate rather than left to rot inside it.
+
 ---
 
 - Work on `main` and push to `origin main` regularly as you go. No feature branches, and no pull

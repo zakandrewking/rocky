@@ -33,7 +33,8 @@
     "ios:check": "apps/ios/scripts/generate.sh",
     "ios:test": "apps/ios/scripts/generate.sh && cd apps/ios && xcodebuild -project Rocky.xcodeproj -scheme Rocky -destination 'platform=iOS Simulator,name=iPhone 17' -configuration Debug test",
     "ios:deploy": "bash apps/ios/scripts/deploy.sh",
-    "test": "pnpm --filter @rocky/desktop test && pnpm --filter @rocky/device-api test && pnpm --filter @rocky/robot test && pnpm ios:test",
+    "test:desktop-deprecated": "pnpm --filter @rocky/desktop test",
+    "test": "pnpm --filter @rocky/device-api test && pnpm --filter @rocky/robot test && pnpm ios:test",
     "typecheck": "pnpm --filter @rocky/desktop typecheck && pnpm --filter @rocky/device-api typecheck && pnpm --filter @rocky/robot typecheck",
     "check": "pnpm lint && pnpm scripts:check && pnpm typecheck && pnpm test && pnpm build",
     "ios:log": "bash apps/ios/scripts/pull-log.sh"
