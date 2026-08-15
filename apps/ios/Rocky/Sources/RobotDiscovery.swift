@@ -112,7 +112,7 @@ final class RobotDiscovery: ObservableObject {
     }
 
     private func scanSubnet() async {
-        guard let prefix = Self.localSubnetPrefix() else { return }
+        guard let prefix = NetworkUtilities.localSubnetPrefix() else { return }
         isScanning = true
         defer { isScanning = false }
 
@@ -207,32 +207,5 @@ final class RobotDiscovery: ObservableObject {
         scanTask = nil
         isScanning = false
         discoveredHost = host
-    }
-
-    // MARK: - Own-address lookup
-
-    /// The phone's IPv4 on Wi-Fi (en0), as "a.b.c." -- the /24 to sweep. getifaddrs is plain
-    /// POSIX, no entitlement needed. nil on cellular-only or no Wi-Fi, which just means no scan.
-    private static func localSubnetPrefix() -> String? {
-        var addrs: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&addrs) == 0, let first = addrs else { return nil }
-        defer { freeifaddrs(addrs) }
-
-        var pointer: UnsafeMutablePointer<ifaddrs>? = first
-        while let current = pointer {
-            defer { pointer = current.pointee.ifa_next }
-            guard let sa = current.pointee.ifa_addr, sa.pointee.sa_family == UInt8(AF_INET),
-                String(cString: current.pointee.ifa_name) == "en0"
-            else { continue }
-            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-            guard getnameinfo(sa, socklen_t(sa.pointee.sa_len), &host, socklen_t(host.count),
-                nil, 0, NI_NUMERICHOST) == 0
-            else { continue }
-            let ip = String(cString: host)
-            let octets = ip.split(separator: ".")
-            guard octets.count == 4 else { continue }
-            return "\(octets[0]).\(octets[1]).\(octets[2])."
-        }
-        return nil
     }
 }

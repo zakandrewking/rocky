@@ -9,10 +9,16 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
     @StateObject private var discovery = RobotDiscovery()
+    @StateObject private var deviceAPIDiscovery = DeviceAPIDiscovery()
     @State private var controller: RobotController?
     @State private var host = UserDefaults.standard.string(forKey: "robotHost") ?? ""
     @State private var deviceAPIHost = UserDefaults.standard.string(forKey: "deviceAPIHost") ?? ""
-    @State private var deviceToken = UserDefaults.standard.string(forKey: "deviceToken") ?? ""
+    // Falls back to a build-time-baked value (see project.yml's RockyDeviceToken, populated from
+    // the repo root .env at `xcodegen generate` time -- never typed on the phone, never
+    // committed) before falling back to empty, so a personal build never needs manual entry.
+    @State private var deviceToken = UserDefaults.standard.string(forKey: "deviceToken")
+        ?? (Bundle.main.object(forInfoDictionaryKey: "RockyDeviceToken") as? String).flatMap { $0.isEmpty ? nil : $0 }
+        ?? ""
     @State private var connectionState = ConnectionState.disconnected
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
@@ -63,6 +69,15 @@ struct ContentView: View {
 
             deviceAPIFields
 
+            if let discovered = deviceAPIDiscovery.discoveredHost, discovered != deviceAPIHost {
+                Button("Found device API at \(discovered) — use it") { deviceAPIHost = discovered }
+                    .font(.caption)
+            } else if deviceAPIDiscovery.isScanning {
+                Text("Scanning network for device API…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Button(voiceButtonLabel) {
                 Task { await toggleVoiceSession() }
             }
@@ -90,6 +105,7 @@ struct ContentView: View {
         .padding()
         .onAppear {
             discovery.start()
+            deviceAPIDiscovery.start()
         }
         .onChange(of: discovery.discoveredHost) { _, newHost in
             // Auto-connect, not just auto-fill: the point of discovery is not having to do
@@ -99,6 +115,13 @@ struct ContentView: View {
             guard let newHost, host.isEmpty, connectionState == .disconnected else { return }
             host = newHost
             Task { await toggleConnection() }
+        }
+        .onChange(of: deviceAPIDiscovery.discoveredHost) { _, newHost in
+            // Auto-fill only, no auto-connect: unlike the robot, there's no separate "connect to
+            // device-api" step to trigger here -- the field just needs to be populated so
+            // toggleVoiceSession() has what it needs once the user taps Talk to Rocky.
+            guard let newHost, deviceAPIHost.isEmpty else { return }
+            deviceAPIHost = newHost
         }
     }
 
@@ -146,7 +169,7 @@ struct ContentView: View {
     private var instructions: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("1. Connect to the robot below (auto-fills if found on Wi-Fi)")
-            Text("2. Enter the laptop's device API host and token, once")
+            Text("2. Device API host auto-fills too; token is baked in if you built with .env set")
             Text("3. Tap Talk to Rocky and just talk — ask her to look around, drive, or stop")
         }
         .font(.caption)

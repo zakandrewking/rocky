@@ -25,7 +25,7 @@ if ! command -v xcodegen >/dev/null; then
 fi
 
 echo "==> Regenerating Rocky.xcodeproj from project.yml"
-xcodegen generate >/dev/null
+./scripts/generate.sh >/dev/null
 
 # xcodebuild and devicectl each use their own device-id format for the same physical phone
 # (confirmed the hard way: devicectl's id is rejected by `xcodebuild -destination id=`) -- so

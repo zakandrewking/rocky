@@ -39,18 +39,25 @@ apps/ios/
     └── deploy.sh                 — build + install + launch on a paired iPhone, no cable
 ```
 
-### Talking to the robot: one-time setup
+### Talking to the robot: no manual setup, normally
 
 The app needs `services/device-api` (`pnpm device-api`, on the laptop) to mint a short-lived
-OpenAI secret — the real API key never touches the phone. In the app, enter:
+OpenAI secret — the real API key never touches the phone. Both things this needs are automatic:
 
-- **device API host**: the laptop's LAN IP and port, e.g. `192.168.1.138:8787`
-- **device token**: matches a `deviceId:token` pair in the laptop's `ROCKY_DEVICE_TOKENS` (see
-  `.env.example`); generate one with `openssl rand -hex 24`
+- **device API host**: `DeviceAPIDiscovery.swift` scans the phone's own `/24` for something
+  answering `GET /v1/health` on port 8787, the same active-scan pattern `RobotDiscovery` uses for
+  the robot itself (see `NetworkUtilities.swift` for the shared subnet-detection code both use).
+- **device token**: baked into the app at build time. `scripts/generate.sh` (used by
+  `ios:check`/`ios:test`/`deploy.sh` — never call `xcodegen generate` directly) reads the
+  `rocky-ios:` entry out of the repo root `.env`'s `ROCKY_DEVICE_TOKENS` (see `.env.example`;
+  generate one with `openssl rand -hex 24`) and passes it to XcodeGen's environment-variable
+  expansion (`project.yml`'s `RockyDeviceToken` Info.plist key), so it's never typed on the phone
+  and never committed.
 
-Both are entered once and saved locally on the phone (`UserDefaults`, not Keychain — deliberate
-for this deliberately minimal, non-App-Store app; see `ContentView.swift`'s comment for the
-threat-model reasoning).
+Both fields stay manually editable in-app (`UserDefaults`, not Keychain — deliberate for this
+deliberately minimal, non-App-Store app; see `ContentView.swift`'s comment for the threat-model
+reasoning) as a fallback if discovery or baking doesn't find anything, e.g. a fresh checkout with
+no `.env` yet, or a laptop on a different subnet.
 
 `Rocky.xcodeproj` and `Generated/` are gitignored — generated output, not source. Regenerate any
 time `project.yml` or the file layout changes:
