@@ -578,9 +578,36 @@ final class RealtimeVoiceSession: ObservableObject {
             try await robot.setFace(face)
             return Self.encodeResult(["success": true])
 
+        case "set_lights":
+            let args = try JSONDecoder().decode(LightArgs.self, from: data)
+            try await robot.setLights(red: args.red, green: args.green, blue: args.blue)
+            return Self.encodeResult(["success": true])
+
+        case "get_robot_state":
+            return Self.encode(state: await robot.state())
+
         default:
             return Self.encodeResult(["success": false, "error": "unknown tool \(name)"])
         }
+    }
+
+    /// Ages are rounded to whole seconds and omitted when there is nothing to report: "I measured
+    /// 20cm" means something very different four seconds later than four minutes later, and an
+    /// absent field reads more honestly to the model than a zero would.
+    private static func encode(state: RobotState) -> String {
+        var fields: [String: Any] = [
+            "success": true,
+            "connected": state.connected,
+            "address": state.address,
+            "busy": state.busy,
+        ]
+        if let face = state.face { fields["face"] = face.rawValue }
+        if let action = state.lastAction { fields["lastAction"] = action }
+        if let result = state.lastActionResult { fields["lastActionResult"] = result }
+        if let age = state.secondsSinceLastAction { fields["secondsSinceLastAction"] = age.rounded() }
+        if let cm = state.lastDistanceCm { fields["lastDistanceCm"] = cm }
+        if let age = state.secondsSinceDistanceReading { fields["secondsSinceDistanceReading"] = age.rounded() }
+        return encodeResult(fields)
     }
 
     private struct DriveArgs: Decodable {
@@ -591,6 +618,12 @@ final class RealtimeVoiceSession: ObservableObject {
     private struct TurnArgs: Decodable {
         let degrees: Double
         let speed: Double?
+    }
+
+    private struct LightArgs: Decodable {
+        let red: Int
+        let green: Int
+        let blue: Int
     }
 
     private struct FaceArgs: Decodable {

@@ -21,11 +21,15 @@ YOUR BODY — PRIVATE DEVICE CONTEXT
   file browser, and no spreadsheet here.
 - Never offer to make a spreadsheet, document, or file in this body. If someone asks for one, say
   plainly that this body cannot.
-- You can actually move: drive_cm, rotate_degrees, stop_robot, read_distance, and set_face are real
-  tools that move the physical robot. Use them when asked to move, look around, or check what's
-  nearby -- don't just describe moving. Small, deliberate steps: a short drive or turn, then check
-  in, rather than one long blind movement. If read_distance or a failed drive suggests something is
-  close ahead, say so and stop rather than pushing through.
+- You can actually move: drive_cm, rotate_degrees, stop_robot, read_distance, set_face and
+  set_lights are real tools that move and change the physical robot. Use them when asked to move,
+  look around, or check what's nearby -- don't just describe moving. Small, deliberate steps: a
+  short drive or turn, then check in, rather than one long blind movement. If read_distance or a
+  failed drive suggests something is close ahead, say so and stop rather than pushing through.
+- You can also look at yourself with get_robot_state: it tells you whether your body is connected,
+  whether you are mid-move, what you last did and whether it worked, and the last distance you
+  measured. You do not otherwise remember any of that between actions, so check it rather than
+  guessing -- especially before moving again, or if someone asks what you have been doing.
 - Everything you say is heard aloud, never read. Never describe what is on the screen, never spell
   things out, and never read punctuation or lists.
 - Keep replies shorter than usual. A small speaker in a room full of people rewards brevity.
@@ -113,6 +117,31 @@ const SET_FACE_TOOL = {
   },
 } as const;
 
+const SET_LIGHTS_TOOL = {
+  type: "function",
+  name: "set_lights",
+  description:
+    "Set the colour of the ring of lights on the robot's body. Use it expressively -- to match a mood, to play a game, or when someone asks for a colour.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      red: { type: "number", description: "0-255." },
+      green: { type: "number", description: "0-255." },
+      blue: { type: "number", description: "0-255." },
+    },
+    required: ["red", "green", "blue"],
+  },
+} as const;
+
+const GET_STATE_TOOL = {
+  type: "function",
+  name: "get_robot_state",
+  description:
+    "Look at your own body: whether it is connected, whether it is mid-move, the last thing you did and whether it worked, the last distance you measured and how long ago. Use it when you are unsure what you have already done, before deciding whether to move again, or when someone asks what is going on with you. It costs nothing and moves nothing.",
+  parameters: { type: "object", additionalProperties: false, properties: {} },
+} as const;
+
 export interface DeviceSessionOptions {
   readonly model?: string;
   /** Overrides the character's own voice. Ignored when the character speaks through Hume. */
@@ -155,7 +184,7 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       },
       output: { voice },
     },
-    tools: [DRIVE_TOOL, TURN_TOOL, STOP_TOOL, READ_DISTANCE_TOOL, SET_FACE_TOOL],
+    tools: [DRIVE_TOOL, TURN_TOOL, STOP_TOOL, READ_DISTANCE_TOOL, SET_FACE_TOOL, SET_LIGHTS_TOOL, GET_STATE_TOOL],
     tool_choice: "auto",
   };
 }

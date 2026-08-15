@@ -80,7 +80,7 @@ describe("createDeviceSessionConfig", () => {
   it("ships the robot's movement tools", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const names = (config.tools as Array<{ name: string }>).map((tool) => tool.name);
-    expect(names).toEqual(["drive_cm", "rotate_degrees", "stop_robot", "read_distance", "set_face"]);
+    expect(names).toEqual(["drive_cm", "rotate_degrees", "stop_robot", "read_distance", "set_face", "set_lights", "get_robot_state"]);
   });
 });
 
