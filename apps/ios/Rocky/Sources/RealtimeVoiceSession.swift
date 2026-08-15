@@ -20,6 +20,14 @@ final class RealtimeVoiceSession: ObservableObject {
     private var robot: RobotController?
     private var greeted = false
 
+    /// Rocky's own voice, when it's configured: Hume speaks, OpenAI is put in text-only mode and
+    /// never makes a sound. Nil falls back to OpenAI's built-in voice over the WebRTC track.
+    private let hume = HumeSpeech()
+    private var humePlayer: HumePcmPlayer?
+    private var humeTextBuffer = ""
+    /// The quiet alien chatter under her voice.
+    private var eridian: EridianAudio?
+
     /// `robot` is nil when none was found on the network. That is a supported, ordinary state --
     /// the app is then exactly what apps/desktop is, a voice-only Rocky -- so the movement tools
     /// are dropped from the session rather than left to fail (see OpenAIRealtimeMinter).
@@ -30,8 +38,14 @@ final class RealtimeVoiceSession: ObservableObject {
 
         do {
             try AudioSessionManager.configureForVoice()
-            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasRobot: robot != nil)
-            RockyLog.write("realtime: minted ephemeral secret (robot: \(robot == nil ? "no" : "yes"))")
+            startLocalAudio()
+            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(
+                hasRobot: robot != nil,
+                speaksWithHume: hume != nil
+            )
+            RockyLog.write(
+                "realtime: minted ephemeral secret (robot: \(robot == nil ? "no" : "yes"), voice: \(hume == nil ? "openai" : "hume"))"
+            )
 
             client.onEvent = { [weak self] event in
                 Task { @MainActor in
@@ -63,9 +77,53 @@ final class RealtimeVoiceSession: ObservableObject {
 
     func disconnect() {
         client.close()
+        stopLocalAudio()
+        hume?.cancel()
+        humePlayer = nil
+        eridian = nil
+        humeTextBuffer = ""
         state = .disconnected
         robot = nil
         greeted = false
+    }
+
+    // MARK: - Rocky's voice and her alien chatter
+
+    private func startLocalAudio() {
+        eridian = EridianAudio()
+        guard let hume else { return }
+        let player = HumePcmPlayer()
+        humePlayer = player
+        hume.onAudio = { [weak player] base64, isLastChunk in
+            player?.push(base64: base64, isLastChunk: isLastChunk)
+        }
+        hume.onError = { message in
+            RockyLog.write("hume: \(message)")
+        }
+    }
+
+    private func stopLocalAudio() {
+        eridian?.stop()
+        humePlayer?.stop()
+    }
+
+    /// Barge-in. The session's own turn detection already cancels the *response* server-side; what
+    /// it cannot do is stop audio this app has already queued locally, so that has to happen here
+    /// or Rocky keeps talking over the person interrupting her.
+    private func handleUserStartedSpeaking() {
+        stopLocalAudio()
+        hume?.cancel()
+        humeTextBuffer = ""
+    }
+
+    /// Feeds Rocky's streaming words to Hume a sensible mouthful at a time (see SpeechChunks).
+    private func sendToHume(_ delta: String, flush: Bool = false) {
+        guard let hume else { return }
+        let split = SpeechChunks.split(buffer: humeTextBuffer, delta: delta, flush: flush)
+        humeTextBuffer = split.remainder
+        for chunk in split.complete {
+            hume.speak(chunk, flush: flush && split.remainder.isEmpty)
+        }
     }
 
     private func greetIfNeeded() {
@@ -87,8 +145,37 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     private func handle(_ event: RealtimeServerEvent) async {
-        if event.type == "error" {
+        switch event.type {
+        case "error":
             RockyLog.write("realtime error: \(event.error?.message ?? "unknown")")
+
+        case "input_audio_buffer.speech_started":
+            handleUserStartedSpeaking()
+
+        case "response.created":
+            humePlayer?.beginResponse()
+            eridian?.playThinkingPrelude()
+
+        // Hume path: OpenAI streams words, Hume speaks them, and the chord layer follows the
+        // same text.
+        case "response.output_text.delta":
+            if let delta = event.delta {
+                eridian?.pushTranscriptDelta(delta)
+                sendToHume(delta)
+            }
+        case "response.output_text.done":
+            sendToHume("", flush: true)
+            eridian?.flushTranscript()
+
+        // OpenAI-voice path: the audio itself arrives on the media track, and only its transcript
+        // comes through here -- still enough to drive the chords.
+        case "response.output_audio_transcript.delta":
+            if let delta = event.delta { eridian?.pushTranscriptDelta(delta) }
+        case "response.output_audio_transcript.done":
+            eridian?.flushTranscript()
+
+        default:
+            break
         }
         for call in event.toolCalls {
             guard let name = call.name, let callId = call.call_id else { continue }

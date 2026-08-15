@@ -34,7 +34,7 @@ enum OpenAIRealtimeMinter {
     /// `hasRobot` is false when discovery found no robot: the movement tools are stripped and the
     /// body context corrected, so the app is still a full voice Rocky (what apps/desktop is) even
     /// with no robot in the room.
-    static func mintEphemeralSecret(hasRobot: Bool) async throws -> String {
+    static func mintEphemeralSecret(hasRobot: Bool, speaksWithHume: Bool = false) async throws -> String {
         guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String,
             !apiKey.isEmpty
         else {
@@ -47,7 +47,8 @@ enum OpenAIRealtimeMinter {
         else {
             throw RobotError.commandFailed("RealtimeSessionConfig.json missing from the app bundle -- run apps/ios/scripts/generate.sh, not xcodegen generate directly")
         }
-        let body = hasRobot ? bakedBody : Self.withoutRobotBody(bakedBody)
+        var body = hasRobot ? bakedBody : Self.withoutRobotBody(bakedBody)
+        if speaksWithHume { body = Self.withTextOutput(body) }
 
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/realtime/client_secrets")!)
         request.httpMethod = "POST"
@@ -83,6 +84,25 @@ enum OpenAIRealtimeMinter {
         if let instructions = session["instructions"] as? String {
             session["instructions"] = instructions + "\n\n" + noBodyNote
         }
+        root["session"] = session
+        return (try? JSONSerialization.data(withJSONObject: root)) ?? data
+    }
+
+    /// Switches the session to text-only output, for when Hume is speaking for Rocky: OpenAI then
+    /// streams words instead of audio, and HumeSpeech turns them into her actual voice.
+    ///
+    /// Unlike apps/desktop, turn detection is deliberately left server-driven
+    /// (`create_response` / `interrupt_response` stay true). Desktop turns both off and
+    /// reimplements turn-taking and barge-in itself; matching that would mean owning a state
+    /// machine whose failure modes are "never answers" and "talks over you", to buy control this
+    /// app has no use for yet. Local playback still has to be stopped on barge-in, which
+    /// RealtimeVoiceSession does off `input_audio_buffer.speech_started`.
+    static func withTextOutput(_ data: Data) -> Data {
+        guard var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            var session = root["session"] as? [String: Any]
+        else { return data }
+
+        session["output_modalities"] = ["text"]
         root["session"] = session
         return (try? JSONSerialization.data(withJSONObject: root)) ?? data
     }

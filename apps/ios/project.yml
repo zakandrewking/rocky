@@ -38,6 +38,9 @@ targets:
         # (always use that, never `xcodegen generate` directly) -- never typed on the phone, never
         # committed. Empty string, not an error, when .env has no key yet.
         RockyOpenAIKey: "${ROCKY_OPENAI_KEY_IOS}"
+        # Rocky's actual voice (Hume Octave). Both empty means fall back to OpenAI's own voice.
+        RockyHumeKey: "${ROCKY_HUME_KEY_IOS}"
+        RockyHumeVoiceId: "${ROCKY_HUME_VOICE_ID_IOS}"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: family.rocky.ios
