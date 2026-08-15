@@ -18,16 +18,20 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private let client = RealtimeWebRTCClient()
     private var robot: RobotController?
+    private var greeted = false
 
-    func connect(robot: RobotController) async {
+    /// `robot` is nil when none was found on the network. That is a supported, ordinary state --
+    /// the app is then exactly what apps/desktop is, a voice-only Rocky -- so the movement tools
+    /// are dropped from the session rather than left to fail (see OpenAIRealtimeMinter).
+    func connect(robot: RobotController?) async {
         guard state == .disconnected || isFailed else { return }
         self.robot = robot
         state = .connecting
 
         do {
             try AudioSessionManager.configureForVoice()
-            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret()
-            RockyLog.write("realtime: minted ephemeral secret")
+            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasRobot: robot != nil)
+            RockyLog.write("realtime: minted ephemeral secret (robot: \(robot == nil ? "no" : "yes"))")
 
             client.onEvent = { [weak self] event in
                 Task { @MainActor in
@@ -37,6 +41,14 @@ final class RealtimeVoiceSession: ObservableObject {
             client.onConnectionStateChange = { [weak self] connected in
                 Task { @MainActor in
                     self?.handleConnectionChange(connected)
+                }
+            }
+            // Rocky speaks first, the way she does on desktop: the session's turn detection only
+            // fires on *user* speech, so the opening line needs an explicit nudge once the data
+            // channel can actually carry it.
+            client.onDataChannelOpen = { [weak self] in
+                Task { @MainActor in
+                    self?.greetIfNeeded()
                 }
             }
 
@@ -53,6 +65,14 @@ final class RealtimeVoiceSession: ObservableObject {
         client.close()
         state = .disconnected
         robot = nil
+        greeted = false
+    }
+
+    private func greetIfNeeded() {
+        guard !greeted else { return }
+        greeted = true
+        client.send(ResponseCreateEvent())
+        RockyLog.write("realtime: asked Rocky to greet")
     }
 
     private var isFailed: Bool {

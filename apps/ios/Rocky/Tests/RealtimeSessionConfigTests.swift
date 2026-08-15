@@ -1,0 +1,69 @@
+import XCTest
+
+@testable import Rocky
+
+/// The no-robot path: when discovery finds nothing, the app is still a full voice Rocky (what
+/// apps/desktop is), so the session it mints must not still be advertising movement tools it
+/// cannot honour. No device or network needed -- this is a pure transform of the baked config.
+final class RealtimeSessionConfigTests: XCTestCase {
+    private func config(tools: [[String: Any]], instructions: String) -> Data {
+        let root: [String: Any] = [
+            "session": [
+                "type": "realtime",
+                "instructions": instructions,
+                "tools": tools,
+                "tool_choice": "auto",
+            ]
+        ]
+        return try! JSONSerialization.data(withJSONObject: root)
+    }
+
+    private func session(of data: Data) -> [String: Any] {
+        let root = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
+        return root["session"] as! [String: Any]
+    }
+
+    func testDropsMovementToolsWhenThereIsNoRobot() {
+        let input = config(
+            tools: [["type": "function", "name": "drive_cm"], ["type": "function", "name": "set_face"]],
+            instructions: "You are Rocky."
+        )
+
+        let stripped = session(of: OpenAIRealtimeMinter.withoutRobotBody(input))
+
+        XCTAssertEqual((stripped["tools"] as! [Any]).count, 0)
+        XCTAssertEqual(stripped["tool_choice"] as! String, "none")
+    }
+
+    func testCorrectsTheBodyContextSoRockyDoesNotPromiseToDrive() {
+        let input = config(tools: [], instructions: "You are Rocky. You can actually move.")
+
+        let instructions = session(of: OpenAIRealtimeMinter.withoutRobotBody(input))["instructions"] as! String
+
+        // Kept, not replaced: the persona itself still comes from session.ts. Only the body
+        // claim is overridden, and it has to land last to win.
+        XCTAssertTrue(instructions.hasPrefix("You are Rocky. You can actually move."))
+        XCTAssertTrue(instructions.contains("NOT CONNECTED RIGHT NOW"))
+    }
+
+    func testLeavesAnUnrecognisableConfigAlone() {
+        let notOurShape = Data("{\"something\":\"else\"}".utf8)
+
+        XCTAssertEqual(OpenAIRealtimeMinter.withoutRobotBody(notOurShape), notOurShape)
+        XCTAssertEqual(OpenAIRealtimeMinter.withoutRobotBody(Data("not json".utf8)), Data("not json".utf8))
+    }
+
+    /// The config the app actually ships is generated at build time, so a change to session.ts
+    /// or the generate script that broke its shape would otherwise only show up on a real device.
+    func testTheBakedConfigIsPresentAndHasTheRobotTools() throws {
+        let url = try XCTUnwrap(
+            Bundle(for: Self.self).url(forResource: "RealtimeSessionConfig", withExtension: "json"),
+            "RealtimeSessionConfig.json is missing -- build with apps/ios/scripts/generate.sh"
+        )
+        let baked = session(of: try Data(contentsOf: url))
+
+        XCTAssertFalse((baked["instructions"] as! String).isEmpty)
+        let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
+        XCTAssertEqual(names, ["drive_cm", "rotate_degrees", "stop_robot", "read_distance", "set_face"])
+    }
+}

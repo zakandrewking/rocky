@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
     @State private var detailsOpen = false
+    @State private var robotSearchReported = false
 
     enum ConnectionState: Equatable {
         case disconnected, connecting, connected, failed(String)
@@ -67,19 +68,20 @@ struct ContentView: View {
         !((Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String) ?? "").isEmpty
     }
 
+    /// Voice state only. Finding the robot is background work the user should never watch, so it
+    /// deliberately does not reach the orb -- a missing robot is not an error, just a Rocky with
+    /// no body (exactly what apps/desktop is).
     private var orbPhase: OrbPhase {
         if case .failed = voiceSession.state { return .error }
-        if voiceSession.state == .connecting { return .connecting }
-        if voiceSession.state == .connected { return .listening }
-        if case .failed = connectionState { return .error }
-        if connectionState != .connected { return .connecting }
-        return .idle
+        switch voiceSession.state {
+        case .connecting: return .connecting
+        case .connected: return .listening
+        default: return .idle
+        }
     }
 
     private var orbTappable: Bool {
-        guard hasBakedOpenAIKey else { return false }
-        if voiceSession.state == .connecting { return false }
-        return connectionState == .connected || voiceSession.state == .connected
+        hasBakedOpenAIKey && voiceSession.state != .connecting
     }
 
     private var orbLabel: String {
@@ -115,13 +117,7 @@ struct ContentView: View {
         switch voiceSession.state {
         case .connecting: return "connecting"
         case .connected: return "listening"
-        default: break
-        }
-        switch connectionState {
-        case .connected: return "ready"
-        case .connecting: return "connecting"
-        case .failed: return "error"
-        case .disconnected: return discovery.isScanning ? "scanning" : "idle"
+        default: return "idle"
         }
     }
 
@@ -173,12 +169,13 @@ struct ContentView: View {
 
     private var detailBody: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Connects to the robot automatically. Tap the stone to talk — ask Rocky to look around, drive, or stop.")
+            Text("Tap the stone to talk. If the robot is on the same Wi-Fi it connects itself, and Rocky can drive; if not, she is still here to talk.")
                 .foregroundStyle(RockyTheme.mintBright.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
 
             if case .failed(let message) = connectionState {
-                Text("robot: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
+                // Informational, not an error state: voice works fine without a body.
+                Text("no robot: \(message)").foregroundStyle(RockyTheme.mint.opacity(0.6))
             }
             if case .failed(let message) = voiceSession.state {
                 Text("voice: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
@@ -223,8 +220,9 @@ struct ContentView: View {
 
     // MARK: - Behaviour (unchanged)
 
-    /// The only path into a robot connection now -- called on launch (last-known host) and
-    /// whenever RobotDiscovery finds a new address. No user-facing trigger or cancel.
+    /// The only path into a robot connection -- called on launch (last-known host) and whenever
+    /// RobotDiscovery finds a new address. No user-facing trigger, no cancel, and deliberately
+    /// only ever one line in the log: finding the body is plumbing, not something to watch.
     private func connectRobotIfNeeded() async {
         guard !host.isEmpty, connectionState != .connected, connectionState != .connecting else { return }
         UserDefaults.standard.set(host, forKey: "robotHost")
@@ -234,11 +232,32 @@ struct ContentView: View {
             try await newController.connect()
             controller = newController
             connectionState = .connected
-            appendLog("connected to \(host)")
+            reportRobotSearchOnce("robot found at \(host)")
         } catch {
             connectionState = .failed(error.localizedDescription)
-            appendLog("connect failed: \(error.localizedDescription)")
+            // Not surfaced as a failure to the user: no robot just means voice-only Rocky. The
+            // detail panel still carries the reason for anyone who opens it.
+            RockyLog.write("robot connect failed: \(error.localizedDescription)")
         }
+    }
+
+    /// Exactly one robot line ever reaches the visible log, whichever way the search ends.
+    private func reportRobotSearchOnce(_ message: String) {
+        guard !robotSearchReported else { return }
+        robotSearchReported = true
+        appendLog(message)
+    }
+
+    /// Gives an in-flight robot search a moment to land before starting a session, so tapping the
+    /// orb the instant the app opens doesn't silently get a body-less Rocky while discovery was
+    /// still a second away. Capped, and skipped entirely once the search has resolved.
+    private func awaitRobotSearch() async {
+        let deadline = Date().addingTimeInterval(2.5)
+        while Date() < deadline {
+            if connectionState == .connected || robotSearchReported { return }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+        reportRobotSearchOnce("no robot found — voice only")
     }
 
     private func toggleVoiceSession() async {
@@ -247,8 +266,10 @@ struct ContentView: View {
             appendLog("voice: disconnected")
             return
         }
-        guard let controller else { return }
+        await awaitRobotSearch()
         appendLog("voice: connecting…")
+        // A nil controller is fine and expected when no robot answered -- Rocky is then exactly
+        // the desktop app: a full conversation, just without a body to drive.
         await voiceSession.connect(robot: controller)
         if case .failed(let message) = voiceSession.state {
             appendLog("voice: connect failed: \(message)")

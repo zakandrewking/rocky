@@ -76,6 +76,17 @@ screen. A tappable status row below it expands into a detail area (mirroring des
 chip) with connection status, warnings, the last tool call, the CyberPi payload-push button, and
 the scrolling log.
 
+### The robot is optional
+
+Finding and connecting the robot is background plumbing, not something to watch: it starts at
+launch, never touches the orb, and puts exactly one line in the visible log either way (`robot
+found at …` / `no robot found — voice only`). Everything else goes to `RockyLog`.
+
+With no robot, the app is simply what `apps/desktop` is — a full voice Rocky with no body. That
+isn't a degraded mode with failing tools: `OpenAIRealtimeMinter.withoutRobotBody` strips the
+movement tools out of the minted session and overrides the body context, so Rocky knows not to
+offer to drive somewhere she can't (covered by `RealtimeSessionConfigTests`).
+
 `Rocky.xcodeproj` and `Generated/` are gitignored — generated output, not source. Regenerate any
 time `project.yml` or the file layout changes:
 

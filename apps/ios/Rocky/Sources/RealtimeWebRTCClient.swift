@@ -23,6 +23,9 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
     /// Called once the peer connection is fully connected, or once it fails/disconnects after
     /// having been connected -- not for the normal "still negotiating" intermediate states.
     var onConnectionStateChange: (@Sendable (Bool) -> Void)?
+    /// Called when the event data channel reaches `.open` -- the first moment `send` will
+    /// actually deliver anything, so this is what to wait on before speaking first.
+    var onDataChannelOpen: (@Sendable () -> Void)?
 
     // WebRTC's own recommended pattern is one shared factory for the process's lifetime; this is
     // created once and only ever read after, never mutated, so nonisolated(unsafe) is an honest
@@ -198,7 +201,11 @@ extension RealtimeWebRTCClient: RTCPeerConnectionDelegate {
 }
 
 extension RealtimeWebRTCClient: RTCDataChannelDelegate {
-    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {}
+    func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+        if dataChannel.readyState == .open {
+            onDataChannelOpen?()
+        }
+    }
 
     func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
         guard !buffer.isBinary else { return }

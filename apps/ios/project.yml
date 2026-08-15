@@ -52,6 +52,12 @@ targets:
     platform: iOS
     sources:
       - path: Rocky/Tests
+      # So the generated session config can be asserted on without a device. `optional` because
+      # it only exists after scripts/generate.sh has run -- which is how this project is always
+      # meant to be generated, but a bare `xcodegen generate` shouldn't fail to even parse.
+      - path: Rocky/Resources/RealtimeSessionConfig.json
+        buildPhase: resources
+        optional: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: family.rocky.ios.tests
