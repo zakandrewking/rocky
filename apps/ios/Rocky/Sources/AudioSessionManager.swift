@@ -6,6 +6,8 @@ import AVFoundation
 /// barge-in section) right from the start means the Realtime/barge-in milestone later doesn't
 /// have to revisit the audio foundation, only what's built on top of it.
 enum AudioSessionManager {
+    private nonisolated(unsafe) static var routeObserver: NSObjectProtocol?
+
     static func configureForVoice() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
@@ -14,5 +16,31 @@ enum AudioSessionManager {
             options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
         )
         try session.setActive(true)
+        preferSpeakerOverReceiver(session)
+        observeRouteChanges()
+    }
+
+    /// `.defaultToSpeaker` alone is not enough: `.voiceChat` mode is built for phone calls held
+    /// to your ear, so it routes to the little receiver anyway. This is a robot you talk to from
+    /// across the room, so push it to the loudspeaker -- but only when the receiver is what we
+    /// actually landed on, so headphones, AirPods and car audio are left exactly as the user
+    /// chose them.
+    private static func preferSpeakerOverReceiver(_ session: AVAudioSession) {
+        let onReceiver = session.currentRoute.outputs.contains { $0.portType == .builtInReceiver }
+        guard onReceiver else { return }
+        try? session.overrideOutputAudioPort(.speaker)
+    }
+
+    /// Losing a Bluetooth speaker mid-conversation drops the route back to the receiver, which
+    /// sounds like Rocky suddenly went quiet. Re-apply the preference whenever the route moves.
+    private static func observeRouteChanges() {
+        guard routeObserver == nil else { return }
+        routeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            preferSpeakerOverReceiver(AVAudioSession.sharedInstance())
+        }
     }
 }
