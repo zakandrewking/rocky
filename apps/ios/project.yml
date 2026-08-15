@@ -7,6 +7,16 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
+packages:
+  # Google retired official iOS WebRTC binary distribution after Chromium M80 (2020); this is
+  # the standard community replacement -- prebuilt XCFrameworks per Chromium milestone, actively
+  # maintained. Needed because Apple ships no native WebRTC/RTCPeerConnection equivalent, and
+  # OpenAI's own docs categorize WebRTC (not WebSocket) as the transport for "browser and mobile
+  # clients that capture or play audio directly" -- WebSocket is for servers that already have
+  # audio arriving from elsewhere, not a phone capturing its own mic.
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    from: 151.0.0
 targets:
   Rocky:
     type: application
@@ -15,13 +25,14 @@ targets:
       - path: Rocky/Sources
     resources:
       - path: Rocky/Resources
+    dependencies:
+      - package: WebRTC
     info:
       path: Generated/Rocky-Info.plist
       properties:
         UILaunchScreen: {}
-        NSMicrophoneUsageDescription: "Rocky listens for spoken commands to drive the robot."
-        NSSpeechRecognitionUsageDescription: "Rocky recognizes spoken commands to drive the robot."
-        NSLocalNetworkUsageDescription: "Rocky connects to the mBot2 robot over your local Wi-Fi network."
+        NSMicrophoneUsageDescription: "Rocky listens so you can talk with her and she can drive the robot."
+        NSLocalNetworkUsageDescription: "Rocky connects to the mBot2 robot and the laptop's voice service over your local Wi-Fi network."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
     settings:

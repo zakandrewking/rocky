@@ -1,17 +1,11 @@
 import Foundation
 
-/// Maps a fixed voice-command vocabulary onto bounded Robot calls. Kept separate from
-/// VoiceCommandRecognizer (which only knows about speech) and Robot (which only knows the wire
-/// protocol) so a later swap to full Realtime tool-calling only has to replace this file.
+/// Thin actor wrapper around Robot, giving RealtimeVoiceSession's tool-call handler a general
+/// passthrough instead of a fixed vocabulary -- the model picks its own distances/angles per
+/// request, bounded the same way everything else is (protocol.ts's boundCommand equivalent,
+/// enforced inside Robot itself, not here).
 actor RobotController {
     private let robot: Robot
-
-    /// One command word = one short, deliberately small move -- this is a "nudge robot, watch
-    /// what happens" milestone, not autonomous navigation. Phase 4 (LLM tool calls) picks its own
-    /// distances per-request instead of these fixed nudges.
-    private static let driveDistanceCm = 30.0
-    private static let turnDegrees = 30.0
-    private static let speed = 40.0
 
     init(host: String, port: UInt16 = 8765) {
         self.robot = Robot(host: host, port: port)
@@ -25,18 +19,25 @@ actor RobotController {
         await robot.disconnect()
     }
 
-    func perform(_ command: RobotVoiceCommand) async throws {
-        switch command {
-        case .forward:
-            try await robot.drive(distanceCm: Self.driveDistanceCm, speed: Self.speed)
-        case .backward:
-            try await robot.drive(distanceCm: -Self.driveDistanceCm, speed: Self.speed)
-        case .left:
-            try await robot.turn(degrees: -Self.turnDegrees, speed: Self.speed)
-        case .right:
-            try await robot.turn(degrees: Self.turnDegrees, speed: Self.speed)
-        case .stop:
-            try await robot.stop()
-        }
+    @discardableResult
+    func drive(distanceCm: Double, speed: Double) async throws -> TelemetryMessage {
+        try await robot.drive(distanceCm: distanceCm, speed: speed)
+    }
+
+    @discardableResult
+    func turn(degrees: Double, speed: Double) async throws -> TelemetryMessage {
+        try await robot.turn(degrees: degrees, speed: speed)
+    }
+
+    func stop() async throws {
+        try await robot.stop()
+    }
+
+    func readDistanceCm() async throws -> Double {
+        try await robot.readDistance()
+    }
+
+    func setFace(_ face: FaceState) async throws {
+        try await robot.setFace(face)
     }
 }

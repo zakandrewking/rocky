@@ -1,14 +1,18 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Deliberately bare: one screen, an address field, a listen toggle, and a log. This is the
-/// "super minimal, installable" milestone -- prove the whole chain (mic -> command -> Wi-Fi ->
-/// robot) works before any personality/UI investment. See apps/ios/README.md.
+/// One screen: connect to the robot's motion server, connect once to the laptop's device API
+/// (for an ephemeral OpenAI secret -- the real key never touches the phone), then talk. Real
+/// conversation via OpenAI Realtime replaced the earlier fixed five-word vocabulary entirely --
+/// see RealtimeVoiceSession for the tool-calling that actually drives the robot now.
+/// See apps/ios/README.md.
 struct ContentView: View {
-    @StateObject private var recognizer = VoiceCommandRecognizer()
+    @StateObject private var voiceSession = RealtimeVoiceSession()
     @StateObject private var discovery = RobotDiscovery()
     @State private var controller: RobotController?
     @State private var host = UserDefaults.standard.string(forKey: "robotHost") ?? ""
+    @State private var deviceAPIHost = UserDefaults.standard.string(forKey: "deviceAPIHost") ?? ""
+    @State private var deviceToken = UserDefaults.standard.string(forKey: "deviceToken") ?? ""
     @State private var connectionState = ConnectionState.disconnected
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
@@ -57,24 +61,19 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Button(recognizer.isListening ? "Stop Listening" : "Start Listening") {
-                Task { await toggleListening() }
+            deviceAPIFields
+
+            Button(voiceButtonLabel) {
+                Task { await toggleVoiceSession() }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(connectionState != .connected)
+            .disabled(!canTalk)
 
-            if recognizer.isListening {
-                // The whole interaction model in one line: what to say, and that there's no
-                // separate "confirm" step -- just say a word and stop talking for a moment.
-                Text("Say: forward · back · left · right · stop")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if case .failed(let message) = voiceSession.state {
+                Text("voice: \(message)").font(.caption).foregroundStyle(.red)
             }
-
-            if !recognizer.lastRecognizedText.isEmpty {
-                Text("heard: \(recognizer.lastRecognizedText)")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            if let toolCall = voiceSession.lastToolCall {
+                Text("last action: \(toolCall)").font(.footnote).foregroundStyle(.secondary)
             }
 
             Button("Push Payload to CyberPi…") { showPayloadPicker = true }
@@ -90,9 +89,6 @@ struct ContentView: View {
         }
         .padding()
         .onAppear {
-            recognizer.onCommand = { command in
-                Task { await send(command) }
-            }
             discovery.start()
         }
         .onChange(of: discovery.discoveredHost) { _, newHost in
@@ -106,13 +102,52 @@ struct ContentView: View {
         }
     }
 
+    private var canTalk: Bool {
+        guard connectionState == .connected, !deviceAPIHost.isEmpty, !deviceToken.isEmpty else { return false }
+        return voiceSession.state != .connecting
+    }
+
+    private var voiceButtonLabel: String {
+        switch voiceSession.state {
+        case .disconnected, .failed: return "Talk to Rocky"
+        case .connecting: return "Connecting…"
+        case .connected: return "End Conversation"
+        }
+    }
+
+    private var deviceAPIFields: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Laptop device API (once, for OpenAI voice — pnpm device-api)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            TextField("host:port, e.g. 192.168.1.138:8787", text: $deviceAPIHost)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+                .onChange(of: deviceAPIHost) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "deviceAPIHost")
+                }
+            // UserDefaults, not Keychain: this token only unlocks this app's own local
+            // device-api server on the LAN, which itself holds the real OpenAI key -- a
+            // compromised token doesn't leak that key, just lets someone mint short-lived
+            // Realtime sessions through a server that's already local-network-only. Consistent
+            // with the rest of this deliberately minimal, non-App-Store app rather than adding
+            // Keychain plumbing for a personal home-robot threat model.
+            SecureField("device token", text: $deviceToken)
+                .textFieldStyle(.roundedBorder)
+                .onChange(of: deviceToken) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "deviceToken")
+                }
+        }
+    }
+
     private var instructions: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("1. Connect below (auto-fills if the robot's found on Wi-Fi)")
-            Text("2. Tap Start Listening")
-            Text("3. Say one word: forward, back, left, right, or stop")
-            Text("No need to pause before speaking -- it's always listening. A brief pause after helps it settle on the word.")
-                .foregroundStyle(.secondary)
+            Text("1. Connect to the robot below (auto-fills if found on Wi-Fi)")
+            Text("2. Enter the laptop's device API host and token, once")
+            Text("3. Tap Talk to Rocky and just talk — ask her to look around, drive, or stop")
         }
         .font(.caption)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -130,10 +165,10 @@ struct ContentView: View {
 
     private func toggleConnection() async {
         if connectionState == .connected {
+            voiceSession.disconnect()
             await controller?.disconnect()
             controller = nil
             connectionState = .disconnected
-            recognizer.stop()
             return
         }
 
@@ -177,25 +212,19 @@ struct ContentView: View {
         appendLog("connect cancelled")
     }
 
-    private func toggleListening() async {
-        if recognizer.isListening {
-            recognizer.stop()
+    private func toggleVoiceSession() async {
+        if voiceSession.state == .connected {
+            voiceSession.disconnect()
+            appendLog("voice: disconnected")
             return
         }
-        guard await recognizer.requestAuthorization() else {
-            appendLog("speech/microphone permission denied")
-            return
-        }
-        recognizer.start()
-    }
-
-    private func send(_ command: RobotVoiceCommand) async {
         guard let controller else { return }
-        appendLog("command: \(command)")
-        do {
-            try await controller.perform(command)
-        } catch {
-            appendLog("command failed: \(error.localizedDescription)")
+        appendLog("voice: connecting…")
+        await voiceSession.connect(deviceAPIHost: deviceAPIHost, deviceToken: deviceToken, robot: controller)
+        if case .failed(let message) = voiceSession.state {
+            appendLog("voice: connect failed: \(message)")
+        } else {
+            appendLog("voice: connected")
         }
     }
 
