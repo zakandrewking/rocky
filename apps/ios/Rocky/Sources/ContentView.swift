@@ -76,7 +76,11 @@ struct ContentView: View {
             // rediscovering it when the stone is tapped: that was 2.5 seconds of the wait before
             // Rocky said anything, spent re-learning something already known minutes earlier.
             guard !scanning, discovery.discoveredHost == nil, connectionState != .connected else { return }
-            reportRobotSearchOnce("no robot found — voice only")
+            reportRobotSearchOnce(
+                behavior.connected
+                    ? "robot is running its own behaviour — watching, not steering"
+                    : "no robot found — voice only"
+            )
         }
     }
 
@@ -152,13 +156,24 @@ struct ContentView: View {
         }
     }
 
-    private var chipDetail: String {
-        let robot: String = switch connectionState {
-        case .disconnected: "-"
-        case .connecting: "…"
-        case .connected: host
-        case .failed: "failed"
+    /// One coherent description of the body, because there are two ways to have one and they are
+    /// not a failure of each other. Only one payload runs on the board at a time: if it is the
+    /// behaviour loop, the robot is present and moving and there is simply no motion server to
+    /// command -- reporting that as "failed" next to a robot visibly driving around is the app
+    /// misdescribing reality, not a robot problem.
+    private var bodyDescription: String {
+        if behavior.connected {
+            return connectionState == .connected ? "b:\(behavior.mode)+drive" : "b:\(behavior.mode)"
         }
+        switch connectionState {
+        case .connected: return "r:\(host)"
+        case .connecting: return "r:…"
+        case .disconnected: return "r:-"
+        case .failed: return "r:none"
+        }
+    }
+
+    private var chipDetail: String {
         let voice: String = switch voiceSession.state {
         case .disconnected: "-"
         case .connecting: "…"
@@ -166,8 +181,7 @@ struct ContentView: View {
         case .paused: "paused"
         case .failed: "failed"
         }
-        let body = behavior.connected ? " b:\(behavior.mode)" : ""
-        return "r:\(robot) v:\(voice)\(body)\(hasBakedOpenAIKey ? "" : " k:missing")"
+        return "\(bodyDescription) v:\(voice)\(hasBakedOpenAIKey ? "" : " k:missing")"
     }
 
     private var stateChip: some View {
@@ -206,7 +220,11 @@ struct ContentView: View {
                 .foregroundStyle(RockyTheme.mintBright.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
 
-            if case .failed(let message) = connectionState {
+            if behavior.connected {
+                Text("Your robot is moving on its own. Rocky can watch it, set its mood and ask it to stop — but not steer it.")
+                    .foregroundStyle(RockyTheme.mint.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if case .failed(let message) = connectionState {
                 // Informational, not an error state: voice works fine without a body.
                 Text("no robot: \(message)").foregroundStyle(RockyTheme.mint.opacity(0.6))
             }
