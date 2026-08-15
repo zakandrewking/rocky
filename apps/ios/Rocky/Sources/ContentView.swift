@@ -9,10 +9,10 @@ import UniformTypeIdentifiers
 /// and connected automatically (RobotDiscovery), the same way desktop's own plumbing is invisible.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
-    @StateObject private var discovery = RobotDiscovery()
-    /// The board's own autonomous behaviour, when that is the payload running on it. Separate
-    /// from RobotDiscovery on purpose: only one payload runs at a time, so a robot that is moving
-    /// by itself is exactly a robot with no motion server to command.
+    /// The one robot integration. It sweeps once for either kind of body -- the behaviour loop or
+    /// the motion agent -- because only one payload runs on the board at a time and they are
+    /// alternatives. Two independent searches meant two sweeps that contradicted each other, one
+    /// of them always reporting failure for a robot that was working.
     @StateObject private var behavior = BehaviorMonitor()
     @State private var controller: RobotController?
     @State private var host = UserDefaults.standard.string(forKey: "robotHost") ?? ""
@@ -54,33 +54,24 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
-            discovery.start()
             behavior.start()
-            // The one path that used to be a manual "Connect" button tap, now automatic: retry
-            // with whatever host we last connected to successfully.
-            if !host.isEmpty, connectionState == .disconnected {
-                Task { await connectRobotIfNeeded() }
-            }
         }
-        .onChange(of: discovery.discoveredHost) { _, newHost in
-            // No manual fallback left, so this has to actually finish the job: connect whenever
-            // discovery finds a *different* address than whatever we're using, as long as nothing
-            // is already connected/connecting -- covers both "never connected yet" and "the
-            // on-appear retry above hit a stale IP."
-            guard let newHost, newHost != host, connectionState != .connected, connectionState != .connecting else { return }
-            host = newHost
+        .onChange(of: behavior.motionHost) { _, found in
+            // The sweep found the motion agent rather than the behaviour loop, so this robot can
+            // actually be steered.
+            guard let found, connectionState != .connected, connectionState != .connecting else { return }
+            host = found
             Task { await connectRobotIfNeeded() }
         }
-        .onChange(of: discovery.isScanning) { _, scanning in
-            // Record the "nothing out there" verdict as soon as the sweep ends, rather than
-            // rediscovering it when the stone is tapped: that was 2.5 seconds of the wait before
-            // Rocky said anything, spent re-learning something already known minutes earlier.
-            guard !scanning, discovery.discoveredHost == nil, connectionState != .connected else { return }
-            reportRobotSearchOnce(
-                behavior.connected
-                    ? "robot is running its own behaviour — watching, not steering"
-                    : "no robot found — voice only"
-            )
+        .onChange(of: behavior.connected) { _, isWatching in
+            guard isWatching else { return }
+            reportRobotSearchOnce("robot found — it moves on its own, Rocky can watch it")
+        }
+        .onChange(of: behavior.searchFinished) { _, finished in
+            // Recorded when the sweep ends rather than rediscovered on the next tap, so tapping
+            // the stone never waits to re-learn something already known.
+            guard finished, !behavior.connected, behavior.motionHost == nil else { return }
+            reportRobotSearchOnce("no robot found — voice only")
         }
     }
 
@@ -306,7 +297,7 @@ struct ContentView: View {
         let start = Date()
         let deadline = start.addingTimeInterval(2.5)
         while Date() < deadline {
-            if connectionState == .connected || robotSearchReported {
+            if connectionState == .connected || behavior.connected || robotSearchReported {
                 RockyLog.write("voice: robot search settled in \(Int(Date().timeIntervalSince(start) * 1000))ms")
                 return
             }

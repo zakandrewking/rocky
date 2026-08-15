@@ -476,11 +476,23 @@ def _pump_observers(now):
     if server is None:
         return
 
-    if _state["evt_conn"] is None:
-        try:
-            connection, _addr = server.accept()
-        except Exception:
-            return
+    # Always accept, even when a client is already held. A phone that goes away without closing
+    # cleanly (killed by a redeploy, backgrounded, off Wi-Fi) leaves this socket looking alive for
+    # as long as TCP keeps retransmitting -- and with listen(1) and no accept, the next connection
+    # attempt is refused outright. That is what "no autonomous robot out there" meant on a board
+    # that was sitting right there working: one dead client wedged the only slot. The newest
+    # connection wins; there is only ever one phone.
+    try:
+        connection, _addr = server.accept()
+    except Exception:
+        connection = None
+    if connection is not None:
+        previous = _state["evt_conn"]
+        if previous is not None:
+            try:
+                previous.close()
+            except Exception:
+                pass
         connection.settimeout(0)
         _state["evt_conn"] = connection
         _state["evt_buffer"] = ""

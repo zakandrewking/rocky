@@ -31,6 +31,12 @@ final class BehaviorMonitor: ObservableObject {
 
     @Published private(set) var host: String?
     @Published private(set) var connected = false
+    /// Set when the board is running the *motion* agent instead, so the one sweep finds either
+    /// kind of robot. Only one payload runs at a time, so these are alternatives, never both.
+    @Published private(set) var motionHost: String?
+    /// True once the sweep has finished, however it ended -- so nothing has to guess whether
+    /// "no robot" means "none there" or "still looking".
+    @Published private(set) var searchFinished = false
     @Published private(set) var mode = "unknown"
     @Published private(set) var mood = "normal"
     @Published private(set) var events: [BehaviorEvent] = []
@@ -41,14 +47,16 @@ final class BehaviorMonitor: ObservableObject {
 
     private let beaconPort: NWEndpoint.Port
     private let eventPort: NWEndpoint.Port
+    private let motionPort: NWEndpoint.Port
     private var listener: NWListener?
     private var connection: NWConnection?
     private var scanTask: Task<Void, Never>?
     private var buffer = ""
 
-    init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768) {
+    init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768, motionPort: UInt16 = 8765) {
         self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
         self.eventPort = NWEndpoint.Port(rawValue: eventPort) ?? 8768
+        self.motionPort = NWEndpoint.Port(rawValue: motionPort) ?? 8765
     }
 
     // MARK: - Finding the robot
@@ -112,14 +120,20 @@ final class BehaviorMonitor: ObservableObject {
         connect(to: found, port: beacon.tcpPort)
     }
 
-    /// Sweeps this phone's own /24 for something answering on the event port, the same way the
-    /// motion agent is found. Stops as soon as it is connected.
+    /// Sweeps this phone's own /24 once, looking for either kind of robot.
+    ///
+    /// One sweep, not two. Only one payload runs on the board at a time, so the motion agent and
+    /// the behaviour loop are alternatives -- searching for them independently meant two /24
+    /// sweeps per launch that contradicted each other in the log, one of them always reporting
+    /// failure for a robot that was sitting right there working.
     private func scanForRobot() async {
-        guard let prefix = NetworkUtilities.localSubnetPrefix() else { return }
-        RockyLog.write("behavior: sweeping \(prefix)0/24 for port \(eventPort.rawValue)")
+        guard let prefix = NetworkUtilities.localSubnetPrefix() else {
+            searchFinished = true
+            return
+        }
+        RockyLog.write("robot: sweeping \(prefix)0/24 for a body (behaviour :\(eventPort.rawValue) or motion :\(motionPort.rawValue))")
 
         var candidates = Array(1...254)
-        // Overwhelmingly the same board as last time on a home network.
         if let saved = UserDefaults.standard.string(forKey: "behaviorHost"),
             saved.hasPrefix(prefix), let last = Int(saved.split(separator: ".").last.map(String.init) ?? ""),
             let index = candidates.firstIndex(of: last) {
@@ -127,29 +141,42 @@ final class BehaviorMonitor: ObservableObject {
             candidates.insert(last, at: 0)
         }
 
-        let port = eventPort
+        let behaviourPort = eventPort
+        let motion = motionPort
         for batchStart in stride(from: 0, to: candidates.count, by: 32) {
             if Task.isCancelled || connection != nil { return }
             let batch = candidates[batchStart..<min(batchStart + 32, candidates.count)]
-            let hit = await withTaskGroup(of: String?.self) { group in
+            let hit = await withTaskGroup(of: (String, Bool)?.self) { group in
                 for octet in batch {
-                    group.addTask { await Self.probe(host: "\(prefix)\(octet)", port: port) }
+                    let address = "\(prefix)\(octet)"
+                    group.addTask {
+                        if await Self.probe(host: address, port: behaviourPort) != nil { return (address, true) }
+                        if await Self.probe(host: address, port: motion) != nil { return (address, false) }
+                        return nil
+                    }
                 }
-                var winner: String?
+                var winner: (String, Bool)?
                 for await result in group where result != nil {
                     if winner == nil { winner = result; group.cancelAll() }
                 }
                 return winner
             }
-            if let hit {
-                RockyLog.write("behavior: found the robot at \(hit)")
-                UserDefaults.standard.set(hit, forKey: "behaviorHost")
-                host = hit
-                connect(to: hit, port: Int(port.rawValue))
+            if let (address, isBehaviour) = hit {
+                UserDefaults.standard.set(address, forKey: "behaviorHost")
+                host = address
+                searchFinished = true
+                if isBehaviour {
+                    RockyLog.write("robot: found at \(address), running its own behaviour")
+                    connect(to: address, port: Int(behaviourPort.rawValue))
+                } else {
+                    RockyLog.write("robot: found at \(address), running the motion agent")
+                    motionHost = address
+                }
                 return
             }
         }
-        RockyLog.write("behavior: sweep finished, no autonomous robot out there")
+        searchFinished = true
+        RockyLog.write("robot: sweep finished, nothing out there — voice only")
     }
 
     private static func probe(host: String, port: NWEndpoint.Port) async -> String? {
@@ -194,6 +221,7 @@ final class BehaviorMonitor: ObservableObject {
                     RockyLog.write("behavior: watching the robot at \(host):\(port)")
                     self?.receive()
                 case .failed, .cancelled:
+                    if self?.connected == true { RockyLog.write("robot: lost the behaviour connection") }
                     self?.connected = false
                 default:
                     break
