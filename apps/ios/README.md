@@ -6,34 +6,51 @@ mic/speaker/camera instead of a laptop's or the CyberPi's. See
 original "laptop is the brain" design, and [`apps/cyberpi`](../cyberpi/README.md) for the
 (independent, unaffected) native-firmware audio track this makes unnecessary for the robot body.
 
-**This milestone is deliberately minimal**: prove mic → command → Wi-Fi → robot works, safely,
-before spending any effort on personality or UI. On-device Speech-framework command words
-(forward/back/left/right/stop), no OpenAI dependency yet. `AVAudioSession` is already configured
-for `.voiceChat` mode (hardware echo cancellation) even though this milestone doesn't need
-full-duplex audio — so the foundation is already right when Realtime/barge-in voice lands later,
-without revisiting the audio session setup.
+Rocky talks over real OpenAI Realtime voice (`gpt-realtime-2.1` — GPT-Live checked and confirmed
+not API-accessible yet, see `TODOS.md`), connected directly to OpenAI over WebRTC
+(`stasel/WebRTC`, no relay server), the same architecture `apps/desktop` uses. `drive_cm`,
+`rotate_degrees`, `stop_robot`, `read_distance`, and `set_face` are real tool calls the model
+picks arguments for — there's no fixed vocabulary anymore. `AVAudioSession` runs in `.voiceChat`
+mode (hardware echo cancellation) so barge-in works the way it does on desktop.
 
 ## Structure
 
 ```text
 apps/ios/
-├── project.yml                  — XcodeGen spec; regenerate the .xcodeproj from this, don't edit it
+├── project.yml                  — XcodeGen spec (incl. the WebRTC SPM dependency); regenerate
+│                                   the .xcodeproj from this, don't edit it
 ├── Rocky/
 │   ├── Sources/
 │   │   ├── RockyApp.swift        — @main entry point
-│   │   ├── ContentView.swift     — the one screen: connect, listen, push a CyberPi payload
-│   │   ├── VoiceCommandRecognizer.swift  — Speech framework, fixed vocabulary
+│   │   ├── ContentView.swift     — the one screen: connect to the robot, connect to device-api, talk
+│   │   ├── RealtimeWebRTCClient.swift — peer connection, data channel, SDP exchange with OpenAI
+│   │   ├── RealtimeEvents.swift  — typed slice of the data-channel event schema (tool calls)
+│   │   ├── RealtimeVoiceSession.swift — @MainActor session state + tool-call dispatch
+│   │   ├── DeviceAPIClient.swift — mints an ephemeral OpenAI secret from services/device-api
 │   │   ├── AudioSessionManager.swift     — AVAudioSession, voiceChat/AEC mode
 │   │   ├── RobotProtocol.swift   — Swift port of apps/robot/src/protocol.ts (same wire spec)
 │   │   ├── RobotTransport.swift  — TCP client (Network.framework) to rocky_agent.py
 │   │   ├── Robot.swift           — the only thing app code should call (bounded commands)
-│   │   ├── RobotController.swift — maps voice commands onto Robot calls
+│   │   ├── RobotController.swift — general drive/turn/stop/readDistance/setFace passthrough
 │   │   └── CyberPiPusher.swift   — Swift port of apps/robot/scripts/push.mjs (OTA to bootstrap.py)
 │   └── Tests/
 │       └── RobotProtocolTests.swift — mirrors protocol.ts's test coverage, no device needed
 └── scripts/
     └── deploy.sh                 — build + install + launch on a paired iPhone, no cable
 ```
+
+### Talking to the robot: one-time setup
+
+The app needs `services/device-api` (`pnpm device-api`, on the laptop) to mint a short-lived
+OpenAI secret — the real API key never touches the phone. In the app, enter:
+
+- **device API host**: the laptop's LAN IP and port, e.g. `192.168.1.138:8787`
+- **device token**: matches a `deviceId:token` pair in the laptop's `ROCKY_DEVICE_TOKENS` (see
+  `.env.example`); generate one with `openssl rand -hex 24`
+
+Both are entered once and saved locally on the phone (`UserDefaults`, not Keychain — deliberate
+for this deliberately minimal, non-App-Store app; see `ContentView.swift`'s comment for the
+threat-model reasoning).
 
 `Rocky.xcodeproj` and `Generated/` are gitignored — generated output, not source. Regenerate any
 time `project.yml` or the file layout changes:
@@ -102,6 +119,7 @@ probably switch approaches anyway."
 ## What's next
 
 See `apps/robot/PLAN.md`'s build order and the north star it's working toward. In rough order
-after this milestone: full OpenAI Realtime voice (reusing `services/device-api`'s ephemeral-secret
-pattern and desktop Rocky's persona), camera-based person-finding, and the occupancy-grid
-navigation layer -- all living on the iPhone, per that plan's architecture.
+after this milestone: an actual live voice conversation with the robot (the WebRTC/tool-calling
+path is built and the ephemeral-secret mint is confirmed working end to end, but no one has
+talked to it yet), camera-based person-finding, and the occupancy-grid navigation layer -- all
+living on the iPhone, per that plan's architecture.

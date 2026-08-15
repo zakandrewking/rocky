@@ -123,8 +123,29 @@ crashing.**
      `device/bootstrap.py`, then a normal `push.mjs` delivers the fixed agent.
 - [x] Auto-connect (not just auto-fill) the moment discovery finds the robot, so the only manual
   step left is tapping "Start Listening" — untested pending the beacon issue above.
-- [ ] Add real OpenAI Realtime voice to `apps/ios`, replacing the fixed command-word vocabulary,
-  reusing `services/device-api`'s ephemeral-secret pattern and desktop Rocky's persona.
+- [x] **Add real OpenAI Realtime voice to `apps/ios`, replacing the fixed command-word vocabulary
+  entirely.** Checked first, not assumed: GPT-Live (what was originally asked for) is confirmed
+  not API-accessible yet — launched July 2026 as ChatGPT-only, OpenAI's own page says "bring it
+  to the API soon." Built on `gpt-realtime-2.1` instead (already what desktop Rocky uses, itself
+  the latest Realtime release); swapping to GPT-Live later is a config change, not a rearchitecture,
+  once OpenAI ships it. Also checked OpenAI's current docs directly for transport choice: WebRTC
+  (not WebSocket) is what OpenAI itself says is for "browser and mobile clients that capture or
+  play audio directly," so the iOS app connects straight to `/v1/realtime/calls`, no relay
+  server, mirroring `apps/desktop`'s own `RTCPeerConnection` flow — via `stasel/WebRTC` (the
+  standard community SPM package; Google retired official iOS binary distribution in 2020).
+  `services/device-api/src/session.ts` gained the real tool surface (`drive_cm`, `rotate_degrees`,
+  `stop_robot`, `read_distance`, `set_face`) replacing the empty Stage-2 placeholder, and the
+  persona addendum now describes an iPhone-mounted body that can actually move. Deleted
+  `VoiceCommandRecognizer.swift` entirely rather than keeping both paths — replacement, not an
+  option toggle. **Verified for real**: 77 device-api + 25 robot SDK + 11 iOS tests all pass;
+  installed and launched on the physical iPhone; ran `device-api` live and confirmed a full round
+  trip — minted a real ephemeral secret, session config carries all five tools and the persona
+  correctly.
+- [ ] **Actually have a live voice conversation with the robot** — the WebRTC/tool-calling path is
+  built and the ephemeral-secret mint is confirmed working, but no one has actually talked to it
+  yet. First real test: connect to the robot, enter the laptop's `device-api` host/token in the
+  app (shown once in this session's chat log, stored in `.env`, never committed), tap "Talk to
+  Rocky," and see whether a tool call actually reaches the robot end to end.
 - [ ] Add Python lint/type-check infra (`uv` + `ruff` + `basedpyright`, `pyproject.toml` +
   `typings/`): done and verified — ruff found and fixed 2 real bugs project-wide (an unused
   import, an SCons global false-positive), and permissive stubs cleared basedpyright's false
