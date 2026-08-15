@@ -37,6 +37,7 @@ final class RockyAudioEngine {
         ) { _ in
             Task { @MainActor in
                 RockyLog.write("audio: engine configuration changed")
+                RockyAudioEngine.shared.reconnectPlayers()
                 RockyAudioEngine.shared.ensureRunning()
             }
         }
@@ -63,9 +64,28 @@ final class RockyAudioEngine {
     /// rendered and their completion handlers never fire. That is silence with no error anywhere:
     /// audio is accepted, queued, and simply never heard, which is exactly what "Rocky never
     /// responded" looked like. Call this before scheduling anything.
+    /// Re-establishes every player's connection to the mixer.
+    ///
+    /// A configuration change does not merely stop the engine, it tears the graph down: the
+    /// hardware format has changed, so existing connections are invalid. Restarting without
+    /// reconnecting leaves nodes that accept buffers, report themselves as playing, and render
+    /// nothing -- audio queued forever, no completion handler, no error. That is the fault that
+    /// survived two previous fixes; the giveaway was a watchdog reporting the *same* queued
+    /// milliseconds six seconds apart.
+    func reconnectPlayers() {
+        for player in players.values {
+            engine.disconnectNodeOutput(player)
+            engine.connect(player, to: engine.mainMixerNode, format: Self.format)
+        }
+        RockyLog.write("audio: players reconnected")
+    }
+
     func ensureRunning() {
         let wasRunning = engine.isRunning
         if !wasRunning {
+            // The engine only stops on us when something tore the graph down, so rebuild the
+            // connections before starting rather than trusting them to have survived.
+            reconnectPlayers()
             engine.prepare()
             do {
                 try engine.start()

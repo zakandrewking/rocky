@@ -15,6 +15,12 @@ final class RealtimeVoiceSession: ObservableObject {
 
     @Published private(set) var state: State = .disconnected
     @Published private(set) var lastToolCall: String?
+    /// True while Rocky's voice is actually coming out of the speaker.
+    @Published private(set) var speaking = false
+    /// False until her first word of the session has been *heard*. The UI keeps the loading
+    /// animation up until then, so "loading" ends when Rocky starts talking rather than when a
+    /// socket happens to be ready.
+    @Published private(set) var hasSpokenOnce = false
 
     private let client = RealtimeWebRTCClient()
     private var robot: RobotController?
@@ -48,6 +54,18 @@ final class RealtimeVoiceSession: ObservableObject {
     /// How long to wait for Hume's first audio before assuming the request was lost.
     private static let firstAudioTimeout: Duration = .milliseconds(2500)
 
+    /// When the user tapped the orb, so the whole startup sequence can be timed end to end --
+    /// "slow to respond" needs the clock to start at the tap, not at the first network call.
+    private var startedAt: Date?
+
+    /// Marks the tap itself, before any awaiting, so the log covers the gap the user actually
+    /// feels between touching the stone and hearing anything.
+    func markStarting() {
+        startedAt = Date()
+        hasSpokenOnce = false
+        log("orb tapped, starting up")
+    }
+
     /// `robot` is nil when none was found on the network. That is a supported, ordinary state --
     /// the app is then exactly what apps/desktop is, a voice-only Rocky -- so the movement tools
     /// are dropped from the session rather than left to fail (see OpenAIRealtimeMinter).
@@ -62,6 +80,7 @@ final class RealtimeVoiceSession: ObservableObject {
         userStoppedSpeakingAt = nil
 
         let connectStart = Date()
+        if let startedAt { log("connect beginning \(Self.ms(since: startedAt)) after the tap") }
         do {
             try AudioSessionManager.configureForVoice()
             startLocalAudio()
@@ -176,7 +195,14 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     private func handleSpeakingChange(_ speaking: Bool) {
+        self.speaking = speaking
         if speaking {
+            if !hasSpokenOnce {
+                hasSpokenOnce = true
+                if let started = startedAt {
+                    log("READY: first sound \(Self.ms(since: started)) after the orb was tapped")
+                }
+            }
             setMicrophoneOpen(false, reason: "rocky speaking")
             return
         }
@@ -215,7 +241,9 @@ final class RealtimeVoiceSession: ObservableObject {
         guard !greeted else { return }
         greeted = true
         client.send(ResponseCreateEvent())
-        log("asked Rocky to greet")
+        if let startedAt {
+            log("asked Rocky to greet, \(Self.ms(since: startedAt)) after the tap")
+        }
     }
 
     // MARK: - Watchdogs

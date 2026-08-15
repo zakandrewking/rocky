@@ -17,6 +17,9 @@ struct ContentView: View {
     @State private var showPayloadPicker = false
     @State private var detailsOpen = false
     @State private var robotSearchReported = false
+    /// Set the instant the stone is tapped, before any awaiting, purely so the UI can respond to
+    /// the touch rather than to the network.
+    @State private var starting = false
 
     enum ConnectionState: Equatable {
         case disconnected, connecting, connected, failed(String)
@@ -71,17 +74,24 @@ struct ContentView: View {
     /// Voice state only. Finding the robot is background work the user should never watch, so it
     /// deliberately does not reach the orb -- a missing robot is not an error, just a Rocky with
     /// no body (exactly what apps/desktop is).
+    ///
+    /// `starting` is set on the tap itself, before any awaiting, so the stone reacts to being
+    /// touched immediately; and loading continues until Rocky's first word is actually audible,
+    /// not merely until a socket is ready, so the animation ends exactly when she starts talking.
     private var orbPhase: OrbPhase {
         if case .failed = voiceSession.state { return .error }
+        if starting { return .connecting }
         switch voiceSession.state {
         case .connecting: return .connecting
-        case .connected: return .listening
+        case .connected:
+            if voiceSession.speaking { return .speaking }
+            return voiceSession.hasSpokenOnce ? .listening : .connecting
         default: return .idle
         }
     }
 
     private var orbTappable: Bool {
-        hasBakedOpenAIKey && voiceSession.state != .connecting
+        hasBakedOpenAIKey && !starting && voiceSession.state != .connecting
     }
 
     private var orbLabel: String {
@@ -252,20 +262,31 @@ struct ContentView: View {
     /// orb the instant the app opens doesn't silently get a body-less Rocky while discovery was
     /// still a second away. Capped, and skipped entirely once the search has resolved.
     private func awaitRobotSearch() async {
-        let deadline = Date().addingTimeInterval(2.5)
+        let start = Date()
+        let deadline = start.addingTimeInterval(2.5)
         while Date() < deadline {
-            if connectionState == .connected || robotSearchReported { return }
+            if connectionState == .connected || robotSearchReported {
+                RockyLog.write("voice: robot search settled in \(Int(Date().timeIntervalSince(start) * 1000))ms")
+                return
+            }
             try? await Task.sleep(nanoseconds: 150_000_000)
         }
+        RockyLog.write("voice: waited \(Int(Date().timeIntervalSince(start) * 1000))ms for the robot search before giving up")
         reportRobotSearchOnce("no robot found — voice only")
     }
 
     private func toggleVoiceSession() async {
         if voiceSession.state == .connected {
             voiceSession.disconnect()
+            starting = false
             appendLog("voice: disconnected")
             return
         }
+        // Before anything that awaits, so the stone starts its loading animation on the touch
+        // rather than after the robot search and the network have had their turn.
+        starting = true
+        voiceSession.markStarting()
+        defer { starting = false }
         await awaitRobotSearch()
         appendLog("voice: connecting…")
         // A nil controller is fine and expected when no robot answered -- Rocky is then exactly
