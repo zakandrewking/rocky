@@ -16,9 +16,13 @@ cd "$(dirname "$0")/.."
 ENV_FILE="../../.env"
 
 # Reads one KEY=value out of .env, or empty if the file or key is absent.
+#
+# The `|| true` matters: grep exits non-zero when a key simply isn't there, and under `set -e`
+# that failure propagates out of the assignment and kills the build. An absent optional setting
+# must read as empty, not as an error.
 read_env() {
   [ -f "$ENV_FILE" ] || return 0
-  grep -E "^$1=" "$ENV_FILE" | head -n1 | cut -d= -f2-
+  grep -E "^$1=" "$ENV_FILE" | head -n1 | cut -d= -f2- || true
 }
 
 # Always exported, even empty: XcodeGen only expands ${VAR} when the variable is present in its
@@ -29,11 +33,25 @@ export ROCKY_OPENAI_KEY_IOS="$(read_env OPENAI_API_KEY)"
 export ROCKY_HUME_KEY_IOS="$(read_env HUME_API_KEY)"
 export ROCKY_HUME_VOICE_ID_IOS="$(read_env HUME_VOICE_ID)"
 
-[ -n "$ROCKY_OPENAI_KEY_IOS" ] && echo "==> Baking OPENAI_API_KEY from .env (personal-device use only)"
+# Passed through to the dump script below, which decides who the app is going to be. Without
+# this the build silently ships the default character whatever .env asks for.
+#
+# Written as if-blocks, not `[ -n "$X" ] && export ...`: under `set -e` a false test is a failing
+# command, so the one-liner form aborts the whole build the moment a variable is simply unset.
+for name in ROCKY_CHARACTER ROCKY_VOICE ROCKY_REALTIME_MODEL; do
+  value="$(read_env "$name")"
+  if [ -n "$value" ]; then
+    export "$name=$value"
+  fi
+done
+
+if [ -n "$ROCKY_OPENAI_KEY_IOS" ]; then
+  echo "==> Baking OPENAI_API_KEY from .env (personal-device use only)"
+fi
 if [ -n "$ROCKY_HUME_KEY_IOS" ] && [ -n "$ROCKY_HUME_VOICE_ID_IOS" ]; then
-  echo "==> Baking Hume credentials from .env (Rocky speaks in her own voice)"
+  echo "==> Hume credentials found (used only if the character asks for a Hume voice)"
 else
-  echo "==> No Hume credentials in .env -- falling back to OpenAI's built-in voice"
+  echo "==> No Hume credentials in .env -- Hume-voiced characters will have no voice"
 fi
 
 echo "==> Regenerating Rocky/Resources/RealtimeSessionConfig.json from session.ts"

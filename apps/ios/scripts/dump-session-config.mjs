@@ -7,12 +7,17 @@
 
 import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createDeviceSessionConfig, DEFAULT_MODEL, DEFAULT_VOICE } from "../../../services/device-api/src/session.ts";
+import { activeCharacter } from "../../../services/device-api/src/characters/index.ts";
+import { createDeviceSessionConfig, DEFAULT_MODEL } from "../../../services/device-api/src/session.ts";
 
 const model = process.env["ROCKY_REALTIME_MODEL"] ?? DEFAULT_MODEL;
-const voice = process.env["ROCKY_VOICE"] ?? DEFAULT_VOICE;
-const session = createDeviceSessionConfig({ model, voice });
+const character = activeCharacter();
+// Only override the character's own voice when one was asked for explicitly -- passing a default
+// here would silently outrank every character's choice.
+const voice = process.env["ROCKY_VOICE"];
+const session = createDeviceSessionConfig({ model, character, ...(voice ? { voice } : {}) });
 
 const outPath = fileURLToPath(new URL("../Rocky/Resources/RealtimeSessionConfig.json", import.meta.url));
 await writeFile(outPath, JSON.stringify({ session }, null, 2));
-console.log(`==> Wrote Realtime session config (model=${model}, voice=${voice}) to ${outPath}`);
+const spokenBy = character.voice.provider === "hume" ? "hume" : `openai:${session.audio.output.voice}`;
+console.log(`==> Wrote session config for ${character.name} (model=${model}, voice=${spokenBy}) to ${outPath}`);

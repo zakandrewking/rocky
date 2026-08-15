@@ -55,6 +55,8 @@ final class RealtimeSessionConfigTests: XCTestCase {
 
     /// The config the app actually ships is generated at build time, so a change to session.ts
     /// or the generate script that broke its shape would otherwise only show up on a real device.
+    /// Deliberately character-agnostic: which character is baked in is a build-time choice, and
+    /// this asserts the shape holds whoever it is.
     func testTheBakedConfigIsPresentAndHasTheRobotTools() throws {
         let url = try XCTUnwrap(
             Bundle(for: Self.self).url(forResource: "RealtimeSessionConfig", withExtension: "json"),
@@ -62,8 +64,17 @@ final class RealtimeSessionConfigTests: XCTestCase {
         )
         let baked = session(of: try Data(contentsOf: url))
 
-        XCTAssertFalse((baked["instructions"] as! String).isEmpty)
+        let instructions = baked["instructions"] as! String
+        XCTAssertTrue(instructions.contains("You are "), "a character has to say who it is")
+        // Conduct is shared across characters; a build missing it would be a real safety gap.
+        XCTAssertTrue(instructions.contains("Never tell a child to smell"))
+
         let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
         XCTAssertEqual(names, ["drive_cm", "rotate_degrees", "stop_robot", "read_distance", "set_face"])
+
+        // Whether the model speaks or only writes is the character's choice, and the app reads it
+        // back from here to decide whether to run a synthesiser at all.
+        let modalities = baked["output_modalities"] as! [String]
+        XCTAssertTrue(modalities == ["audio"] || modalities == ["text"], "got \(modalities)")
     }
 }

@@ -39,9 +39,10 @@ final class RealtimeVoiceSession: ObservableObject {
     private var robot: RobotController?
     private var greeted = false
 
-    /// Rocky's own voice, when it's configured: Hume speaks, OpenAI is put in text-only mode and
-    /// never makes a sound. Nil falls back to OpenAI's built-in voice over the WebRTC track.
-    private let hume = HumeSpeech()
+    /// The synthesiser, present only when the active character actually wants one. Characters
+    /// voiced by the Realtime model itself speak over the WebRTC track and never touch this --
+    /// one network hop instead of two, which is most of why it sounds quicker.
+    private let hume: HumeSpeech? = OpenAIRealtimeMinter.characterSpeaksThroughHume ? HumeSpeech() : nil
     private var humePlayer: HumePcmPlayer?
     private var humeTextBuffer = ""
     /// The quiet alien chatter under her voice.
@@ -98,10 +99,7 @@ final class RealtimeVoiceSession: ObservableObject {
         do {
             try await AudioSessionManager.configureForVoice()
             startLocalAudio()
-            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(
-                hasRobot: robot != nil,
-                speaksWithHume: hume != nil
-            )
+            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasRobot: robot != nil)
             log(
                 "minted secret in \(Self.ms(since: connectStart)) (robot: \(robot == nil ? "no" : "yes"), voice: \(hume == nil ? "openai" : "hume"))"
             )

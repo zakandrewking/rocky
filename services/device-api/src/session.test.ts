@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { FATHOM, ROCKY } from "./characters/index.ts";
 import { createDeviceSessionConfig, DEVICE_ADDENDUM, mintDeviceSession, type FetchLike } from "./session.ts";
 
 /** Records what was sent upstream, so tests can assert on headers and body. */
@@ -21,11 +22,23 @@ interface SessionConfig {
 }
 
 describe("createDeviceSessionConfig", () => {
-  it("carries the desktop persona onto the robot", () => {
-    const config = createDeviceSessionConfig() as SessionConfig;
-    // The one definition of Rocky lives in the desktop app; this asserts we
-    // are reusing it rather than drifting a second copy.
-    expect(config.instructions).toContain("You are Rocky, a brilliant Eridian engineer");
+  it("speaks as the character it is given", () => {
+    const rocky = createDeviceSessionConfig({ character: ROCKY }) as SessionConfig;
+    const fathom = createDeviceSessionConfig({ character: FATHOM }) as SessionConfig;
+
+    expect(rocky.instructions).toContain("You are Rocky, a brilliant Eridian engineer");
+    expect(fathom.instructions).toContain("You are Fathom, a lantern-keeper");
+    expect(fathom.instructions).not.toContain("You are Rocky");
+  });
+
+  it("gives every character the same conduct", () => {
+    for (const character of [ROCKY, FATHOM]) {
+      const config = createDeviceSessionConfig({ character }) as SessionConfig;
+      // Safety and tool rules are shared, so a new character can never quietly ship without them.
+      expect(config.instructions).toContain("Never tell a child to smell, taste, touch, heat, or mix");
+      expect(config.instructions).toContain("Call remember_family_fact silently");
+      expect(config.instructions).toContain("Output plain spoken text only");
+    }
   });
 
   it("tells the persona what the body cannot do", () => {
@@ -34,16 +47,24 @@ describe("createDeviceSessionConfig", () => {
     expect(config.instructions).toContain("Never offer to make a spreadsheet");
   });
 
-  it("defaults to speech with barge-in enabled", () => {
-    const config = createDeviceSessionConfig() as SessionConfig;
+  it("lets the model speak for a character with its own Realtime voice", () => {
+    const config = createDeviceSessionConfig({ character: FATHOM }) as SessionConfig;
     expect(config.output_modalities).toEqual(["audio"]);
+    expect(config.audio.output.voice).toBe("marin");
     expect(config.audio.input.turn_detection.interrupt_response).toBe(true);
   });
 
+  it("asks for text when the character is voiced by Hume", () => {
+    // Rocky's voice is a saved Hume voice, so the model must produce words rather than speech --
+    // clients read this back to decide whether to run a synthesiser at all.
+    const config = createDeviceSessionConfig({ character: ROCKY }) as SessionConfig;
+    expect(config.output_modalities).toEqual(["text"]);
+  });
+
   it("honours model and voice overrides", () => {
-    const config = createDeviceSessionConfig({ model: "gpt-test", voice: "marin" }) as SessionConfig;
+    const config = createDeviceSessionConfig({ model: "gpt-test", voice: "verse" }) as SessionConfig;
     expect(config.model).toBe("gpt-test");
-    expect(config.audio.output.voice).toBe("marin");
+    expect(config.audio.output.voice).toBe("verse");
   });
 
   it("appends memory context only when there is some", () => {

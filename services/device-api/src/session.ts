@@ -1,8 +1,6 @@
-// Reused directly from the desktop app rather than copied. The plan calls for a
-// packages/rocky-core extraction, but that is only worth doing once Stage 1
-// clears its decision gate; until then a relative import keeps exactly one
-// definition of Rocky's personality in the repo.
-import { ROCKY_INSTRUCTIONS } from "../../../apps/desktop/src/main/prompt.ts";
+// Personality lives here now, not in apps/desktop -- that app is deprecated and frozen (see
+// AGENTS.md), and this is what the iOS build bakes in.
+import { activeCharacter, buildInstructions, type Character } from "./characters/index.ts";
 
 export const DEFAULT_MODEL = "gpt-realtime-2.1";
 export const DEFAULT_VOICE = "cedar";
@@ -18,11 +16,11 @@ export const DEFAULT_VOICE = "cedar";
  * controllable from here except through the movement tools below.
  */
 export const DEVICE_ADDENDUM = `
-ROCKY'S BODY — PRIVATE DEVICE CONTEXT
+YOUR BODY — PRIVATE DEVICE CONTEXT
 - You are speaking through a phone mounted on a small wheeled robot body. There is no keyboard, no
   file browser, and no spreadsheet here.
 - Never offer to make a spreadsheet, document, or file in this body. If someone asks for one, say
-  plainly that this body cannot, and that the Rocky on the computer can.
+  plainly that this body cannot.
 - You can actually move: drive_cm, rotate_degrees, stop_robot, read_distance, and set_face are real
   tools that move the physical robot. Use them when asked to move, look around, or check what's
   nearby -- don't just describe moving. Small, deliberate steps: a short drive or turn, then check
@@ -117,25 +115,34 @@ const SET_FACE_TOOL = {
 
 export interface DeviceSessionOptions {
   readonly model?: string;
+  /** Overrides the character's own voice. Ignored when the character speaks through Hume. */
   readonly voice?: string;
   /** Extra private context, e.g. saved family memory. */
   readonly memoryContext?: string;
+  /** Who is speaking. Defaults to whoever ROCKY_CHARACTER selects. */
+  readonly character?: Character;
 }
 
 /** Builds the Realtime session config for a robot. */
 export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): object {
-  const { model = DEFAULT_MODEL, voice = DEFAULT_VOICE, memoryContext = "" } = options;
+  const { model = DEFAULT_MODEL, memoryContext = "", character = activeCharacter() } = options;
 
-  const sections = [ROCKY_INSTRUCTIONS, DEVICE_ADDENDUM];
+  const extras = [DEVICE_ADDENDUM];
   if (memoryContext.trim()) {
-    sections.push(`SAVED FAMILY MEMORY — PRIVATE LOCAL CONTEXT\n${memoryContext.trim()}`);
+    extras.push(`SAVED FAMILY MEMORY — PRIVATE LOCAL CONTEXT\n${memoryContext.trim()}`);
   }
+
+  // A Hume-voiced character needs the model to produce words, not speech; anyone else is spoken
+  // by the model itself, which is a whole network hop cheaper. Clients read this back to decide
+  // whether to run a synthesiser at all, so it has to say what the character actually wants.
+  const speaksThroughHume = character.voice.provider === "hume";
+  const voice = options.voice ?? (character.voice.provider === "openai" ? character.voice.name : DEFAULT_VOICE);
 
   return {
     type: "realtime",
     model,
-    instructions: sections.join("\n\n"),
-    output_modalities: ["audio"],
+    instructions: buildInstructions(character, extras),
+    output_modalities: speaksThroughHume ? ["text"] : ["audio"],
     audio: {
       input: {
         transcription: { model: "gpt-realtime-whisper" },

@@ -8,7 +8,7 @@
  * and chat endpoints.
  */
 // Reused directly from the desktop app, matching session.ts's pattern.
-import { ROCKY_INSTRUCTIONS } from "../../../apps/desktop/src/main/prompt.ts";
+import { activeCharacter, buildInstructions } from "./characters/index.ts";
 
 import { DEVICE_ADDENDUM, type FetchLike } from "./session.ts";
 import { encodeWav } from "./wav.ts";
@@ -92,7 +92,7 @@ async function chat(transcript: string, model: string, apiKey: string, fetchImpl
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model,
-      instructions: `${ROCKY_INSTRUCTIONS}\n\n${DEVICE_ADDENDUM}`,
+      instructions: buildInstructions(activeCharacter(), [DEVICE_ADDENDUM]),
       input: transcript,
       max_output_tokens: 400,
     }),
