@@ -1,3 +1,19 @@
+## ⚠️ `apps/desktop` is DEPRECATED — do not edit it
+
+The Electron desktop app is frozen. **Do not make changes there**, including refactors, tidy-ups,
+or "while I'm here" fixes. `apps/ios` is the live app and where all work goes now.
+
+It is still in the tree because it runs, and because it is the reference implementation for
+behaviour being ported (its persona, barge-in handling and Hume integration were all read out of
+it). Read it freely. Just don't write to it.
+
+Consequence worth knowing: `apps/desktop/src/main/prompt.ts` is no longer the source of truth for
+Rocky's personality. That now lives in `services/device-api/src/characters/`, which is what the
+iOS build bakes in. Desktop keeps its own frozen copy, so the two will drift — that is expected,
+and is the price of not editing a deprecated app.
+
+---
+
 - Work on `main` and push to `origin main` regularly as you go. No feature branches, and no pull
   requests unless asked. If a harness assigns a working branch, switch back to `main` instead.
 - Keep working; don't ask for confirmation from me unless your goals are unclear or there

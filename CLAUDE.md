@@ -32,7 +32,7 @@ is unmissable, and deliberately does not duplicate the rest, so the two cannot d
 
 | Path | What it is |
 | --- | --- |
-| `apps/desktop` | the macOS Electron voice app — the Rocky people actually use |
+| `apps/desktop` | **DEPRECATED, do not edit** — the old macOS Electron voice app. Kept as a reference implementation; see AGENTS.md |
 | `apps/cyberpi` | native-firmware track: on-device realtime audio for the mBot2/CyberPi; start at `STEPS.md` |
 | `apps/robot` | networked-body track: thin CyberOS motion agent for the mBot2; start at `PLAN.md` |
 | `apps/ios` | Rocky's brain on an iPhone — mic/speaker/camera/face for the robot body; start at `README.md` |
