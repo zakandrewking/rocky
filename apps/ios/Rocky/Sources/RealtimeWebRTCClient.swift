@@ -40,6 +40,7 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
     private var peerConnection: RTCPeerConnection?
     private var dataChannel: RTCDataChannel?
     private var localAudioTrack: RTCAudioTrack?
+    private var remoteAudioTracks: [RTCAudioTrack] = []
 
     /// Opens the connection: mints an ephemeral secret via `secretProvider`, negotiates WebRTC
     /// with OpenAI directly (no relay server -- this is exactly the pattern OpenAI's own docs
@@ -107,6 +108,15 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
     /// her own words as if the user had said them.
     func setMicrophoneEnabled(_ enabled: Bool) {
         localAudioTrack?.isEnabled = enabled
+    }
+
+    /// Silences the model's own voice. Pausing has to reach this: a character voiced by the
+    /// Realtime model plays through the peer connection rather than any local player, so stopping
+    /// local audio leaves it talking.
+    func setRemoteAudioEnabled(_ enabled: Bool) {
+        for track in remoteAudioTracks {
+            track.isEnabled = enabled
+        }
     }
 
     func close() {
@@ -186,7 +196,12 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
 extension RealtimeWebRTCClient: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {}
 
-    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {
+        // The model's own voice arrives here. Held onto so it can actually be silenced -- for a
+        // character voiced by the Realtime model there is no local player to stop, so without a
+        // handle on this track "pause" could not stop the talking.
+        remoteAudioTracks = stream.audioTracks
+    }
 
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
 

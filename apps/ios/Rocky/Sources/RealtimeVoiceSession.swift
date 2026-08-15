@@ -65,6 +65,9 @@ final class RealtimeVoiceSession: ObservableObject {
     private var retriedThisResponse = false
     private var humeSawLastChunk = false
     private var pauseTimeout: Task<Void, Never>?
+    private var isPaused = false
+    /// True while Rocky's own un-cancelled audio could otherwise be heard as an interruption.
+    private var gatedForOwnVoice = false
 
     /// How long to wait for Hume's first audio before assuming the request was lost.
     private static let firstAudioTimeout: Duration = .milliseconds(2500)
@@ -92,6 +95,8 @@ final class RealtimeVoiceSession: ObservableObject {
         // the gate believes it is already closed, every close is a no-op, and Rocky talks straight
         // into her own microphone -- which the log calls out as "mic gate leaked".
         micOpen = true
+        isPaused = false
+        gatedForOwnVoice = false
         userStoppedSpeakingAt = nil
 
         let connectStart = Date()
@@ -143,11 +148,18 @@ final class RealtimeVoiceSession: ObservableObject {
     /// nothing. Pausing is a local act -- close the microphone, stop the audio already queued.
     func pause() {
         guard state == .connected else { return }
+        // Set first: finishResponse below reopens the microphone, and pausing has to outrank that.
+        isPaused = true
         stopLocalAudio()
         hume?.cancel()
-        if responseStartedAt != nil { client.send(ResponseCancelEvent()) }
+        // Unconditionally, not only mid-response: generation may have finished while audio is
+        // still arriving, and cancelling a response that has already ended is harmless.
+        client.send(ResponseCancelEvent())
+        // Silences a character voiced by the Realtime model, whose audio plays through the peer
+        // connection rather than any local player -- stopping local audio leaves it talking.
+        client.setRemoteAudioEnabled(false)
         finishResponse(reason: "paused")
-        setMicrophoneOpen(false, reason: "paused")
+        refreshMicrophone("paused")
         speaking = false
         state = .paused
         log("paused, holding the conversation open")
@@ -165,8 +177,10 @@ final class RealtimeVoiceSession: ObservableObject {
         guard state == .paused else { return }
         pauseTimeout?.cancel()
         pauseTimeout = nil
+        isPaused = false
         state = .connected
-        setMicrophoneOpen(true, reason: "resumed")
+        client.setRemoteAudioEnabled(true)
+        refreshMicrophone("resumed")
         log("resumed, asking Rocky to acknowledge waking")
         client.send(ResponseCreateEvent(instructions: Self.wakePrompt))
     }
@@ -191,6 +205,8 @@ final class RealtimeVoiceSession: ObservableObject {
         responseStartedAt = nil
         userStoppedSpeakingAt = nil
         micOpen = true
+        isPaused = false
+        gatedForOwnVoice = false
         speaking = false
         hasSpokenOnce = false
         state = .disconnected
@@ -248,8 +264,15 @@ final class RealtimeVoiceSession: ObservableObject {
     /// barge-in, since a closed microphone cannot hear an interruption.
     private var needsMicrophoneGate: Bool { hume != nil }
 
-    private func setMicrophoneOpen(_ open: Bool, reason: String) {
-        guard needsMicrophoneGate, micOpen != open else { return }
+    /// Two separate reasons the microphone might be shut, deliberately not conflated.
+    ///
+    /// The echo gate is a workaround for one character's audio path and is off for the rest.
+    /// Pausing is what the user asked for and applies to everyone -- routing it through the gate
+    /// meant that for a character which needs no gate, pause left the microphone wide open and
+    /// the conversation carried on underneath a UI that said "paused".
+    private func refreshMicrophone(_ reason: String) {
+        let open = !isPaused && !(needsMicrophoneGate && gatedForOwnVoice)
+        guard micOpen != open else { return }
         micOpen = open
         client.setMicrophoneEnabled(open)
         log("mic \(open ? "open" : "closed") (\(reason))")
@@ -272,7 +295,8 @@ final class RealtimeVoiceSession: ObservableObject {
     private func handleSpeakingChange(_ speaking: Bool) {
         if speaking {
             noteRockyStartedSpeaking()
-            setMicrophoneOpen(false, reason: "rocky speaking")
+            gatedForOwnVoice = true
+            refreshMicrophone("rocky speaking")
             return
         }
         self.speaking = false
@@ -404,7 +428,8 @@ final class RealtimeVoiceSession: ObservableObject {
         humeTextBuffer = ""
         retriedThisResponse = false
         humeSawLastChunk = false
-        setMicrophoneOpen(true, reason: reason)
+        gatedForOwnVoice = false
+        refreshMicrophone(reason)
     }
 
     private func log(_ line: String) {
@@ -460,7 +485,8 @@ final class RealtimeVoiceSession: ObservableObject {
             humePlayer?.beginResponse()
             eridian?.playThinkingPrelude()
             // The chords are already audible, so close the mic now rather than at first audio.
-            setMicrophoneOpen(false, reason: "response started")
+            gatedForOwnVoice = true
+            refreshMicrophone("response started")
             // Armed here, not when the text finishes: a response that never produces any text at
             // all would otherwise have no clock on it, and the mic would stay shut for good --
             // which is precisely what "Rocky didn't respond" was. Every closed mic now has a
