@@ -55,6 +55,11 @@ final class RealtimeVoiceSession: ObservableObject {
         guard state == .disconnected || isFailed else { return }
         self.robot = robot
         state = .connecting
+        // A reconnect gets a brand-new WebRTC track, which starts enabled. Without resetting this,
+        // the gate believes it is already closed, every close is a no-op, and Rocky talks straight
+        // into her own microphone -- which the log calls out as "mic gate leaked".
+        micOpen = true
+        userStoppedSpeakingAt = nil
 
         let connectStart = Date()
         do {
@@ -104,6 +109,11 @@ final class RealtimeVoiceSession: ObservableObject {
         humePlayer = nil
         eridian = nil
         humeTextBuffer = ""
+        firstAudioWatchdog?.cancel()
+        turnWatchdog?.cancel()
+        responseStartedAt = nil
+        userStoppedSpeakingAt = nil
+        micOpen = true
         state = .disconnected
         robot = nil
         greeted = false
@@ -187,9 +197,14 @@ final class RealtimeVoiceSession: ObservableObject {
         guard let hume else { return }
         let split = SpeechChunks.split(buffer: humeTextBuffer, delta: delta, flush: flush)
         humeTextBuffer = split.remainder
-        for chunk in split.complete {
-            log("hume ← \(chunk.count) chars\(flush && split.remainder.isEmpty ? " (flush)" : "")")
-            hume.speak(chunk, flush: flush && split.remainder.isEmpty)
+        for (index, chunk) in split.complete.enumerated() {
+            // Only the genuinely final chunk flushes. `remainder` is the same for every iteration,
+            // so testing it alone marked *all* of them final, and Hume answered each with its own
+            // end-of-stream -- several "last chunks" per turn, and a turn that looked finished
+            // while more audio was still coming.
+            let isFinal = flush && split.remainder.isEmpty && index == split.complete.count - 1
+            log("hume ← \(chunk.count) chars\(isFinal ? " (final)" : "")")
+            hume.speak(chunk, flush: isFinal)
         }
     }
 
@@ -229,6 +244,9 @@ final class RealtimeVoiceSession: ObservableObject {
         // Cancel first: the original request may be slow rather than lost, and would otherwise
         // deliver its audio after the retry's, speaking the same line twice.
         hume?.cancel()
+        humePlayer?.stop()
+        humeTextBuffer = ""
+        humeSawLastChunk = false
         humePlayer?.beginResponse()
         sendToHume(responseText, flush: true)
         armFirstAudioWatchdog()

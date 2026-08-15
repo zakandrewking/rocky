@@ -58,8 +58,10 @@ final class EridianAudio {
     func stop() {
         player.stop()
         transcriptBuffer = ""
-        nextStartFrame = currentFrame()
         player.play()
+        // stop() rewinds the node's sample clock, so the old cursor would schedule the next chord
+        // far past the end of time. Same trap as HumePcmPlayer.
+        nextStartFrame = 0
     }
 
     // MARK: - Scheduling
@@ -67,7 +69,7 @@ final class EridianAudio {
     private func currentFrame() -> AVAudioFramePosition {
         guard let nodeTime = player.lastRenderTime,
             let playerTime = player.playerTime(forNodeTime: nodeTime)
-        else { return nextStartFrame }
+        else { return 0 }
         return playerTime.sampleTime
     }
 

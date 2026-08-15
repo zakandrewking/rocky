@@ -84,9 +84,14 @@ final class HumePcmPlayer {
     func stop() {
         player.stop()
         pendingChunks = 0
+        chunksThisResponse = 0
         delayNextChunk = false
-        nextStartFrame = currentFrame()
         player.play()
+        // AVAudioPlayerNode.stop() resets the node's own sample clock to zero, so a cursor taken
+        // from the old timeline is meaningless afterwards. Carrying it over scheduled the next
+        // audio tens of seconds into the future -- which is silence, not a delay, and looked
+        // exactly like Rocky ignoring you.
+        nextStartFrame = 0
         setSpeaking(false)
     }
 
@@ -101,15 +106,19 @@ final class HumePcmPlayer {
         onSpeakingChange?(speaking)
     }
 
+    /// Zero, not `nextStartFrame`, when the node isn't rendering yet: a node that has just been
+    /// started is at the beginning of its clock, and answering with a stale cursor is what pushed
+    /// audio into the far future after a stop.
     private func currentFrame() -> AVAudioFramePosition {
         guard let nodeTime = player.lastRenderTime,
             let playerTime = player.playerTime(forNodeTime: nodeTime)
-        else { return nextStartFrame }
+        else { return 0 }
         return playerTime.sampleTime
     }
 
-    /// Hume's wire format: base64 of signed 16-bit little-endian mono samples.
-    static func decodePCM16LE(_ base64: String) -> [Float]? {
+    /// Hume's wire format: base64 of signed 16-bit little-endian mono samples. Pure, so it is
+    /// deliberately not actor-bound -- it runs wherever the socket callback landed.
+    nonisolated static func decodePCM16LE(_ base64: String) -> [Float]? {
         guard let data = Data(base64Encoded: base64) else { return nil }
         return data.withUnsafeBytes { raw -> [Float] in
             let count = raw.count / 2

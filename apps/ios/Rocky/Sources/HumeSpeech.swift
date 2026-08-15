@@ -86,7 +86,11 @@ final class HumeSpeech {
                 guard let self, epoch == self.epoch else { return }
                 switch result {
                 case .failure(let error):
-                    self.onError?(error.localizedDescription)
+                    // Cancelling is how this client stops Hume talking, so the resulting error is
+                    // expected bookkeeping, not a fault worth reporting.
+                    if (error as NSError).code != NSURLErrorCancelled {
+                        self.onError?(error.localizedDescription)
+                    }
                     if self.socket === socket { self.socket = nil }
                 case .success(let message):
                     if case .string(let json) = message { self.handle(json) }
