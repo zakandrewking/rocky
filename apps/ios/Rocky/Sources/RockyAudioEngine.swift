@@ -17,39 +17,60 @@ final class RockyAudioEngine {
     var sampleRate: Double { Self.format.sampleRate }
 
     private let engine = AVAudioEngine()
-    private var started = false
+    private var players: [AVAudioPlayerNode] = []
+    private var observer: NSObjectProtocol?
 
-    private init() {}
+    private init() {
+        // WebRTC activating its own voice-processing audio unit reconfigures the shared session
+        // underneath this engine, which arrives here as a configuration change.
+        observer = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                RockyLog.write("audio: engine configuration changed")
+                RockyAudioEngine.shared.ensureRunning()
+            }
+        }
+    }
 
-    /// Attaches a player and returns it started, ready to be scheduled onto.
+    /// Attaches a player and returns it ready to be scheduled onto.
     func makePlayer(volume: Float) -> AVAudioPlayerNode {
         let player = AVAudioPlayerNode()
         player.volume = volume
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: Self.format)
-        try? start()
-        player.play()
+        players.append(player)
+        ensureRunning()
         return player
     }
 
-    func start() throws {
-        guard !started else { return }
-        engine.prepare()
-        try engine.start()
-        started = true
+    /// Brings the engine *and every player node* back up.
+    ///
+    /// Both halves matter. WebRTC starting its microphone stops this engine, and restarting an
+    /// engine leaves its player nodes not playing -- so buffers scheduled afterwards are never
+    /// rendered and their completion handlers never fire. That is silence with no error anywhere:
+    /// audio is accepted, queued, and simply never heard, which is exactly what "Rocky never
+    /// responded" looked like. Call this before scheduling anything.
+    func ensureRunning() {
+        let wasRunning = engine.isRunning
+        if !wasRunning {
+            engine.prepare()
+            do {
+                try engine.start()
+                RockyLog.write("audio: engine (re)started")
+            } catch {
+                RockyLog.write("audio: engine failed to start: \(error.localizedDescription)")
+                return
+            }
+        }
+        for player in players where !wasRunning || !player.isPlaying {
+            player.play()
+        }
     }
 
     func stop() {
-        guard started else { return }
         engine.stop()
-        started = false
-    }
-
-    /// The engine stops itself if the audio session is interrupted or the route changes under it;
-    /// callers about to schedule audio use this to bring it back rather than going silent.
-    func restartIfNeeded() {
-        guard started, !engine.isRunning else { return }
-        started = false
-        try? start()
     }
 }

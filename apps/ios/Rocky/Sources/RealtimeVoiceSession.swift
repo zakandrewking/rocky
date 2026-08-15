@@ -94,6 +94,9 @@ final class RealtimeVoiceSession: ObservableObject {
             }
 
             try await client.connect(ephemeralSecret: secret)
+            // WebRTC has just taken the audio session for the microphone, which stops this
+            // engine; bring it back before Rocky has anything to say.
+            RockyAudioEngine.shared.ensureRunning()
             state = .connected
             log("webrtc negotiated in \(Self.ms(since: negotiateStart)), connected in \(Self.ms(since: connectStart)) total")
         } catch {

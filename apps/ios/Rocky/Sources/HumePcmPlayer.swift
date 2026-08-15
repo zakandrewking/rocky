@@ -40,7 +40,7 @@ final class HumePcmPlayer {
 
     func push(base64: String, isLastChunk: Bool) {
         guard let samples = Self.decodePCM16LE(base64), !samples.isEmpty else { return }
-        RockyAudioEngine.shared.restartIfNeeded()
+        RockyAudioEngine.shared.ensureRunning()
 
         let padding = isLastChunk ? Int(Self.finalPaddingSeconds * sampleRate) : 0
         let frameCount = AVAudioFrameCount(samples.count + padding)
@@ -86,7 +86,7 @@ final class HumePcmPlayer {
         pendingChunks = 0
         chunksThisResponse = 0
         delayNextChunk = false
-        player.play()
+        RockyAudioEngine.shared.ensureRunning()
         // AVAudioPlayerNode.stop() resets the node's own sample clock to zero, so a cursor taken
         // from the old timeline is meaningless afterwards. Carrying it over scheduled the next
         // audio tens of seconds into the future -- which is silence, not a delay, and looked

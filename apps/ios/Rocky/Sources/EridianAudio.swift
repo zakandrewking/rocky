@@ -58,7 +58,7 @@ final class EridianAudio {
     func stop() {
         player.stop()
         transcriptBuffer = ""
-        player.play()
+        RockyAudioEngine.shared.ensureRunning()
         // stop() rewinds the node's sample clock, so the old cursor would schedule the next chord
         // far past the end of time. Same trap as HumePcmPlayer.
         nextStartFrame = 0
@@ -79,7 +79,7 @@ final class EridianAudio {
 
     private func schedule(_ tokens: [String]) {
         guard !tokens.isEmpty, volume > 0 else { return }
-        RockyAudioEngine.shared.restartIfNeeded()
+        RockyAudioEngine.shared.ensureRunning()
 
         let now = currentFrame()
         var start = max(now + frames(0.015), nextStartFrame)
