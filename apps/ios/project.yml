@@ -23,7 +23,6 @@ targets:
     platform: iOS
     sources:
       - path: Rocky/Sources
-    resources:
       - path: Rocky/Resources
     dependencies:
       - package: WebRTC
