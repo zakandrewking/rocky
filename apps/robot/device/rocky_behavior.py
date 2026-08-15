@@ -213,6 +213,20 @@ DIZZY_FACE = ("@ @", (170, 255, 130))  # label, LED color -- distinct from every
 # pumped once per tick. Kept cheap on purpose -- this loop's sampling *is* its pipeline (one
 # get_loudness() per tick, no smoothing, startle is an edge trigger with no hysteresis), so
 # anything that slows the tick degrades startle detection without changing a single constant.
+# Found live the first time this ran (2026-08-15): the robot span on the spot indefinitely,
+# listening -> dizzy -> settling -> listening -> dizzy, about every 2.5s. Two causes, both fixed
+# here rather than by moving BUMP_THRESHOLD, which would only have traded this for a deaf sensor:
+#   1. After a spin the robot is over a different patch of floor, so the old per-channel baseline
+#      describes somewhere it no longer is. The baseline is re-seeded on every return to
+#      listening now (see _enter), instead of being eased toward the new floor at
+#      REFLECT_BASELINE_ALPHA -- which could never converge, because listening only lasted a few
+#      ticks before the deviation re-triggered.
+#   2. Even so, nothing bounded the reaction. Repeated spinning reads as a fault rather than a
+#      personality, so it may now happen twice before the bump sense goes quiet for a while.
+DIZZY_MAX_CONSECUTIVE = 2
+DIZZY_COOLDOWN_MS = 20000  # bump detection off for this long once the limit is hit
+DIZZY_STREAK_RESET_MS = 30000  # a bump this long after the last one starts a fresh streak
+
 EVENT_PORT = 8768  # separate from rocky_agent's 8765 (motion) and 8766 (OTA) so both can exist
 EVENT_BEACON_PORT = 41900  # same port rocky_agent beacons on, but a different service name, so
 EVENT_SERVICE = "rocky-behavior"  # the app's existing robot discovery ignores it rather than
@@ -304,6 +318,9 @@ _state = {
     "evt_buffer": "",
     # Phase B/C: what the voice character has asked for. Advisory -- the motion loop decides when
     # (and whether) to honour it. "stop" is the one exception and applies immediately.
+    "dizzy_streak": 0,
+    "dizzy_last_at": 0,
+    "bump_suppressed_until": 0,
     "mood": "normal",
     "gesture": None,  # (name, expires_at_ticks) or None
 }
@@ -564,6 +581,11 @@ def _face_for_level(level):
 
 
 def _enter(mode, now, detail=""):
+    if mode == "listening":
+        # The robot has just moved, so the previous per-channel baseline describes a patch of
+        # floor it is no longer over. Re-seed on the next tick rather than easing toward the new
+        # reading, which is what let a single spin cascade into an endless one.
+        _state["reflect_baseline"] = [None, None, None, None]
     _state["mode"] = mode
     _state["mode_start"] = now
     # The one choke point every transition already passes through, which is why observation hooks
@@ -682,8 +704,21 @@ def _tick_listening(now):
             ",".join(str(r) for r in readings),
             ",".join(str(b) for b in _state["reflect_baseline"]),
         )
+    if bumped and utime.ticks_diff(now, _state["bump_suppressed_until"]) < 0:
+        bumped = False  # cooling down after spinning twice; still listening for everything else
+
     if bumped:
-        _enter("dizzy", now)
+        if utime.ticks_diff(now, _state["dizzy_last_at"]) > DIZZY_STREAK_RESET_MS:
+            _state["dizzy_streak"] = 0
+        _state["dizzy_streak"] += 1
+        _state["dizzy_last_at"] = now
+        detail = "bump"
+        if _state["dizzy_streak"] >= DIZZY_MAX_CONSECUTIVE:
+            # Let this second one happen, then stop being ticklish for a while.
+            _state["bump_suppressed_until"] = utime.ticks_add(now, DIZZY_COOLDOWN_MS)
+            _state["dizzy_streak"] = 0
+            detail = "bump (cooling down after two)"
+        _enter("dizzy", now, detail)
         _show_face(*DIZZY_FACE)
         _send_telemetry(',"bump":true' + reflect_extra)
         return
