@@ -35,6 +35,7 @@ final class HumePcmPlayer {
     /// Call at the start of each response so the extra first-chunk delay applies again.
     func beginResponse() {
         delayNextChunk = initialDelay > 0
+        chunksThisResponse = 0
     }
 
     func push(base64: String, isLastChunk: Bool) {
@@ -59,6 +60,7 @@ final class HumePcmPlayer {
         nextStartFrame = start + AVAudioFramePosition(frameCount)
 
         pendingChunks += 1
+        chunksThisResponse += 1
         setSpeaking(true)
         player.scheduleBuffer(buffer, at: AVAudioTime(sampleTime: start, atRate: sampleRate)) { [weak self] in
             Task { @MainActor in self?.chunkFinished() }
@@ -70,6 +72,12 @@ final class HumePcmPlayer {
     var millisecondsUntilPlaybackEnd: Double {
         max(0, Double(nextStartFrame - currentFrame()) / sampleRate * 1000)
     }
+
+    var speaking: Bool { isSpeaking }
+
+    /// Total audio pushed this response, for the logs: "no audio at all" and "audio that stopped
+    /// early" are different failures and look identical from the outside.
+    private(set) var chunksThisResponse = 0
 
     /// Barge-in: drop everything queued and reset the timeline, or the next thing Rocky says
     /// would wait behind audio nobody is listening to any more.

@@ -28,6 +28,26 @@ final class RealtimeVoiceSession: ObservableObject {
     /// The quiet alien chatter under her voice.
     private var eridian: EridianAudio?
 
+    // MARK: - Turn timing and recovery
+    //
+    // Every leg of a turn is timed and logged, because "it was slow" and "it never answered" are
+    // different faults with different fixes and are indistinguishable from the outside: the log
+    // has to say which leg was slow (user stopped → response started → first word → first audio).
+
+    private var micOpen = true
+    private var userStoppedSpeakingAt: Date?
+    private var responseStartedAt: Date?
+    private var firstTextAt: Date?
+    private var firstAudioAt: Date?
+    private var responseText = ""
+    private var firstAudioWatchdog: Task<Void, Never>?
+    private var turnWatchdog: Task<Void, Never>?
+    private var retriedThisResponse = false
+    private var humeSawLastChunk = false
+
+    /// How long to wait for Hume's first audio before assuming the request was lost.
+    private static let firstAudioTimeout: Duration = .milliseconds(2500)
+
     /// `robot` is nil when none was found on the network. That is a supported, ordinary state --
     /// the app is then exactly what apps/desktop is, a voice-only Rocky -- so the movement tools
     /// are dropped from the session rather than left to fail (see OpenAIRealtimeMinter).
@@ -36,6 +56,7 @@ final class RealtimeVoiceSession: ObservableObject {
         self.robot = robot
         state = .connecting
 
+        let connectStart = Date()
         do {
             try AudioSessionManager.configureForVoice()
             startLocalAudio()
@@ -43,9 +64,10 @@ final class RealtimeVoiceSession: ObservableObject {
                 hasRobot: robot != nil,
                 speaksWithHume: hume != nil
             )
-            RockyLog.write(
-                "realtime: minted ephemeral secret (robot: \(robot == nil ? "no" : "yes"), voice: \(hume == nil ? "openai" : "hume"))"
+            log(
+                "minted secret in \(Self.ms(since: connectStart)) (robot: \(robot == nil ? "no" : "yes"), voice: \(hume == nil ? "openai" : "hume"))"
             )
+            let negotiateStart = Date()
 
             client.onEvent = { [weak self] event in
                 Task { @MainActor in
@@ -68,10 +90,10 @@ final class RealtimeVoiceSession: ObservableObject {
 
             try await client.connect(ephemeralSecret: secret)
             state = .connected
-            RockyLog.write("realtime: connected")
+            log("webrtc negotiated in \(Self.ms(since: negotiateStart)), connected in \(Self.ms(since: connectStart)) total")
         } catch {
             state = .failed(error.localizedDescription)
-            RockyLog.write("realtime: connect failed: \(error.localizedDescription)")
+            log("connect failed after \(Self.ms(since: connectStart)): \(error.localizedDescription)")
         }
     }
 
@@ -94,11 +116,23 @@ final class RealtimeVoiceSession: ObservableObject {
         guard let hume else { return }
         let player = HumePcmPlayer()
         humePlayer = player
-        hume.onAudio = { [weak player] base64, isLastChunk in
-            player?.push(base64: base64, isLastChunk: isLastChunk)
+        hume.onAudio = { [weak self] base64, isLastChunk in
+            guard let self else { return }
+            if self.firstAudioAt == nil, let started = self.responseStartedAt {
+                self.firstAudioAt = Date()
+                self.log("hume first audio after \(Self.ms(since: started)) (text→voice latency)")
+            }
+            if isLastChunk {
+                self.humeSawLastChunk = true
+                self.log("hume last chunk received (\(self.humePlayer.map { $0.chunksThisResponse + 1 } ?? 0) chunks this turn)")
+            }
+            self.humePlayer?.push(base64: base64, isLastChunk: isLastChunk)
         }
-        hume.onError = { message in
-            RockyLog.write("hume: \(message)")
+        hume.onError = { [weak self] message in
+            self?.log("hume error: \(message)")
+        }
+        player.onSpeakingChange = { [weak self] speaking in
+            self?.handleSpeakingChange(speaking)
         }
     }
 
@@ -107,13 +141,45 @@ final class RealtimeVoiceSession: ObservableObject {
         humePlayer?.stop()
     }
 
-    /// Barge-in. The session's own turn detection already cancels the *response* server-side; what
-    /// it cannot do is stop audio this app has already queued locally, so that has to happen here
-    /// or Rocky keeps talking over the person interrupting her.
+    /// Barge-in. The server cancels the *response* itself; what it cannot do is stop audio this
+    /// app has already queued locally, so that has to happen here or Rocky keeps talking over the
+    /// person interrupting her.
     private func handleUserStartedSpeaking() {
         stopLocalAudio()
         hume?.cancel()
-        humeTextBuffer = ""
+        if responseStartedAt != nil { finishResponse(reason: "barge-in") }
+    }
+
+    /// Rocky's own voice reaches the microphone on this platform (see
+    /// RealtimeWebRTCClient.setMicrophoneEnabled), so the mic is gated shut for as long as she is
+    /// making noise. Without this the server hears her, treats it as the user interrupting, cuts
+    /// the response off and transcribes her own words back as user speech -- which is what "slow
+    /// or does not respond" actually looked like.
+    private func setMicrophoneOpen(_ open: Bool, reason: String) {
+        guard micOpen != open else { return }
+        micOpen = open
+        client.setMicrophoneEnabled(open)
+        log("mic \(open ? "open" : "closed") (\(reason))")
+    }
+
+    private func handleSpeakingChange(_ speaking: Bool) {
+        if speaking {
+            setMicrophoneOpen(false, reason: "rocky speaking")
+            return
+        }
+        // Playback draining is not the same as Rocky being finished: if Hume is still streaming,
+        // the queue can empty briefly between chunks. Reopening the mic there would put her own
+        // remaining audio straight back into the server's ear -- the exact fault this gate exists
+        // to prevent. Wait for the chunk Hume marked last; the turn watchdog covers the case
+        // where that never comes.
+        guard humeSawLastChunk else {
+            log("playback drained mid-response, holding the turn open for more audio")
+            return
+        }
+        if let started = responseStartedAt {
+            log("rocky finished speaking, \(Self.ms(since: started)) after response started")
+        }
+        finishResponse(reason: "playback ended")
     }
 
     /// Feeds Rocky's streaming words to Hume a sensible mouthful at a time (see SpeechChunks).
@@ -122,6 +188,7 @@ final class RealtimeVoiceSession: ObservableObject {
         let split = SpeechChunks.split(buffer: humeTextBuffer, delta: delta, flush: flush)
         humeTextBuffer = split.remainder
         for chunk in split.complete {
+            log("hume ← \(chunk.count) chars\(flush && split.remainder.isEmpty ? " (flush)" : "")")
             hume.speak(chunk, flush: flush && split.remainder.isEmpty)
         }
     }
@@ -130,7 +197,98 @@ final class RealtimeVoiceSession: ObservableObject {
         guard !greeted else { return }
         greeted = true
         client.send(ResponseCreateEvent())
-        RockyLog.write("realtime: asked Rocky to greet")
+        log("asked Rocky to greet")
+    }
+
+    // MARK: - Watchdogs
+    //
+    // Ported from apps/desktop. Both exist because the failure that matters here is silence, and
+    // silence is indistinguishable from thinking until you put a clock on it.
+
+    /// Hume was sent text but no audio came back. Usually the socket died quietly; one retry on a
+    /// fresh connection recovers it.
+    private func armFirstAudioWatchdog() {
+        firstAudioWatchdog?.cancel()
+        guard hume != nil, !responseText.isEmpty else { return }
+        firstAudioWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: Self.firstAudioTimeout)
+            guard !Task.isCancelled else { return }
+            await self?.handleMissingFirstAudio()
+        }
+    }
+
+    private func handleMissingFirstAudio() {
+        guard firstAudioAt == nil, !responseText.isEmpty else { return }
+        guard !retriedThisResponse else {
+            log("hume produced no audio after retry, giving up on this turn")
+            finishResponse(reason: "no audio after retry")
+            return
+        }
+        retriedThisResponse = true
+        log("hume produced no audio in 2.5s, retrying on a fresh socket")
+        // Cancel first: the original request may be slow rather than lost, and would otherwise
+        // deliver its audio after the retry's, speaking the same line twice.
+        hume?.cancel()
+        humePlayer?.beginResponse()
+        sendToHume(responseText, flush: true)
+        armFirstAudioWatchdog()
+    }
+
+    /// Anti-stuck, not anti-failure: if Rocky is still marked as speaking long after she should
+    /// have finished, and nothing is actually queued, release the turn so the mic reopens.
+    private func armTurnWatchdog() {
+        turnWatchdog?.cancel()
+        let words = responseText.split(whereSeparator: \.isWhitespace).count
+        let budget = min(12_000, max(4_000, 2_000 + words * 420))
+        turnWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(budget))
+            guard !Task.isCancelled else { return }
+            await self?.handleTurnOverrun(budget: budget)
+        }
+    }
+
+    private func handleTurnOverrun(budget: Int) {
+        guard responseStartedAt != nil else { return }
+        let queued = humePlayer?.millisecondsUntilPlaybackEnd ?? 0
+        // Genuinely still talking: extend rather than cut real audio off mid-word.
+        if queued > 750 {
+            let grace = min(8_000, Int(queued) + 1_000)
+            log("turn watchdog: \(Int(queued))ms still queued, extending \(grace)ms")
+            turnWatchdog = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(grace))
+                guard !Task.isCancelled else { return }
+                await self?.handleTurnOverrun(budget: grace)
+            }
+            return
+        }
+        log("turn watchdog: stuck after \(budget)ms with nothing queued, releasing the turn")
+        stopLocalAudio()
+        finishResponse(reason: "turn watchdog")
+    }
+
+    /// One place where a turn ends, however it ended -- the mic reopens here and nowhere else, so
+    /// there is no path that leaves Rocky deaf.
+    private func finishResponse(reason: String) {
+        firstAudioWatchdog?.cancel()
+        firstAudioWatchdog = nil
+        turnWatchdog?.cancel()
+        turnWatchdog = nil
+        responseStartedAt = nil
+        firstTextAt = nil
+        firstAudioAt = nil
+        responseText = ""
+        humeTextBuffer = ""
+        retriedThisResponse = false
+        humeSawLastChunk = false
+        setMicrophoneOpen(true, reason: reason)
+    }
+
+    private func log(_ line: String) {
+        RockyLog.write("voice: \(line)")
+    }
+
+    private static func ms(since date: Date) -> String {
+        "\(Int(Date().timeIntervalSince(date) * 1000))ms"
     }
 
     private var isFailed: Bool {
@@ -147,25 +305,59 @@ final class RealtimeVoiceSession: ObservableObject {
     private func handle(_ event: RealtimeServerEvent) async {
         switch event.type {
         case "error":
-            RockyLog.write("realtime error: \(event.error?.message ?? "unknown")")
+            log("realtime error: \(event.error?.message ?? "unknown")")
 
         case "input_audio_buffer.speech_started":
+            // Only a real interruption if Rocky isn't the one making the noise. The mic is gated
+            // shut while she speaks, so this should already be impossible -- if it ever fires
+            // mid-response the log says so, and that means the gate leaked.
+            if responseStartedAt != nil {
+                log("speech_started DURING response — mic gate leaked, treating as barge-in")
+            }
+            log("user started speaking")
             handleUserStartedSpeaking()
 
+        case "input_audio_buffer.speech_stopped":
+            userStoppedSpeakingAt = Date()
+            log("user stopped speaking")
+
         case "response.created":
+            responseStartedAt = Date()
+            retriedThisResponse = false
+            humeSawLastChunk = false
+            responseText = ""
+            firstTextAt = nil
+            firstAudioAt = nil
+            if let stopped = userStoppedSpeakingAt {
+                log("response started \(Self.ms(since: stopped)) after user stopped (think latency)")
+            } else {
+                log("response started")
+            }
             humePlayer?.beginResponse()
             eridian?.playThinkingPrelude()
+            // The chords are already audible, so close the mic now rather than at first audio.
+            setMicrophoneOpen(false, reason: "response started")
 
         // Hume path: OpenAI streams words, Hume speaks them, and the chord layer follows the
         // same text.
         case "response.output_text.delta":
             if let delta = event.delta {
+                if firstTextAt == nil, let started = responseStartedAt {
+                    firstTextAt = Date()
+                    log("first word \(Self.ms(since: started)) after response started")
+                }
+                responseText += delta
                 eridian?.pushTranscriptDelta(delta)
                 sendToHume(delta)
             }
         case "response.output_text.done":
+            responseText = event.text ?? responseText
             sendToHume("", flush: true)
             eridian?.flushTranscript()
+            let words = responseText.split(whereSeparator: \.isWhitespace).count
+            log("text complete: \(words) words, \(responseText.count) chars")
+            armFirstAudioWatchdog()
+            armTurnWatchdog()
 
         // OpenAI-voice path: the audio itself arrives on the media track, and only its transcript
         // comes through here -- still enough to drive the chords.
@@ -173,6 +365,11 @@ final class RealtimeVoiceSession: ObservableObject {
             if let delta = event.delta { eridian?.pushTranscriptDelta(delta) }
         case "response.output_audio_transcript.done":
             eridian?.flushTranscript()
+
+        case "response.done":
+            // With Hume, the turn ends when playback does, not when the text does. Without it,
+            // OpenAI's own audio is on the media track and this is the end of the turn.
+            if hume == nil { finishResponse(reason: "response done") }
 
         default:
             break

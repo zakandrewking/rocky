@@ -97,6 +97,18 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
         dataChannel?.readyState == .open
     }
 
+    /// Gates the microphone at the track, so nothing reaches OpenAI's voice-activity detection
+    /// while it's off.
+    ///
+    /// This exists because Rocky's own voice is not echo-cancelled on this platform: Hume's audio
+    /// and the Eridian chords play through AVAudioEngine, which is outside the voice-processing
+    /// render path WebRTC's AEC references, so the microphone genuinely hears her. Left open, the
+    /// server hears Rocky, decides the user is talking, cuts her off mid-sentence and transcribes
+    /// her own words as if the user had said them.
+    func setMicrophoneEnabled(_ enabled: Bool) {
+        localAudioTrack?.isEnabled = enabled
+    }
+
     func close() {
         dataChannel?.close()
         dataChannel = nil
