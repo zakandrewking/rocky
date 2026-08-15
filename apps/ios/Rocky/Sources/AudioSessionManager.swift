@@ -8,14 +8,33 @@ import AVFoundation
 enum AudioSessionManager {
     private nonisolated(unsafe) static var routeObserver: NSObjectProtocol?
 
-    static func configureForVoice() throws {
+    static func configureForVoice() async throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(
             .playAndRecord,
             mode: .voiceChat,
             options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
         )
-        try session.setActive(true)
+
+        // Activation fails transiently while a previous session is still being torn down, which
+        // is exactly the case when starting again right after hanging up: WebRTC is still
+        // releasing the microphone. Treating that as fatal turned "pause, then start again" into
+        // a failure the UI immediately retried, hundreds of times a second, until it froze. It is
+        // a race, not a refusal, so wait it out.
+        var lastError: Error?
+        for attempt in 0..<5 {
+            do {
+                try session.setActive(true)
+                lastError = nil
+                break
+            } catch {
+                lastError = error
+                RockyLog.write("audio: session activation attempt \(attempt + 1) failed, retrying")
+                try? await Task.sleep(for: .milliseconds(80 * (attempt + 1)))
+            }
+        }
+        if let lastError { throw lastError }
+
         preferSpeakerOverReceiver(session)
         observeRouteChanges()
     }

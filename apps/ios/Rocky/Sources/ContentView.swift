@@ -20,6 +20,9 @@ struct ContentView: View {
     /// Set the instant the stone is tapped, before any awaiting, purely so the UI can respond to
     /// the touch rather than to the network.
     @State private var starting = false
+    /// When the conversation was last stopped by hand, so the very next tap doesn't race its
+    /// teardown.
+    @State private var lastStopAt: Date?
 
     enum ConnectionState: Equatable {
         case disconnected, connecting, connected, failed(String)
@@ -283,12 +286,27 @@ struct ContentView: View {
     }
 
     private func toggleVoiceSession() async {
+        // Re-entrancy guard. A tap that fails in a millisecond flips the button from disabled
+        // back to enabled while the finger is still down, and SwiftUI delivers the touch again --
+        // which, with an audio session that could not yet be reactivated, became an unbounded
+        // retry loop that locked the interface up.
+        guard !starting else { return }
+
         if voiceSession.state == .connected {
             voiceSession.disconnect()
             starting = false
-            appendLog("voice: disconnected")
+            lastStopAt = Date()
+            appendLog("voice: paused")
             return
         }
+
+        // Stopping and starting are the same button, so a second tap lands moments after the
+        // first. Ignore that rather than racing the teardown it just asked for.
+        if let lastStopAt, Date().timeIntervalSince(lastStopAt) < 0.75 {
+            RockyLog.write("voice: ignoring a start \(Int(Date().timeIntervalSince(lastStopAt) * 1000))ms after stopping")
+            return
+        }
+
         // Before anything that awaits, so the stone starts its loading animation on the touch
         // rather than after the robot search and the network have had their turn.
         starting = true

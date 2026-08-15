@@ -82,7 +82,7 @@ final class RealtimeVoiceSession: ObservableObject {
         let connectStart = Date()
         if let startedAt { log("connect beginning \(Self.ms(since: startedAt)) after the tap") }
         do {
-            try AudioSessionManager.configureForVoice()
+            try await AudioSessionManager.configureForVoice()
             startLocalAudio()
             let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(
                 hasRobot: robot != nil,
