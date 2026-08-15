@@ -1,11 +1,12 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// One screen, matching apps/desktop's minimalism: a single circular control that starts/stops
-/// talking to Rocky, plus a tappable detail row that expands into status, warnings, and the log --
-/// mirroring desktop's orb button + debug chip. The robot connection itself has no manual control
-/// at all anymore (no IP field, no Connect/Cancel/Disconnect) -- it's purely automatic, driven by
-/// RobotDiscovery's beacon/scan, exactly like device-api's connection is invisible on desktop.
+/// One screen, built to look and behave like apps/desktop: Rocky's stone orb on a dark starfield
+/// (OrbView / RockyTheme, both ported from that app's styles.css) and a small monospaced state
+/// chip pinned to the bottom corner that expands into details -- desktop's `.debug-state`.
+///
+/// The orb is the only control. The robot connection has no manual UI at all: it is discovered
+/// and connected automatically (RobotDiscovery), the same way desktop's own plumbing is invisible.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
     @StateObject private var discovery = RobotDiscovery()
@@ -20,23 +21,31 @@ struct ContentView: View {
         case disconnected, connecting, connected, failed(String)
     }
 
-    private enum OrbPhase {
-        case findingRobot, robotFailed, ready, connectingVoice, talking, voiceFailed
-    }
-
     var body: some View {
-        VStack(spacing: 28) {
-            Spacer()
-            orb
-            Spacer()
-            detailArea
+        ZStack {
+            RockyTheme.background
+            StarField()
+
+            VStack {
+                Spacer()
+                orb
+                Spacer()
+            }
+
+            VStack {
+                Spacer()
+                HStack {
+                    stateChip
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(14)
         }
-        .padding()
+        .preferredColorScheme(.dark)
         .onAppear {
             discovery.start()
             // The one path that used to be a manual "Connect" button tap, now automatic: retry
-            // with whatever host we last connected to successfully, same address the field used
-            // to be pre-filled with.
+            // with whatever host we last connected to successfully.
             if !host.isEmpty, connectionState == .disconnected {
                 Task { await connectRobotIfNeeded() }
             }
@@ -52,122 +61,167 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - The one control
+
     private var hasBakedOpenAIKey: Bool {
         !((Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String) ?? "").isEmpty
     }
 
     private var orbPhase: OrbPhase {
-        if case .failed = voiceSession.state { return .voiceFailed }
-        if voiceSession.state == .connecting { return .connectingVoice }
-        if voiceSession.state == .connected { return .talking }
-        if case .failed = connectionState { return .robotFailed }
-        if connectionState != .connected { return .findingRobot }
-        return .ready
-    }
-
-    private var orbLabel: String {
-        switch orbPhase {
-        case .findingRobot: return "Finding\nRobot…"
-        case .robotFailed: return "Robot Not\nFound"
-        case .ready: return "Talk to\nRocky"
-        case .connectingVoice: return "Connecting…"
-        case .talking: return "Listening…"
-        case .voiceFailed: return "Voice Failed\nTap to Retry"
-        }
-    }
-
-    private var orbColor: Color {
-        switch orbPhase {
-        case .findingRobot: return .gray
-        case .robotFailed, .voiceFailed: return .red
-        case .ready: return .blue
-        case .connectingVoice: return .yellow
-        case .talking: return .green
-        }
+        if case .failed = voiceSession.state { return .error }
+        if voiceSession.state == .connecting { return .connecting }
+        if voiceSession.state == .connected { return .listening }
+        if case .failed = connectionState { return .error }
+        if connectionState != .connected { return .connecting }
+        return .idle
     }
 
     private var orbTappable: Bool {
-        switch orbPhase {
-        case .ready, .talking, .voiceFailed: return hasBakedOpenAIKey
-        case .findingRobot, .robotFailed, .connectingVoice: return false
-        }
+        guard hasBakedOpenAIKey else { return false }
+        if voiceSession.state == .connecting { return false }
+        return connectionState == .connected || voiceSession.state == .connected
+    }
+
+    private var orbLabel: String {
+        voiceSession.state == .connected ? "End conversation" : "Start conversation"
+    }
+
+    private var orbSize: CGFloat {
+        #if os(iOS)
+        let width = UIScreen.main.bounds.width
+        #else
+        let width: CGFloat = 430
+        #endif
+        return max(230, min(340, width * 0.52))
     }
 
     private var orb: some View {
         Button {
             Task { await toggleVoiceSession() }
         } label: {
-            Circle()
-                .fill(orbColor.opacity(0.85))
-                .frame(width: 190, height: 190)
-                .overlay {
-                    Text(orbLabel)
-                        .multilineTextAlignment(.center)
-                        .font(.title2.bold())
-                        .foregroundStyle(.white)
-                }
+            // Desktop's `width: min(52vw, 340px); min-width: 230px`, in points.
+            OrbView(phase: orbPhase)
+                .frame(width: orbSize, height: orbSize)
         }
         .buttonStyle(.plain)
         .disabled(!orbTappable)
-        .opacity(orbTappable || orbPhase == .connectingVoice ? 1 : 0.5)
+        .accessibilityLabel(orbLabel)
     }
 
-    private var detailSummary: String {
-        var parts: [String] = []
-        switch connectionState {
-        case .disconnected: parts.append(discovery.isScanning ? "scanning for robot" : "robot: not connected")
-        case .connecting: parts.append("robot: connecting")
-        case .connected: parts.append("robot: \(host)")
-        case .failed(let message): parts.append("robot failed: \(message)")
+    // MARK: - State chip (desktop's `.debug-state`)
+
+    private var phaseWord: String {
+        if case .failed = voiceSession.state { return "error" }
+        switch voiceSession.state {
+        case .connecting: return "connecting"
+        case .connected: return "listening"
+        default: break
         }
-        if !hasBakedOpenAIKey { parts.append("no OpenAI key baked in") }
-        return parts.joined(separator: " · ")
+        switch connectionState {
+        case .connected: return "ready"
+        case .connecting: return "connecting"
+        case .failed: return "error"
+        case .disconnected: return discovery.isScanning ? "scanning" : "idle"
+        }
     }
 
-    private var detailArea: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(detailSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                Spacer()
-                Image(systemName: detailsOpen ? "chevron.up" : "chevron.down")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+    private var chipDetail: String {
+        let robot: String = switch connectionState {
+        case .disconnected: "-"
+        case .connecting: "…"
+        case .connected: host
+        case .failed: "failed"
+        }
+        let voice: String = switch voiceSession.state {
+        case .disconnected: "-"
+        case .connecting: "…"
+        case .connected: "on"
+        case .failed: "failed"
+        }
+        return "r:\(robot) v:\(voice)\(hasBakedOpenAIKey ? "" : " k:missing")"
+    }
+
+    private var stateChip: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(phaseWord).foregroundStyle(RockyTheme.amberBright.opacity(0.72))
+                Text(chipDetail)
+                    .foregroundStyle(RockyTheme.mint.opacity(0.46))
+                    .lineLimit(1)
             }
-            .contentShape(Rectangle())
-            .onTapGesture { detailsOpen.toggle() }
 
             if detailsOpen {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Connects to the robot on Wi-Fi automatically. Tap the circle to talk — ask Rocky to look around, drive, or stop.")
-                        .font(.caption)
-
-                    if !hasBakedOpenAIKey {
-                        Text("Run apps/ios/scripts/generate.sh with OPENAI_API_KEY set, then rebuild.")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                    if let toolCall = voiceSession.lastToolCall {
-                        Text("last action: \(toolCall)").font(.caption).foregroundStyle(.secondary)
-                    }
-
-                    Button("Push Payload to CyberPi…") { showPayloadPicker = true }
-                        .font(.caption)
-                        .disabled(host.isEmpty)
-                        .fileImporter(isPresented: $showPayloadPicker, allowedContentTypes: [.item]) { result in
-                            Task { await handlePayloadPicked(result) }
-                        }
-
-                    Divider()
-
-                    List(log.reversed(), id: \.self) { line in
-                        Text(line).font(.caption2.monospaced())
-                    }
-                    .listStyle(.plain)
-                    .frame(minHeight: 160)
+                Divider().overlay(RockyTheme.mint.opacity(0.12))
+                detailBody
+            }
+        }
+        .font(.system(size: detailsOpen ? 11 : 10, design: .monospaced))
+        .padding(detailsOpen ? 10 : 7)
+        .frame(maxWidth: detailsOpen ? .infinity : nil, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(RockyTheme.ink.opacity(detailsOpen ? 0.86 : 0.38))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(RockyTheme.mint.opacity(0.1), lineWidth: 1)
                 }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { detailsOpen.toggle() }
+        .accessibilityLabel("Rocky state")
+    }
+
+    private var detailBody: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Connects to the robot automatically. Tap the stone to talk — ask Rocky to look around, drive, or stop.")
+                .foregroundStyle(RockyTheme.mintBright.opacity(0.72))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if case .failed(let message) = connectionState {
+                Text("robot: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
+            }
+            if case .failed(let message) = voiceSession.state {
+                Text("voice: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
+            }
+            if !hasBakedOpenAIKey {
+                Text("No OpenAI key baked in — run apps/ios/scripts/generate.sh with OPENAI_API_KEY set, then rebuild.")
+                    .foregroundStyle(RockyTheme.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let toolCall = voiceSession.lastToolCall {
+                Text("last action: \(toolCall)").foregroundStyle(RockyTheme.mint.opacity(0.7))
+            }
+
+            Button("push payload to cyberpi…") { showPayloadPicker = true }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
+                .disabled(host.isEmpty)
+                .fileImporter(isPresented: $showPayloadPicker, allowedContentTypes: [.item]) { result in
+                    Task { await handlePayloadPicked(result) }
+                }
+
+            if !log.isEmpty {
+                Divider().overlay(RockyTheme.mint.opacity(0.12))
+
+                // A ScrollView takes every point it is offered, which left a tall empty box
+                // before any log lines existed -- so give it just the height its rows need, up
+                // to a cap, and let it scroll only past that.
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 3) {
+                        ForEach(log.reversed(), id: \.self) { line in
+                            Text(line)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(RockyTheme.mintBright.opacity(0.6))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                .frame(height: min(220, CGFloat(log.count) * 15 + 4))
             }
         }
     }
+
+    // MARK: - Behaviour (unchanged)
 
     /// The only path into a robot connection now -- called on launch (last-known host) and
     /// whenever RobotDiscovery finds a new address. No user-facing trigger or cancel.
