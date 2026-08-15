@@ -72,6 +72,40 @@ for (const name of TUNED) {
 const scheduleOf = (source) => source.match(/RECOVER_SCHEDULE = \(([\s\S]*?)\n\)/)?.[1] ?? null;
 if (scheduleOf(reference) !== scheduleOf(live)) drifted.push("RECOVER_SCHEDULE: differs");
 
+// The vocabulary the character is offered has to be the vocabulary the board actually answers to.
+// If these drift, Rocky asks confidently for a gesture the robot has never heard of and simply
+// gets silence -- a failure with no error anywhere, on either side.
+const SESSION = new URL("../../../services/device-api/src/session.ts", import.meta.url);
+const session = await readFile(fileURLToPath(SESSION), "utf8");
+
+/** A python tuple of string literals, e.g. GESTURES = ("spin", "wiggle") */
+function pythonNames(source, name) {
+  const body = source.match(new RegExp(`^${name}\\s*=\\s*\\(([^)]*)\\)`, "m"))?.[1];
+  return body ? [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort() : null;
+}
+/** The keys of a python dict literal, e.g. MOODS = { "calm": {...}, ... } */
+function pythonKeys(source, name) {
+  const start = source.indexOf(`${name} = {`);
+  if (start < 0) return null;
+  const body = source.slice(start, source.indexOf("\n}", start));
+  return [...body.matchAll(/^\s{4}"([^"]+)":/gm)].map((m) => m[1]).sort();
+}
+/** The enum on a tool parameter, e.g. enum: ["spin", "wiggle"] */
+function toolEnum(source, property) {
+  const body = source.match(new RegExp(`${property}: \\{ type: "string", enum: \\[([^\\]]*)\\]`))?.[1];
+  return body ? [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort() : null;
+}
+
+for (const [label, onBoard, offered] of [
+  ["gestures", pythonNames(live, "GESTURES"), toolEnum(session, "gesture")],
+  ["moods", pythonKeys(live, "MOODS"), toolEnum(session, "mood")],
+]) {
+  if (!onBoard || !offered) drifted.push(`${label}: could not be read from both sides`);
+  else if (onBoard.join(",") !== offered.join(",")) {
+    drifted.push(`${label}: board answers to [${onBoard}], the character is offered [${offered}]`);
+  }
+}
+
 if (drifted.length) {
   console.error("Behaviour tuning has drifted from step16:\n  " + drifted.join("\n  "));
   console.error(
