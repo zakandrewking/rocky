@@ -35,10 +35,10 @@ targets:
         NSLocalNetworkUsageDescription: "Rocky connects to the mBot2 robot and the laptop's voice service over your local Wi-Fi network."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        # Baked in at `xcodegen generate` time from the repo root .env's ROCKY_DEVICE_TOKENS
-        # (rocky-ios: entry) by scripts/generate.sh -- never typed on the phone, never committed.
-        # Empty string, not an error, when .env has no such entry yet (falls back to manual entry).
-        RockyDeviceToken: "${ROCKY_DEVICE_TOKEN_IOS}"
+        # Baked in at build time from the repo root .env's OPENAI_API_KEY by scripts/generate.sh
+        # (always use that, never `xcodegen generate` directly) -- never typed on the phone, never
+        # committed. Empty string, not an error, when .env has no key yet.
+        RockyOpenAIKey: "${ROCKY_OPENAI_KEY_IOS}"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: family.rocky.ios

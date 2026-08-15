@@ -1,24 +1,17 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// One screen: connect to the robot's motion server, connect once to the laptop's device API
-/// (for an ephemeral OpenAI secret -- the real key never touches the phone), then talk. Real
-/// conversation via OpenAI Realtime replaced the earlier fixed five-word vocabulary entirely --
-/// see RealtimeVoiceSession for the tool-calling that actually drives the robot now.
-/// See apps/ios/README.md.
+/// One screen: connect to the robot's motion server, then talk. The app mints its own ephemeral
+/// OpenAI secret directly (OpenAIRealtimeMinter, real key baked in at build time -- see
+/// apps/ios/README.md's threat-model note on why this is a personal-device-only choice), so
+/// there's no laptop server step at all. Real conversation via OpenAI Realtime replaced the
+/// earlier fixed five-word vocabulary entirely -- see RealtimeVoiceSession for the tool-calling
+/// that actually drives the robot now.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
     @StateObject private var discovery = RobotDiscovery()
-    @StateObject private var deviceAPIDiscovery = DeviceAPIDiscovery()
     @State private var controller: RobotController?
     @State private var host = UserDefaults.standard.string(forKey: "robotHost") ?? ""
-    @State private var deviceAPIHost = UserDefaults.standard.string(forKey: "deviceAPIHost") ?? ""
-    // Falls back to a build-time-baked value (see project.yml's RockyDeviceToken, populated from
-    // the repo root .env at `xcodegen generate` time -- never typed on the phone, never
-    // committed) before falling back to empty, so a personal build never needs manual entry.
-    @State private var deviceToken = UserDefaults.standard.string(forKey: "deviceToken")
-        ?? (Bundle.main.object(forInfoDictionaryKey: "RockyDeviceToken") as? String).flatMap { $0.isEmpty ? nil : $0 }
-        ?? ""
     @State private var connectionState = ConnectionState.disconnected
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
@@ -67,15 +60,10 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
 
-            deviceAPIFields
-
-            if let discovered = deviceAPIDiscovery.discoveredHost, discovered != deviceAPIHost {
-                Button("Found device API at \(discovered) — use it") { deviceAPIHost = discovered }
+            if !hasBakedOpenAIKey {
+                Text("No OpenAI key baked into this build — run apps/ios/scripts/generate.sh with OPENAI_API_KEY set, then rebuild")
                     .font(.caption)
-            } else if deviceAPIDiscovery.isScanning {
-                Text("Scanning network for device API…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.orange)
             }
 
             Button(voiceButtonLabel) {
@@ -105,7 +93,6 @@ struct ContentView: View {
         .padding()
         .onAppear {
             discovery.start()
-            deviceAPIDiscovery.start()
         }
         .onChange(of: discovery.discoveredHost) { _, newHost in
             // Auto-connect, not just auto-fill: the point of discovery is not having to do
@@ -116,17 +103,14 @@ struct ContentView: View {
             host = newHost
             Task { await toggleConnection() }
         }
-        .onChange(of: deviceAPIDiscovery.discoveredHost) { _, newHost in
-            // Auto-fill only, no auto-connect: unlike the robot, there's no separate "connect to
-            // device-api" step to trigger here -- the field just needs to be populated so
-            // toggleVoiceSession() has what it needs once the user taps Talk to Rocky.
-            guard let newHost, deviceAPIHost.isEmpty else { return }
-            deviceAPIHost = newHost
-        }
+    }
+
+    private var hasBakedOpenAIKey: Bool {
+        !((Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String) ?? "").isEmpty
     }
 
     private var canTalk: Bool {
-        guard connectionState == .connected, !deviceAPIHost.isEmpty, !deviceToken.isEmpty else { return false }
+        guard connectionState == .connected, hasBakedOpenAIKey else { return false }
         return voiceSession.state != .connecting
     }
 
@@ -138,39 +122,10 @@ struct ContentView: View {
         }
     }
 
-    private var deviceAPIFields: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Laptop device API (once, for OpenAI voice — pnpm device-api)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            TextField("host:port, e.g. 192.168.1.138:8787", text: $deviceAPIHost)
-                .textFieldStyle(.roundedBorder)
-                .autocorrectionDisabled()
-                #if os(iOS)
-                .textInputAutocapitalization(.never)
-                #endif
-                .onChange(of: deviceAPIHost) { _, newValue in
-                    UserDefaults.standard.set(newValue, forKey: "deviceAPIHost")
-                }
-            // UserDefaults, not Keychain: this token only unlocks this app's own local
-            // device-api server on the LAN, which itself holds the real OpenAI key -- a
-            // compromised token doesn't leak that key, just lets someone mint short-lived
-            // Realtime sessions through a server that's already local-network-only. Consistent
-            // with the rest of this deliberately minimal, non-App-Store app rather than adding
-            // Keychain plumbing for a personal home-robot threat model.
-            SecureField("device token", text: $deviceToken)
-                .textFieldStyle(.roundedBorder)
-                .onChange(of: deviceToken) { _, newValue in
-                    UserDefaults.standard.set(newValue, forKey: "deviceToken")
-                }
-        }
-    }
-
     private var instructions: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("1. Connect to the robot below (auto-fills if found on Wi-Fi)")
-            Text("2. Device API host auto-fills too; token is baked in if you built with .env set")
-            Text("3. Tap Talk to Rocky and just talk — ask her to look around, drive, or stop")
+            Text("2. Tap Talk to Rocky and just talk — ask her to look around, drive, or stop")
         }
         .font(.caption)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -243,7 +198,7 @@ struct ContentView: View {
         }
         guard let controller else { return }
         appendLog("voice: connecting…")
-        await voiceSession.connect(deviceAPIHost: deviceAPIHost, deviceToken: deviceToken, robot: controller)
+        await voiceSession.connect(robot: controller)
         if case .failed(let message) = voiceSession.state {
             appendLog("voice: connect failed: \(message)")
         } else {

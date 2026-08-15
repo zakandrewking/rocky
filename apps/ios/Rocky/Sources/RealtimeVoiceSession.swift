@@ -1,11 +1,12 @@
 import Foundation
 
-/// Owns one Realtime voice conversation: mints an ephemeral secret from services/device-api,
-/// opens a direct WebRTC connection to OpenAI (RealtimeWebRTCClient), and dispatches tool calls
-/// (drive_cm, rotate_degrees, stop_robot, read_distance, set_face -- defined server-side in
-/// services/device-api/src/session.ts, kept in sync by name here) onto a connected
-/// RobotController. Replaces the fixed five-word vocabulary (VoiceCommandRecognizer) entirely --
-/// this is real conversation, not string matching.
+/// Owns one Realtime voice conversation: mints an ephemeral secret directly from OpenAI
+/// (OpenAIRealtimeMinter), opens a direct WebRTC connection (RealtimeWebRTCClient), and
+/// dispatches tool calls (drive_cm, rotate_degrees, stop_robot, read_distance, set_face --
+/// defined in services/device-api/src/session.ts, the single source of truth baked into the
+/// bundled session config at build time) onto a connected RobotController. Replaces the fixed
+/// five-word vocabulary (VoiceCommandRecognizer) entirely -- this is real conversation, not
+/// string matching.
 @MainActor
 final class RealtimeVoiceSession: ObservableObject {
     enum State: Equatable {
@@ -18,14 +19,14 @@ final class RealtimeVoiceSession: ObservableObject {
     private let client = RealtimeWebRTCClient()
     private var robot: RobotController?
 
-    func connect(deviceAPIHost: String, deviceToken: String, robot: RobotController) async {
+    func connect(robot: RobotController) async {
         guard state == .disconnected || isFailed else { return }
         self.robot = robot
         state = .connecting
 
         do {
             try AudioSessionManager.configureForVoice()
-            let secret = try await DeviceAPIClient.mintEphemeralSecret(host: deviceAPIHost, deviceToken: deviceToken)
+            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret()
             RockyLog.write("realtime: minted ephemeral secret")
 
             client.onEvent = { [weak self] event in

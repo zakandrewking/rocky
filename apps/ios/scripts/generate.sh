@@ -1,27 +1,33 @@
 #!/usr/bin/env bash
-# Wraps `xcodegen generate` with the one thing plain xcodegen can't do: pull the phone's
-# device-api token out of the repo root .env so it's baked into the built app's Info.plist
-# (project.yml's RockyDeviceToken) and never has to be typed on the phone or committed to git.
-# Falls through to a plain `xcodegen generate` if .env or the rocky-ios token isn't there yet --
-# the app still works, just falls back to manual entry (see ContentView.swift).
+# Wraps `xcodegen generate` with the two things plain xcodegen can't do:
+#   1. Bake the real OPENAI_API_KEY from the repo root .env into the built app's Info.plist
+#      (project.yml's RockyOpenAIKey) so the phone can mint its own ephemeral Realtime secret
+#      directly from OpenAI -- no laptop server needed at runtime. Personal-use tradeoff: unlike
+#      services/device-api's whole reason for existing, this key is not scoped or revocable
+#      without rotating it, so this only belongs on a phone you control (see project history).
+#   2. Regenerate Rocky/Resources/RealtimeSessionConfig.json from the one real definition of
+#      Rocky's persona (services/device-api/src/session.ts), so the two apps never drift.
+# Falls through to a plain `xcodegen generate` if .env has no OPENAI_API_KEY yet -- the app still
+# builds, voice just fails to connect until a key is baked in.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ENV_FILE="../../.env"
-IOS_TOKEN=""
+API_KEY=""
 if [ -f "$ENV_FILE" ]; then
-  TOKENS_LINE=$(grep -E '^ROCKY_DEVICE_TOKENS=' "$ENV_FILE" | head -n1 | cut -d= -f2-)
-  # ROCKY_DEVICE_TOKENS is deviceId:token pairs, comma-separated -- pull out the one for "rocky-ios".
-  IOS_TOKEN=$(echo "$TOKENS_LINE" | tr ',' '\n' | grep '^rocky-ios:' | head -n1 | cut -d: -f2-)
+  API_KEY=$(grep -E '^OPENAI_API_KEY=' "$ENV_FILE" | head -n1 | cut -d= -f2-)
 fi
 # Always exported, even empty: XcodeGen only expands ${VAR} when the variable is present in its
 # process environment at all -- an unset (not just empty) var is left as the literal, unexpanded
-# "${ROCKY_DEVICE_TOKEN_IOS}" string baked into the plist, which the app would then treat as a
-# real (garbage) token instead of "none configured, fall back to manual entry".
-export ROCKY_DEVICE_TOKEN_IOS="$IOS_TOKEN"
-if [ -n "$IOS_TOKEN" ]; then
-  echo "==> Baking rocky-ios device token from .env into the build"
+# "${ROCKY_OPENAI_KEY_IOS}" string baked into the plist, which the app would then treat as a real
+# (garbage) key instead of "none configured".
+export ROCKY_OPENAI_KEY_IOS="$API_KEY"
+if [ -n "$API_KEY" ]; then
+  echo "==> Baking OPENAI_API_KEY from .env into the build (personal-device use only)"
 fi
+
+echo "==> Regenerating Rocky/Resources/RealtimeSessionConfig.json from session.ts"
+node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/dump-session-config.mjs
 
 xcodegen generate

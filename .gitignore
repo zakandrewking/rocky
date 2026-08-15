@@ -29,3 +29,8 @@ apps/cyberpi/src/wifi_credentials.h
 apps/ios/*.xcodeproj/
 apps/ios/Generated/
 apps/ios/build/
+
+# Generated at build time by apps/ios/scripts/generate.sh, from
+# services/device-api/src/session.ts -- keeps Rocky's persona defined in exactly one place
+# in the repo (see session.ts's own header comment) instead of a hand-copied Swift literal.
+apps/ios/Rocky/Resources/RealtimeSessionConfig.json
