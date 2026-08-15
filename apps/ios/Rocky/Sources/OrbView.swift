@@ -4,7 +4,7 @@ import SwiftUI
 /// express the same states the same way. The iOS app's own connection/voice states map onto
 /// these in ContentView.
 enum OrbPhase {
-    case idle, connecting, listening, speaking, error
+    case idle, connecting, listening, speaking, paused, error
 }
 
 /// Rocky's stone: the organic blob from `.rock-orb`, ported to SwiftUI.
@@ -87,7 +87,10 @@ struct OrbView: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .aspectRatio(1, contentMode: .fit)
-        .saturation(isDimmed ? 0.3 : 1)
+        // Desktop's `.phase-paused`: the stone dims and desaturates rather than changing colour,
+        // so a paused Rocky reads as resting rather than broken.
+        .brightness(phase == .paused ? -0.16 : 0)
+        .saturation(isDimmed ? 0.3 : (phase == .paused ? 0.78 : 1))
         .scaleEffect(breathing ? 1.035 : 1)
         .onAppear { startAnimations() }
         .onChange(of: phase) { _, _ in startAnimations() }
@@ -256,6 +259,11 @@ struct OrbView: View {
                 .scaleEffect(listenPulse ? 1.025 : 0.97)
                 .opacity(listenPulse ? 0.78 : 0.32)
                 .shadow(color: RockyTheme.mint.opacity(0.2), radius: 14)
+        case .paused:
+            OrbShape()
+                .stroke(RockyTheme.mint.opacity(0.35), lineWidth: 2)
+                .frame(width: ringSize, height: ringSize)
+                .opacity(0.35)
         case .idle, .speaking, .error:
             EmptyView()
         }
@@ -281,7 +289,7 @@ struct OrbView: View {
             withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
                 speaking = true
             }
-        case .idle, .error:
+        case .idle, .paused, .error:
             break
         }
     }

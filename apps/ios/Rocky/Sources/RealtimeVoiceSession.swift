@@ -10,8 +10,21 @@ import Foundation
 @MainActor
 final class RealtimeVoiceSession: ObservableObject {
     enum State: Equatable {
-        case disconnected, connecting, connected, failed(String)
+        case disconnected, connecting, connected, paused, failed(String)
     }
+
+    /// Said once, on waking, and never again -- so Rocky knows she stepped away without that
+    /// becoming a standing part of her character.
+    private static let wakePrompt = """
+        You have just come back after being paused for a moment. Say one short line that shows you
+        are back and listening. Do not introduce yourself, do not greet your friend as if meeting
+        them, and do not repeat anything from your first greeting. Pick up where you left off.
+        """
+
+    /// A paused session is held open, but not forever: the connection would go stale on its own
+    /// eventually, and holding a Realtime session all day to save a resume nobody asked for is
+    /// not a trade worth making.
+    private static let maxPauseBeforeTeardown: Duration = .seconds(600)
 
     @Published private(set) var state: State = .disconnected
     @Published private(set) var lastToolCall: String?
@@ -50,6 +63,7 @@ final class RealtimeVoiceSession: ObservableObject {
     private var turnWatchdog: Task<Void, Never>?
     private var retriedThisResponse = false
     private var humeSawLastChunk = false
+    private var pauseTimeout: Task<Void, Never>?
 
     /// How long to wait for Hume's first audio before assuming the request was lost.
     private static let firstAudioTimeout: Duration = .milliseconds(2500)
@@ -124,6 +138,47 @@ final class RealtimeVoiceSession: ObservableObject {
         }
     }
 
+    /// Stops listening and speaking without tearing anything down.
+    ///
+    /// The WebRTC connection and the Realtime session stay open, which is the whole point: the
+    /// conversation lives in that session, so ending it would mean Rocky came back remembering
+    /// nothing. Pausing is a local act -- close the microphone, stop the audio already queued.
+    func pause() {
+        guard state == .connected else { return }
+        stopLocalAudio()
+        hume?.cancel()
+        if responseStartedAt != nil { client.send(ResponseCancelEvent()) }
+        finishResponse(reason: "paused")
+        setMicrophoneOpen(false, reason: "paused")
+        speaking = false
+        state = .paused
+        log("paused, holding the conversation open")
+
+        pauseTimeout?.cancel()
+        pauseTimeout = Task { [weak self] in
+            try? await Task.sleep(for: Self.maxPauseBeforeTeardown)
+            guard !Task.isCancelled else { return }
+            await self?.endLongPause()
+        }
+    }
+
+    /// Picks the same conversation back up, with a one-off nudge so Rocky knows she was away.
+    func resume() {
+        guard state == .paused else { return }
+        pauseTimeout?.cancel()
+        pauseTimeout = nil
+        state = .connected
+        setMicrophoneOpen(true, reason: "resumed")
+        log("resumed, asking Rocky to acknowledge waking")
+        client.send(ResponseCreateEvent(instructions: Self.wakePrompt))
+    }
+
+    private func endLongPause() {
+        guard state == .paused else { return }
+        log("paused too long, closing the session")
+        disconnect()
+    }
+
     func disconnect() {
         client.close()
         stopLocalAudio()
@@ -133,9 +188,13 @@ final class RealtimeVoiceSession: ObservableObject {
         humeTextBuffer = ""
         firstAudioWatchdog?.cancel()
         turnWatchdog?.cancel()
+        pauseTimeout?.cancel()
+        pauseTimeout = nil
         responseStartedAt = nil
         userStoppedSpeakingAt = nil
         micOpen = true
+        speaking = false
+        hasSpokenOnce = false
         state = .disconnected
         robot = nil
         greeted = false

@@ -49,10 +49,23 @@ struct RealtimeServerEvent: Decodable, Sendable {
     }
 }
 
-/// Matches apps/desktop/src/shared/realtimeEvents.ts's RESPONSE_CREATE_EVENT -- deliberately no
-/// response-level instructions; session instructions own the persona.
+/// Matches apps/desktop/src/shared/realtimeEvents.ts's RESPONSE_CREATE_EVENT: normally no
+/// response-level instructions, because the session instructions own the persona.
+///
+/// The one exception is a nudge that applies to a single reply and would be wrong as a standing
+/// rule -- coming back from a pause, where Rocky needs to know she was away without that becoming
+/// part of who she is for the rest of the conversation.
 struct ResponseCreateEvent: Encodable, Sendable {
     let type = "response.create"
+    let response: ResponseConfig?
+
+    struct ResponseConfig: Encodable, Sendable {
+        let instructions: String
+    }
+
+    init(instructions: String? = nil) {
+        response = instructions.map(ResponseConfig.init)
+    }
 }
 
 struct ResponseCancelEvent: Encodable, Sendable {

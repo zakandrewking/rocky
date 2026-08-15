@@ -93,6 +93,7 @@ struct ContentView: View {
         if starting { return .connecting }
         switch voiceSession.state {
         case .connecting: return .connecting
+        case .paused: return .paused
         case .connected:
             if voiceSession.speaking { return .speaking }
             return voiceSession.hasSpokenOnce ? .listening : .connecting
@@ -105,7 +106,11 @@ struct ContentView: View {
     }
 
     private var orbLabel: String {
-        voiceSession.state == .connected ? "End conversation" : "Start conversation"
+        switch voiceSession.state {
+        case .connected: return "Pause conversation"
+        case .paused: return "Resume conversation"
+        default: return "Start conversation"
+        }
     }
 
     private var orbSize: CGFloat {
@@ -136,7 +141,8 @@ struct ContentView: View {
         if case .failed = voiceSession.state { return "error" }
         switch voiceSession.state {
         case .connecting: return "connecting"
-        case .connected: return "listening"
+        case .connected: return voiceSession.speaking ? "speaking" : "listening"
+        case .paused: return "paused"
         default: return "idle"
         }
     }
@@ -152,6 +158,7 @@ struct ContentView: View {
         case .disconnected: "-"
         case .connecting: "…"
         case .connected: "on"
+        case .paused: "paused"
         case .failed: "failed"
         }
         return "r:\(robot) v:\(voice)\(hasBakedOpenAIKey ? "" : " k:missing")"
@@ -293,15 +300,20 @@ struct ContentView: View {
         guard !starting else { return }
 
         if voiceSession.state == .connected {
-            voiceSession.disconnect()
+            // Pause, not disconnect: the conversation lives in the Realtime session, so ending it
+            // would bring Rocky back with no memory of anything said.
+            voiceSession.pause()
             starting = false
-            lastStopAt = Date()
             appendLog("voice: paused")
             return
         }
+        if voiceSession.state == .paused {
+            voiceSession.resume()
+            appendLog("voice: resumed")
+            return
+        }
 
-        // Stopping and starting are the same button, so a second tap lands moments after the
-        // first. Ignore that rather than racing the teardown it just asked for.
+        // A fresh start after a real teardown races that teardown if it lands immediately.
         if let lastStopAt, Date().timeIntervalSince(lastStopAt) < 0.75 {
             RockyLog.write("voice: ignoring a start \(Int(Date().timeIntervalSince(lastStopAt) * 1000))ms after stopping")
             return
