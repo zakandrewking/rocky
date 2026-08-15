@@ -599,9 +599,9 @@ final class RealtimeVoiceSession: ObservableObject {
 
         case "robot_gesture":
             let args = try JSONDecoder().decode(GestureArgs.self, from: data)
-            behavior?.requestGesture(args.gesture)
-            // Deliberately not "done": it is queued, and the body may never get a good moment.
-            return Self.encodeResult(["success": behavior != nil, "queued": args.gesture])
+            let times = max(1, min(10, Int(args.times ?? 1)))
+            behavior?.requestGesture(args.gesture, times: times)
+            return Self.encodeResult(["success": behavior != nil, "doing": args.gesture, "times": Double(times)])
 
         case "get_robot_state":
             return Self.encode(state: robot == nil ? nil : await robot?.state(), behavior: behavior)
@@ -713,6 +713,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private struct GestureArgs: Decodable {
         let gesture: String
+        let times: Double?
     }
 
     /// Tells Rocky, unprompted, that something just happened to his body.

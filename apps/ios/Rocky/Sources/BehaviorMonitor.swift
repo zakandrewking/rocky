@@ -315,9 +315,10 @@ final class BehaviorMonitor: ObservableObject {
         RockyLog.write("behavior: asked for mood \(mood)")
     }
 
-    func requestGesture(_ gesture: String) {
-        send(["type": "gesture", "gesture": gesture])
-        RockyLog.write("behavior: asked for gesture \(gesture)")
+    func requestGesture(_ gesture: String, times: Int = 1) {
+        let repeats = max(1, min(10, times))
+        send(["type": "gesture", "gesture": gesture, "times": repeats])
+        RockyLog.write("behavior: gesture \(gesture)\(repeats > 1 ? " x\(repeats)" : "")")
     }
 
     /// Recent history, newest first, as the model should read it: what happened and how long ago.

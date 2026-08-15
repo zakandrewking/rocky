@@ -324,6 +324,8 @@ _state = {
     "bump_suppressed_until": 0,
     "mood": "normal",
     "gesture": None,  # (name, expires_at_ticks) or None
+    "gesture_repeats": 0,  # how many more times to do it once the current one finishes
+    "gesture_name": "",
 }
 
 
@@ -343,6 +345,8 @@ MOODS = {
     "still": {"startle": 1.4, "speed": 0.0},
 }
 GESTURES = ("spin", "wiggle")
+MAX_GESTURE_REPEATS = 10  # "spin ten times" should work; beyond that it stops being playful
+GESTURE_SPIN_MS = TURN_MS * 2  # TURN_MS is the tuned ~180 degrees, so a full turn is two of them
 GESTURE_TTL_MS = 6000  # an intention the loop never got a safe moment to honour expires rather
 # than firing minutes later, long after the moment that prompted it has passed
 
@@ -378,6 +382,7 @@ def _apply_intent(message, now):
         # The one imperative. A person saying "stop" means now, and it is also the safety path.
         mbot2.drive_speed(0, 0)
         _state["gesture"] = None
+        _state["gesture_repeats"] = 0
         _state["level"] = 0.0
         _state["rpm"] = 0
         _state["drive_started"] = None
@@ -395,17 +400,29 @@ def _apply_intent(message, now):
     if kind == "gesture":
         gesture = message.get("gesture")
         if gesture in GESTURES:
-            # Queued, not performed: it waits for a seam where interrupting would not feel wrong.
+            times = message.get("times", 1)
+            try:
+                times = max(1, min(MAX_GESTURE_REPEATS, int(times)))
+            except Exception:
+                times = 1
+            # Waits for a seam where interrupting would not feel wrong. Repeats are counted down
+            # one at a time rather than run as one long movement, so "stop" can land between them.
             _state["gesture"] = (gesture, utime.ticks_add(now, GESTURE_TTL_MS))
-            _emit({"type": "ack", "t": now, "of": "gesture", "gesture": gesture})
+            _state["gesture_name"] = gesture
+            _state["gesture_repeats"] = times - 1
+            _emit({"type": "ack", "t": now, "of": "gesture", "gesture": gesture, "times": times})
         return
 
 
 def _take_gesture(now):
+    """Returns the next gesture to perform, counting down any repeats first."""
     """Consumes a queued gesture if one is still valid. Called only from listening, so reflexes
     (startle, bump, approach) always win and a gesture can never interrupt a flinch."""
     queued = _state["gesture"]
     if queued is None:
+        if _state["gesture_repeats"] > 0:
+            _state["gesture_repeats"] -= 1
+            return _state["gesture_name"]
         return None
     name, expires = queued
     _state["gesture"] = None
@@ -419,7 +436,7 @@ def _perform_gesture(gesture, now):
     """Both gestures reuse machinery the motion loop already has, rather than adding new states
     with their own untuned timings."""
     if gesture == "spin":
-        _state["turn_ms"] = TURN_MS
+        _state["turn_ms"] = GESTURE_SPIN_MS  # a whole turn, not the tuned half-turn
         _state["turn_rpm"] = TURN_RPM
         _enter("turning", now, "gesture: spin")
         _show_face("O   O", (255, 150, 0))
