@@ -314,6 +314,7 @@ _state = {
     "evt_conn": None,
     "evt_beacon": None,
     "evt_last_beacon": 0,
+    "evt_last_retry": 0,
     "evt_last_snapshot": 0,
     "evt_buffer": "",
     # Phase B/C: what the voice character has asked for. Advisory -- the motion loop decides when
@@ -431,8 +432,19 @@ def _perform_gesture(gesture, now):
 
 
 def _open_observer_sockets():
-    """Best-effort. A board that cannot open these still drives exactly as step16 does; it just
-    cannot be watched or asked for anything."""
+    """Best-effort, and retried -- see _pump_observers.
+
+    A board that cannot open these still drives exactly as step16 does; it just cannot be watched
+    or asked for anything. The retry matters because of how pushes work: bootstrap replaces the
+    payload without the old one getting a chance to close its sockets, so immediately after an OTA
+    push the previous instance may still hold this port and bind() is refused. Trying once at boot
+    meant one push could leave the board permanently unwatchable until a power cycle."""
+    try:
+        import gc
+
+        gc.collect()  # encourage the replaced payload's sockets to actually be released
+    except Exception:
+        pass
     try:
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -453,7 +465,17 @@ def _open_observer_sockets():
         _report_error_once("event_beacon_failed", error)
 
 
+OBSERVER_RETRY_MS = 3000
+
+
 def _pump_observers(now):
+    if _state["evt_server"] is None:
+        # Retry rather than give up for the life of the payload; the port is usually free again
+        # within a few seconds of a push.
+        if utime.ticks_diff(now, _state["evt_last_retry"]) >= OBSERVER_RETRY_MS:
+            _state["evt_last_retry"] = now
+            _open_observer_sockets()
+
     """One non-blocking step of beacon/accept/read per tick. Mirrors rocky_agent.py's proven
     pattern on this hardware rather than inventing another one."""
     try:
@@ -474,7 +496,7 @@ def _pump_observers(now):
 
     server = _state["evt_server"]
     if server is None:
-        return
+        return  # retried above
 
     # Always accept, even when a client is already held. A phone that goes away without closing
     # cleanly (killed by a redeploy, backgrounded, off Wi-Fi) leaves this socket looking alive for
