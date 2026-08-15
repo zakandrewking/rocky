@@ -16,6 +16,16 @@ struct RealtimeServerEvent: Decodable, Sendable {
 
     struct ResponseObject: Decodable, Sendable {
         let output: [OutputItem]?
+        /// "completed", "cancelled", "failed", "incomplete" -- anything but the first is a turn
+        /// that will never produce audio, and needs to be released rather than waited on.
+        let status: String?
+        let status_details: StatusDetails?
+
+        struct StatusDetails: Decodable, Sendable {
+            let type: String?
+            let reason: String?
+            let error: ErrorObject?
+        }
     }
 
     /// `type` is "function_call" for tool calls; other output item types (e.g. "message") also

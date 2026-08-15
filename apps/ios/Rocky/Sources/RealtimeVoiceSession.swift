@@ -386,6 +386,11 @@ final class RealtimeVoiceSession: ObservableObject {
             eridian?.playThinkingPrelude()
             // The chords are already audible, so close the mic now rather than at first audio.
             setMicrophoneOpen(false, reason: "response started")
+            // Armed here, not when the text finishes: a response that never produces any text at
+            // all would otherwise have no clock on it, and the mic would stay shut for good --
+            // which is precisely what "Rocky didn't respond" was. Every closed mic now has a
+            // deadline from the moment it closes.
+            armTurnWatchdog()
 
         // Hume path: OpenAI streams words, Hume speaks them, and the chord layer follows the
         // same text.
@@ -416,12 +421,28 @@ final class RealtimeVoiceSession: ObservableObject {
             eridian?.flushTranscript()
 
         case "response.done":
-            // With Hume, the turn ends when playback does, not when the text does. Without it,
-            // OpenAI's own audio is on the media track and this is the end of the turn.
-            if hume == nil { finishResponse(reason: "response done") }
+            let status = event.response?.status ?? "unknown"
+            if status != "completed" {
+                let detail = event.response?.status_details
+                log("response ended as \(status): \(detail?.reason ?? detail?.error?.message ?? "no reason given")")
+            }
+            // With Hume, the turn normally ends when playback does, not when the text does --
+            // unless there was no text, in which case nothing will ever play and waiting for
+            // playback would hold the microphone shut for nothing.
+            if hume == nil {
+                finishResponse(reason: "response done")
+            } else if responseText.isEmpty {
+                log("response produced no text, nothing to speak — releasing the turn")
+                finishResponse(reason: "empty response")
+            }
 
         default:
-            break
+            // Everything not explicitly handled, minus the high-frequency streaming events. Worth
+            // the noise: the turn that failed here did so by way of an event this app never
+            // mentioned, which made a 20-second silence look like nothing happening at all.
+            if !event.type.hasSuffix(".delta") && !event.type.hasSuffix(".added") {
+                log("event: \(event.type)")
+            }
         }
         for call in event.toolCalls {
             guard let name = call.name, let callId = call.call_id else { continue }

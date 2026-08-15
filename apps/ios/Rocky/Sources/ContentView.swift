@@ -63,6 +63,13 @@ struct ContentView: View {
             host = newHost
             Task { await connectRobotIfNeeded() }
         }
+        .onChange(of: discovery.isScanning) { _, scanning in
+            // Record the "nothing out there" verdict as soon as the sweep ends, rather than
+            // rediscovering it when the stone is tapped: that was 2.5 seconds of the wait before
+            // Rocky said anything, spent re-learning something already known minutes earlier.
+            guard !scanning, discovery.discoveredHost == nil, connectionState != .connected else { return }
+            reportRobotSearchOnce("no robot found — voice only")
+        }
     }
 
     // MARK: - The one control
