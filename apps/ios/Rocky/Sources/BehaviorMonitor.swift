@@ -40,12 +40,15 @@ final class BehaviorMonitor: ObservableObject {
     var onNotableEvent: ((BehaviorEvent) -> Void)?
 
     private let beaconPort: NWEndpoint.Port
+    private let eventPort: NWEndpoint.Port
     private var listener: NWListener?
     private var connection: NWConnection?
+    private var scanTask: Task<Void, Never>?
     private var buffer = ""
 
-    init(beaconPort: UInt16 = 41900) {
+    init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768) {
         self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
+        self.eventPort = NWEndpoint.Port(rawValue: eventPort) ?? 8768
     }
 
     // MARK: - Finding the robot
@@ -61,11 +64,18 @@ final class BehaviorMonitor: ObservableObject {
         listener.start(queue: .main)
         self.listener = listener
         RockyLog.write("behavior: listening for the robot's beacon")
+
+        // The beacon is only a fast path, and on this hardware it has never actually arrived --
+        // every session's log shows the motion agent's beacon timing out and the robot being
+        // found by sweeping instead. So the sweep is the real mechanism here, not the fallback.
+        scanTask = Task { [weak self] in await self?.scanForRobot() }
     }
 
     func stop() {
         listener?.cancel()
         listener = nil
+        scanTask?.cancel()
+        scanTask = nil
         connection?.cancel()
         connection = nil
         connected = false
@@ -100,6 +110,75 @@ final class BehaviorMonitor: ObservableObject {
         guard found != host || connection == nil else { return }
         host = found
         connect(to: found, port: beacon.tcpPort)
+    }
+
+    /// Sweeps this phone's own /24 for something answering on the event port, the same way the
+    /// motion agent is found. Stops as soon as it is connected.
+    private func scanForRobot() async {
+        guard let prefix = NetworkUtilities.localSubnetPrefix() else { return }
+        RockyLog.write("behavior: sweeping \(prefix)0/24 for port \(eventPort.rawValue)")
+
+        var candidates = Array(1...254)
+        // Overwhelmingly the same board as last time on a home network.
+        if let saved = UserDefaults.standard.string(forKey: "behaviorHost"),
+            saved.hasPrefix(prefix), let last = Int(saved.split(separator: ".").last.map(String.init) ?? ""),
+            let index = candidates.firstIndex(of: last) {
+            candidates.remove(at: index)
+            candidates.insert(last, at: 0)
+        }
+
+        let port = eventPort
+        for batchStart in stride(from: 0, to: candidates.count, by: 32) {
+            if Task.isCancelled || connection != nil { return }
+            let batch = candidates[batchStart..<min(batchStart + 32, candidates.count)]
+            let hit = await withTaskGroup(of: String?.self) { group in
+                for octet in batch {
+                    group.addTask { await Self.probe(host: "\(prefix)\(octet)", port: port) }
+                }
+                var winner: String?
+                for await result in group where result != nil {
+                    if winner == nil { winner = result; group.cancelAll() }
+                }
+                return winner
+            }
+            if let hit {
+                RockyLog.write("behavior: found the robot at \(hit)")
+                UserDefaults.standard.set(hit, forKey: "behaviorHost")
+                host = hit
+                connect(to: hit, port: Int(port.rawValue))
+                return
+            }
+        }
+        RockyLog.write("behavior: sweep finished, no autonomous robot out there")
+    }
+
+    private static func probe(host: String, port: NWEndpoint.Port) async -> String? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            let probe = NWConnection(host: NWEndpoint.Host(host), port: port, using: .tcp)
+            nonisolated(unsafe) var settled = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                guard !settled else { return }
+                settled = true
+                probe.cancel()
+                continuation.resume(returning: nil)
+            }
+            probe.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    guard !settled else { return }
+                    settled = true
+                    probe.cancel()
+                    continuation.resume(returning: host)
+                case .failed, .cancelled:
+                    guard !settled else { return }
+                    settled = true
+                    continuation.resume(returning: nil)
+                default:
+                    break
+                }
+            }
+            probe.start(queue: .main)
+        }
     }
 
     private func connect(to host: String, port: Int) {

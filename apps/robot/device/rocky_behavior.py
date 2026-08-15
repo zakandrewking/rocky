@@ -466,8 +466,11 @@ def _pump_observers(now):
                 ujson.dumps({"service": EVENT_SERVICE, "tcpPort": EVENT_PORT}).encode(),
                 ("255.255.255.255", EVENT_BEACON_PORT),
             )
-    except Exception:
-        pass
+    except Exception as error:
+        # Surfaced, not swallowed. A silent except here is what made this look like "the phone
+        # cannot find the robot" when the board was simply never sending -- and this project has
+        # already learned that lesson once, on the bump sensor.
+        _report_error_once("beacon_failed", error)
 
     server = _state["evt_server"]
     if server is None:
