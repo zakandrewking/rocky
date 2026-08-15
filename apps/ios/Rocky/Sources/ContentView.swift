@@ -1,12 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// One screen: connect to the robot's motion server, then talk. The app mints its own ephemeral
-/// OpenAI secret directly (OpenAIRealtimeMinter, real key baked in at build time -- see
-/// apps/ios/README.md's threat-model note on why this is a personal-device-only choice), so
-/// there's no laptop server step at all. Real conversation via OpenAI Realtime replaced the
-/// earlier fixed five-word vocabulary entirely -- see RealtimeVoiceSession for the tool-calling
-/// that actually drives the robot now.
+/// One screen, matching apps/desktop's minimalism: a single circular control that starts/stops
+/// talking to Rocky, plus a tappable detail row that expands into status, warnings, and the log --
+/// mirroring desktop's orb button + debug chip. The robot connection itself has no manual control
+/// at all anymore (no IP field, no Connect/Cancel/Disconnect) -- it's purely automatic, driven by
+/// RobotDiscovery's beacon/scan, exactly like device-api's connection is invisible on desktop.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
     @StateObject private var discovery = RobotDiscovery()
@@ -15,93 +14,41 @@ struct ContentView: View {
     @State private var connectionState = ConnectionState.disconnected
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
-    @State private var connectTask: Task<Void, Never>?
-    @State private var pendingController: RobotController?
+    @State private var detailsOpen = false
 
     enum ConnectionState: Equatable {
         case disconnected, connecting, connected, failed(String)
     }
 
+    private enum OrbPhase {
+        case findingRobot, robotFailed, ready, connectingVoice, talking, voiceFailed
+    }
+
     var body: some View {
-        VStack(spacing: 20) {
-            Text("Rocky").font(.largeTitle.bold())
-
-            instructions
-
-            statusBadge
-
-            HStack {
-                TextField("robot IP address", text: $host)
-                    .textFieldStyle(.roundedBorder)
-                    .autocorrectionDisabled()
-                    #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                    .keyboardType(.decimalPad)
-                    #endif
-                if connectionState == .connecting {
-                    Button("Cancel") { cancelConnecting() }
-                } else {
-                    Button(connectionState == .connected ? "Disconnect" : "Connect") {
-                        Task { await toggleConnection() }
-                    }
-                    .disabled(host.isEmpty)
-                }
-            }
-
-            if let discovered = discovery.discoveredHost, discovered != host {
-                Button("Found robot at \(discovered) — use it") { host = discovered }
-                    .font(.caption)
-            } else if discovery.isScanning {
-                // The beacon (fast, passive) gets a few seconds before this active TCP scan
-                // kicks in as a fallback -- worth surfacing, since a network scan taking a
-                // couple of seconds shouldn't look like nothing is happening.
-                Text("Scanning network for robot…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if !hasBakedOpenAIKey {
-                Text("No OpenAI key baked into this build — run apps/ios/scripts/generate.sh with OPENAI_API_KEY set, then rebuild")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-
-            Button(voiceButtonLabel) {
-                Task { await toggleVoiceSession() }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!canTalk)
-
-            if case .failed(let message) = voiceSession.state {
-                Text("voice: \(message)").font(.caption).foregroundStyle(.red)
-            }
-            if let toolCall = voiceSession.lastToolCall {
-                Text("last action: \(toolCall)").font(.footnote).foregroundStyle(.secondary)
-            }
-
-            Button("Push Payload to CyberPi…") { showPayloadPicker = true }
-                .disabled(host.isEmpty)
-                .fileImporter(isPresented: $showPayloadPicker, allowedContentTypes: [.item]) { result in
-                    Task { await handlePayloadPicked(result) }
-                }
-
-            List(log.reversed(), id: \.self) { line in
-                Text(line).font(.caption.monospaced())
-            }
-            .listStyle(.plain)
+        VStack(spacing: 28) {
+            Spacer()
+            orb
+            Spacer()
+            detailArea
         }
         .padding()
         .onAppear {
             discovery.start()
+            // The one path that used to be a manual "Connect" button tap, now automatic: retry
+            // with whatever host we last connected to successfully, same address the field used
+            // to be pre-filled with.
+            if !host.isEmpty, connectionState == .disconnected {
+                Task { await connectRobotIfNeeded() }
+            }
         }
         .onChange(of: discovery.discoveredHost) { _, newHost in
-            // Auto-connect, not just auto-fill: the point of discovery is not having to do
-            // anything by hand. Only when the host field was genuinely empty (no manually-typed
-            // address to respect) and nothing's already connecting/connected -- a fresh beacon
-            // arriving mid-session shouldn't yank an existing session out from under the user.
-            guard let newHost, host.isEmpty, connectionState == .disconnected else { return }
+            // No manual fallback left, so this has to actually finish the job: connect whenever
+            // discovery finds a *different* address than whatever we're using, as long as nothing
+            // is already connected/connecting -- covers both "never connected yet" and "the
+            // on-appear retry above hit a stale IP."
+            guard let newHost, newHost != host, connectionState != .connected, connectionState != .connecting else { return }
             host = newHost
-            Task { await toggleConnection() }
+            Task { await connectRobotIfNeeded() }
         }
     }
 
@@ -109,85 +56,135 @@ struct ContentView: View {
         !((Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String) ?? "").isEmpty
     }
 
-    private var canTalk: Bool {
-        guard connectionState == .connected, hasBakedOpenAIKey else { return false }
-        return voiceSession.state != .connecting
+    private var orbPhase: OrbPhase {
+        if case .failed = voiceSession.state { return .voiceFailed }
+        if voiceSession.state == .connecting { return .connectingVoice }
+        if voiceSession.state == .connected { return .talking }
+        if case .failed = connectionState { return .robotFailed }
+        if connectionState != .connected { return .findingRobot }
+        return .ready
     }
 
-    private var voiceButtonLabel: String {
-        switch voiceSession.state {
-        case .disconnected, .failed: return "Talk to Rocky"
-        case .connecting: return "Connecting…"
-        case .connected: return "End Conversation"
+    private var orbLabel: String {
+        switch orbPhase {
+        case .findingRobot: return "Finding\nRobot…"
+        case .robotFailed: return "Robot Not\nFound"
+        case .ready: return "Talk to\nRocky"
+        case .connectingVoice: return "Connecting…"
+        case .talking: return "Listening…"
+        case .voiceFailed: return "Voice Failed\nTap to Retry"
         }
     }
 
-    private var instructions: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("1. Connect to the robot below (auto-fills if found on Wi-Fi)")
-            Text("2. Tap Talk to Rocky and just talk — ask her to look around, drive, or stop")
+    private var orbColor: Color {
+        switch orbPhase {
+        case .findingRobot: return .gray
+        case .robotFailed, .voiceFailed: return .red
+        case .ready: return .blue
+        case .connectingVoice: return .yellow
+        case .talking: return .green
         }
-        .font(.caption)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var statusBadge: some View {
-        let (text, color): (String, Color) = switch connectionState {
-        case .disconnected: ("not connected", .gray)
-        case .connecting: ("connecting…", .yellow)
-        case .connected: ("connected", .green)
-        case .failed(let message): ("failed: \(message)", .red)
+    private var orbTappable: Bool {
+        switch orbPhase {
+        case .ready, .talking, .voiceFailed: return hasBakedOpenAIKey
+        case .findingRobot, .robotFailed, .connectingVoice: return false
         }
-        return Text(text).font(.caption).foregroundStyle(color)
     }
 
-    private func toggleConnection() async {
-        if connectionState == .connected {
-            voiceSession.disconnect()
-            await controller?.disconnect()
-            controller = nil
-            connectionState = .disconnected
-            return
+    private var orb: some View {
+        Button {
+            Task { await toggleVoiceSession() }
+        } label: {
+            Circle()
+                .fill(orbColor.opacity(0.85))
+                .frame(width: 190, height: 190)
+                .overlay {
+                    Text(orbLabel)
+                        .multilineTextAlignment(.center)
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                }
         }
+        .buttonStyle(.plain)
+        .disabled(!orbTappable)
+        .opacity(orbTappable || orbPhase == .connectingVoice ? 1 : 0.5)
+    }
 
+    private var detailSummary: String {
+        var parts: [String] = []
+        switch connectionState {
+        case .disconnected: parts.append(discovery.isScanning ? "scanning for robot" : "robot: not connected")
+        case .connecting: parts.append("robot: connecting")
+        case .connected: parts.append("robot: \(host)")
+        case .failed(let message): parts.append("robot failed: \(message)")
+        }
+        if !hasBakedOpenAIKey { parts.append("no OpenAI key baked in") }
+        return parts.joined(separator: " · ")
+    }
+
+    private var detailArea: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(detailSummary).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                Image(systemName: detailsOpen ? "chevron.up" : "chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { detailsOpen.toggle() }
+
+            if detailsOpen {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Connects to the robot on Wi-Fi automatically. Tap the circle to talk — ask Rocky to look around, drive, or stop.")
+                        .font(.caption)
+
+                    if !hasBakedOpenAIKey {
+                        Text("Run apps/ios/scripts/generate.sh with OPENAI_API_KEY set, then rebuild.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    if let toolCall = voiceSession.lastToolCall {
+                        Text("last action: \(toolCall)").font(.caption).foregroundStyle(.secondary)
+                    }
+
+                    Button("Push Payload to CyberPi…") { showPayloadPicker = true }
+                        .font(.caption)
+                        .disabled(host.isEmpty)
+                        .fileImporter(isPresented: $showPayloadPicker, allowedContentTypes: [.item]) { result in
+                            Task { await handlePayloadPicked(result) }
+                        }
+
+                    Divider()
+
+                    List(log.reversed(), id: \.self) { line in
+                        Text(line).font(.caption2.monospaced())
+                    }
+                    .listStyle(.plain)
+                    .frame(minHeight: 160)
+                }
+            }
+        }
+    }
+
+    /// The only path into a robot connection now -- called on launch (last-known host) and
+    /// whenever RobotDiscovery finds a new address. No user-facing trigger or cancel.
+    private func connectRobotIfNeeded() async {
+        guard !host.isEmpty, connectionState != .connected, connectionState != .connecting else { return }
         UserDefaults.standard.set(host, forKey: "robotHost")
         connectionState = .connecting
         let newController = RobotController(host: host)
-        pendingController = newController
-
-        // A plain `try await` here is exactly what got stuck on a real device: RobotTCPTransport
-        // now times out on its own (see connect(timeout:)), but wrapping the attempt in a
-        // cancellable Task also lets the Cancel button above abort immediately instead of
-        // waiting out that timeout.
-        let task = Task {
-            do {
-                try await newController.connect()
-                guard !Task.isCancelled else {
-                    await newController.disconnect()
-                    return
-                }
-                controller = newController
-                pendingController = nil
-                connectionState = .connected
-                appendLog("connected to \(host)")
-            } catch {
-                guard !Task.isCancelled else { return }
-                pendingController = nil
-                connectionState = .failed(error.localizedDescription)
-                appendLog("connect failed: \(error.localizedDescription)")
-            }
+        do {
+            try await newController.connect()
+            controller = newController
+            connectionState = .connected
+            appendLog("connected to \(host)")
+        } catch {
+            connectionState = .failed(error.localizedDescription)
+            appendLog("connect failed: \(error.localizedDescription)")
         }
-        connectTask = task
-        await task.value
-    }
-
-    private func cancelConnecting() {
-        connectTask?.cancel()
-        connectTask = nil
-        Task { await pendingController?.disconnect() }
-        pendingController = nil
-        connectionState = .disconnected
-        appendLog("connect cancelled")
     }
 
     private func toggleVoiceSession() async {

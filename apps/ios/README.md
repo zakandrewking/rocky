@@ -64,8 +64,17 @@ generate` directly) reads `OPENAI_API_KEY` out of the repo root `.env` and bakes
 built app's Info.plist (`RockyOpenAIKey`) via XcodeGen's environment-variable expansion, and
 regenerates `RealtimeSessionConfig.json` from `services/device-api/src/session.ts` so the robot's
 persona and tool list stay defined in exactly one place. Nothing is typed on the phone; nothing
-is committed. The robot's own IP is still auto-discovered the same way (`RobotDiscovery.swift`);
-a manual IP field remains as a fallback if that doesn't find anything.
+is committed. The robot's own IP is auto-discovered too (`RobotDiscovery.swift`) — there is no
+manual IP field or connect/disconnect control at all; the robot connection is invisible
+infrastructure the same way it is on desktop.
+
+### UI
+
+One screen, deliberately as minimal as `apps/desktop`'s: a single circular button (`orb` in
+`ContentView.swift`) that starts and stops talking to Rocky — no other controls on the main
+screen. A tappable status row below it expands into a detail area (mirroring desktop's debug
+chip) with connection status, warnings, the last tool call, the CyberPi payload-push button, and
+the scrolling log.
 
 `Rocky.xcodeproj` and `Generated/` are gitignored — generated output, not source. Regenerate any
 time `project.yml` or the file layout changes:
