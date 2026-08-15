@@ -10,6 +10,10 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
     @StateObject private var discovery = RobotDiscovery()
+    /// The board's own autonomous behaviour, when that is the payload running on it. Separate
+    /// from RobotDiscovery on purpose: only one payload runs at a time, so a robot that is moving
+    /// by itself is exactly a robot with no motion server to command.
+    @StateObject private var behavior = BehaviorMonitor()
     @State private var controller: RobotController?
     @State private var host = UserDefaults.standard.string(forKey: "robotHost") ?? ""
     @State private var connectionState = ConnectionState.disconnected
@@ -51,6 +55,7 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .onAppear {
             discovery.start()
+            behavior.start()
             // The one path that used to be a manual "Connect" button tap, now automatic: retry
             // with whatever host we last connected to successfully.
             if !host.isEmpty, connectionState == .disconnected {
@@ -161,7 +166,8 @@ struct ContentView: View {
         case .paused: "paused"
         case .failed: "failed"
         }
-        return "r:\(robot) v:\(voice)\(hasBakedOpenAIKey ? "" : " k:missing")"
+        let body = behavior.connected ? " b:\(behavior.mode)" : ""
+        return "r:\(robot) v:\(voice)\(body)\(hasBakedOpenAIKey ? "" : " k:missing")"
     }
 
     private var stateChip: some View {
@@ -328,7 +334,7 @@ struct ContentView: View {
         appendLog("voice: connecting…")
         // A nil controller is fine and expected when no robot answered -- Rocky is then exactly
         // the desktop app: a full conversation, just without a body to drive.
-        await voiceSession.connect(robot: controller)
+        await voiceSession.connect(robot: controller, behavior: behavior)
         if case .failed(let message) = voiceSession.state {
             appendLog("voice: connect failed: \(message)")
         } else {

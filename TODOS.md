@@ -183,3 +183,37 @@ crashing.**
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime
   voice conversation, without crashing. Run repeatedly; tune thresholds against what actually
   happens on hardware, not what was assumed in the plan.
+
+## Behaviour + voice collaboration (a thin slice of all four phases now exists)
+
+`apps/robot/device/rocky_behavior.py` is step16's autonomous loop plus an observation/intention
+layer. Its tuning is byte-identical to `steps/step16_loudness_drive_sticky.py`, which stays as the
+tuning record and the rollback; `pnpm robot:check` fails if they drift.
+
+The shape, and why: the motion loop decides at ~20Hz with reactions lasting 0.3-4s, while the
+voice character cannot speak in under ~2s. So state travels as *recent history* ("4s ago something
+loud startled me") and control travels as *intentions* honoured at the loop's natural seams --
+never as "what are you doing right now" and "do this now". Stop is the one real imperative.
+
+- [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
+  stream on 8768, UDP beacon under a different service name so the motion-agent discovery ignores
+  it.
+- [x] B: mood as multipliers over the tuned constants at their point of use, never rewriting them.
+- [x] C: queued gestures (spin, wiggle) with a TTL, consumed only in `listening` so a reflex can
+  never be interrupted by an intention.
+- [x] D: proactive narration of startle/bump, rate-limited and suppressed while already speaking.
+- [ ] **Test the slice on hardware** — none of the above has run on a real board yet. See the
+  test plan in the commit that added it.
+- [ ] Measure tick rate before/after the observation layer. This loop's sampling *is* its pipeline
+  (one `get_loudness()` per tick, no smoothing, startle is an edge trigger), so anything that slows
+  the tick degrades startle detection without changing a single constant.
+- [ ] Extend `SELF_NOISE` past 60 RPM with a fresh calibration run. It only covers 0-60, and
+  `_sensed_level` correctly refuses to guess above that -- but every reaction state now runs above
+  60 since `MAX_RPM` became 150, so escalate-while-moving is inert in most states today. This is
+  the single highest-value missing measurement.
+- [ ] Reseed the loudness floor on demand. It is seeded once at boot and never again; with a
+  long-lived board the "re-push to reseed" escape hatch stops being acceptable. Only ever from
+  `listening`, motors confirmed off, and only ever taking `min()` -- raising a floor from an
+  unconfirmed-quiet sample is what caused the v6 regression.
+- [ ] Decide whether the motion agent and the behaviour loop should ever coexist. Today they are
+  separate payloads and only one runs, which is why "watching" is its own body capability.

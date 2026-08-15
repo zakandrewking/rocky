@@ -30,6 +30,24 @@ YOUR BODY — PRIVATE DEVICE CONTEXT
   whether you are mid-move, what you last did and whether it worked, and the last distance you
   measured. You do not otherwise remember any of that between actions, so check it rather than
   guessing -- especially before moving again, or if someone asks what you have been doing.
+
+YOUR BODY ALSO MOVES BY ITSELF
+- Your body listens to the room on its own and reacts without asking you first. It rolls toward
+  sounds, louder sounds move it faster and further; something very loud and sudden makes it
+  flinch and back away; something touching it makes it spin; after a fright it looks around
+  before settling. When nothing is happening it sits still and listens.
+- These reactions are fast -- often over in a second or two. get_robot_state tells you what your
+  body has recently done and how long ago, so by the time you mention something it has usually
+  already finished. Talk about it in the past tense: you are describing what just happened to
+  you, not narrating a live feed.
+- You can influence it, not drive it. set_robot_mood changes how jumpy or how still your body is.
+  robot_gesture asks for a small movement at its next natural moment. Both are requests your body
+  fits in when it can. stop_robot is the exception: that one stops it at once, and is what to use
+  if someone sounds worried or says stop.
+- Never say these words aloud: listening, driving, turning, startled, dizzy, recovering, mood,
+  gesture, state. They are the names in your own head. Say what actually happened to you, in your
+  own way of speaking -- being startled by a shout is something you *felt*, not a state you were
+  in.
 - Everything you say is heard aloud, never read. Never describe what is on the screen, never spell
   things out, and never read punctuation or lists.
 - Keep replies shorter than usual. A small speaker in a room full of people rewards brevity.
@@ -142,6 +160,36 @@ const GET_STATE_TOOL = {
   parameters: { type: "object", additionalProperties: false, properties: {} },
 } as const;
 
+const SET_MOOD_TOOL = {
+  type: "function",
+  name: "set_robot_mood",
+  description:
+    "Change how your body behaves on its own: 'calm' (harder to startle, moves slower), 'normal', 'excitable' (startles easily), or 'still' (keeps listening but stops driving itself around). Use it when someone asks you to settle down or liven up, or when the mood of the room changes. It takes effect gradually, not instantly.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      mood: { type: "string", enum: ["calm", "normal", "excitable", "still"] },
+    },
+    required: ["mood"],
+  },
+} as const;
+
+const GESTURE_TOOL = {
+  type: "function",
+  name: "robot_gesture",
+  description:
+    "Ask your body to do a little movement when it next gets a natural moment: 'spin' (turn all the way around) or 'wiggle' (a quick look side to side). This is a request, not a command -- if your body is busy reacting to something it will finish that first, and if it never gets a good moment the request is quietly dropped. Do not use it to escape danger; use stop_robot for that.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      gesture: { type: "string", enum: ["spin", "wiggle"] },
+    },
+    required: ["gesture"],
+  },
+} as const;
+
 export interface DeviceSessionOptions {
   readonly model?: string;
   /** Overrides the character's own voice. Ignored when the character speaks through Hume. */
@@ -184,7 +232,17 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       },
       output: { voice },
     },
-    tools: [DRIVE_TOOL, TURN_TOOL, STOP_TOOL, READ_DISTANCE_TOOL, SET_FACE_TOOL, SET_LIGHTS_TOOL, GET_STATE_TOOL],
+    tools: [
+      DRIVE_TOOL,
+      TURN_TOOL,
+      STOP_TOOL,
+      READ_DISTANCE_TOOL,
+      SET_FACE_TOOL,
+      SET_LIGHTS_TOOL,
+      GET_STATE_TOOL,
+      SET_MOOD_TOOL,
+      GESTURE_TOOL,
+    ],
     tool_choice: "auto",
   };
 }

@@ -70,7 +70,13 @@ final class RealtimeSessionConfigTests: XCTestCase {
         XCTAssertTrue(instructions.contains("Never tell a child to smell"))
 
         let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
-        XCTAssertEqual(names, ["drive_cm", "rotate_degrees", "stop_robot", "read_distance", "set_face", "set_lights", "get_robot_state"])
+        XCTAssertEqual(
+            names,
+            [
+                "drive_cm", "rotate_degrees", "stop_robot", "read_distance", "set_face",
+                "set_lights", "get_robot_state", "set_robot_mood", "robot_gesture",
+            ]
+        )
 
         // Whether the model speaks or only writes is the character's choice, and the app reads it
         // back from here to decide whether to run a synthesiser at all.

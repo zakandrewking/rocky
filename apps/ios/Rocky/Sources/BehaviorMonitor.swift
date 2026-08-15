@@ -1,0 +1,224 @@
+import Foundation
+import Network
+
+/// One thing the robot did, as history rather than status.
+struct BehaviorEvent: Sendable, Equatable {
+    let mode: String
+    let detail: String
+    let at: Date
+
+    var secondsAgo: Double { Date().timeIntervalSince(at) }
+}
+
+/// Watches the robot's autonomous behaviour (apps/robot/device/rocky_behavior.py) and passes the
+/// voice character's intentions back to it.
+///
+/// The two loops run on incompatible clocks, and that shapes this whole class. The motion loop
+/// decides at ~20Hz and its reactions last 0.3-4 seconds; the voice character cannot produce a
+/// spoken word in under about two seconds. So "what are you doing right now" is a stale question
+/// by the time anyone answers it, and this deliberately keeps *history* instead: by the time
+/// Rocky says "something loud scared me and I ran", the running is over, and that sentence is
+/// still true. Ages travel with every event so he can say it in the right tense.
+///
+/// The same asymmetry runs the other way: what goes back is intentions, not commands. The board
+/// decides when to honour them.
+@MainActor
+final class BehaviorMonitor: ObservableObject {
+    /// How much history to keep. Long enough to describe "the last little while", short enough
+    /// that nothing stale gets narrated as news.
+    private static let historyWindow: TimeInterval = 90
+    private static let maxEvents = 40
+
+    @Published private(set) var host: String?
+    @Published private(set) var connected = false
+    @Published private(set) var mode = "unknown"
+    @Published private(set) var mood = "normal"
+    @Published private(set) var events: [BehaviorEvent] = []
+
+    /// Fired for the reactions worth interrupting a conversation over -- being startled or
+    /// bumped, not every routine drive.
+    var onNotableEvent: ((BehaviorEvent) -> Void)?
+
+    private let beaconPort: NWEndpoint.Port
+    private var listener: NWListener?
+    private var connection: NWConnection?
+    private var buffer = ""
+
+    init(beaconPort: UInt16 = 41900) {
+        self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
+    }
+
+    // MARK: - Finding the robot
+
+    func start() {
+        guard listener == nil else { return }
+        let params = NWParameters.udp
+        params.allowLocalEndpointReuse = true
+        guard let listener = try? NWListener(using: params, on: beaconPort) else { return }
+        listener.newConnectionHandler = { [weak self] incoming in
+            Task { @MainActor in self?.readBeacon(incoming) }
+        }
+        listener.start(queue: .main)
+        self.listener = listener
+        RockyLog.write("behavior: listening for the robot's beacon")
+    }
+
+    func stop() {
+        listener?.cancel()
+        listener = nil
+        connection?.cancel()
+        connection = nil
+        connected = false
+    }
+
+    private struct Beacon: Decodable {
+        let service: String
+        let tcpPort: Int
+    }
+
+    private func readBeacon(_ incoming: NWConnection) {
+        incoming.stateUpdateHandler = { [weak self] state in
+            guard case .ready = state else { return }
+            incoming.receiveMessage { data, _, _, _ in
+                if let data {
+                    Task { @MainActor in self?.handleBeacon(data, from: incoming.endpoint) }
+                }
+                incoming.cancel()
+            }
+        }
+        incoming.start(queue: .main)
+    }
+
+    private func handleBeacon(_ data: Data, from endpoint: NWEndpoint) {
+        // A different service name from the motion agent's, so the app's existing robot discovery
+        // ignores this board rather than trying to drive a motion server that isn't running.
+        guard let beacon = try? JSONDecoder().decode(Beacon.self, from: data),
+            beacon.service == "rocky-behavior",
+            case let .hostPort(sender, _) = endpoint, case let .ipv4(address) = sender
+        else { return }
+        let found = "\(address)"
+        guard found != host || connection == nil else { return }
+        host = found
+        connect(to: found, port: beacon.tcpPort)
+    }
+
+    private func connect(to host: String, port: Int) {
+        connection?.cancel()
+        guard let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else { return }
+        let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
+        self.connection = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor in
+                switch state {
+                case .ready:
+                    self?.connected = true
+                    RockyLog.write("behavior: watching the robot at \(host):\(port)")
+                    self?.receive()
+                case .failed, .cancelled:
+                    self?.connected = false
+                default:
+                    break
+                }
+            }
+        }
+        connection.start(queue: .main)
+    }
+
+    private func receive() {
+        connection?.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let data, !data.isEmpty { self.ingest(data) }
+                if isComplete || error != nil {
+                    self.connected = false
+                    self.connection?.cancel()
+                    self.connection = nil
+                    return
+                }
+                self.receive()
+            }
+        }
+    }
+
+    // MARK: - What the robot says
+
+    private func ingest(_ data: Data) {
+        buffer += String(decoding: data, as: UTF8.self)
+        while let newline = buffer.firstIndex(of: "\n") {
+            let line = String(buffer[buffer.startIndex..<newline])
+            buffer = String(buffer[buffer.index(after: newline)...])
+            guard let payload = line.data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any]
+            else { continue }
+            handle(object)
+        }
+    }
+
+    private func handle(_ message: [String: Any]) {
+        switch message["type"] as? String {
+        case "event":
+            let event = BehaviorEvent(
+                mode: message["mode"] as? String ?? "?",
+                detail: message["detail"] as? String ?? "",
+                at: Date()
+            )
+            mode = event.mode
+            append(event)
+        case "snapshot":
+            mode = message["mode"] as? String ?? mode
+            mood = message["mood"] as? String ?? mood
+        case "hello":
+            mode = message["mode"] as? String ?? mode
+            mood = message["mood"] as? String ?? mood
+            RockyLog.write("behavior: robot says hello (mode \(mode), mood \(mood))")
+        default:
+            break
+        }
+    }
+
+    private func append(_ event: BehaviorEvent) {
+        events.append(event)
+        events.removeAll { $0.secondsAgo > Self.historyWindow }
+        if events.count > Self.maxEvents { events.removeFirst(events.count - Self.maxEvents) }
+        RockyLog.write("behavior: \(event.mode)\(event.detail.isEmpty ? "" : " (\(event.detail))")")
+        // Only reactions worth interrupting a conversation over. Narrating every routine drive
+        // would make Rocky a sports commentator.
+        if event.mode == "startled" || event.mode == "dizzy" {
+            onNotableEvent?(event)
+        }
+    }
+
+    // MARK: - What the character would like
+
+    private func send(_ message: [String: Any]) {
+        guard connected, let connection,
+            let data = try? JSONSerialization.data(withJSONObject: message)
+        else { return }
+        connection.send(content: data + Data("\n".utf8), completion: .idempotent)
+    }
+
+    /// Immediate, unlike everything else here: a person saying "stop" means now.
+    func stopMoving() {
+        send(["type": "stop"])
+        RockyLog.write("behavior: asked the robot to stop")
+    }
+
+    func setMood(_ mood: String) {
+        send(["type": "mood", "mood": mood])
+        RockyLog.write("behavior: asked for mood \(mood)")
+    }
+
+    func requestGesture(_ gesture: String) {
+        send(["type": "gesture", "gesture": gesture])
+        RockyLog.write("behavior: asked for gesture \(gesture)")
+    }
+
+    /// Recent history, newest first, as the model should read it: what happened and how long ago.
+    func recentHistory(limit: Int = 8) -> [[String: Any]] {
+        events.suffix(limit).reversed().map { event in
+            var entry: [String: Any] = ["what": event.mode, "secondsAgo": event.secondsAgo.rounded()]
+            if !event.detail.isEmpty { entry["detail"] = event.detail }
+            return entry
+        }
+    }
+}

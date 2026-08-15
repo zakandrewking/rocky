@@ -48,6 +48,13 @@ final class RealtimeVoiceSession: ObservableObject {
     /// The quiet alien chatter under her voice.
     private var eridian: EridianAudio?
 
+    /// The robot's own autonomous behaviour, when it is the payload running on the board.
+    private var behavior: BehaviorMonitor?
+    /// Notable reactions are worth interrupting a conversation over, but not every one of them --
+    /// a robot that gets bumped repeatedly would otherwise talk over itself indefinitely.
+    private var lastNarratedAt: Date?
+    private static let narrationCooldown: TimeInterval = 20
+
     // MARK: - Turn timing and recovery
     //
     // Every leg of a turn is timed and logged, because "it was slow" and "it never answered" are
@@ -87,7 +94,11 @@ final class RealtimeVoiceSession: ObservableObject {
     /// `robot` is nil when none was found on the network. That is a supported, ordinary state --
     /// the app is then exactly what apps/desktop is, a voice-only Rocky -- so the movement tools
     /// are dropped from the session rather than left to fail (see OpenAIRealtimeMinter).
-    func connect(robot: RobotController?) async {
+    func connect(robot: RobotController?, behavior: BehaviorMonitor? = nil) async {
+        self.behavior = behavior
+        behavior?.onNotableEvent = { [weak self] event in
+            Task { @MainActor in self?.narrate(event) }
+        }
         guard state == .disconnected || isFailed else { return }
         self.robot = robot
         state = .connecting
@@ -104,9 +115,11 @@ final class RealtimeVoiceSession: ObservableObject {
         do {
             try await AudioSessionManager.configureForVoice()
             startLocalAudio()
-            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasRobot: robot != nil)
+            let body: OpenAIRealtimeMinter.Body =
+                robot != nil ? .driving : (behavior?.connected == true ? .watching : .none)
+            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(body: body)
             log(
-                "minted secret in \(Self.ms(since: connectStart)) (robot: \(robot == nil ? "no" : "yes"), voice: \(hume == nil ? "openai" : "hume"))"
+                "minted secret in \(Self.ms(since: connectStart)) (body: \(body), voice: \(hume == nil ? "openai" : "hume"))"
             )
             let negotiateStart = Date()
 
@@ -574,8 +587,34 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     private func execute(name: String, argumentsJSON: String) async throws -> String {
-        guard let robot else { throw RobotError.disconnected }
         let data = Data(argumentsJSON.utf8)
+
+        // Handled first, and without a RobotController: these reach the board's own behaviour
+        // loop, which is running precisely when there is no motion server to hold.
+        switch name {
+        case "set_robot_mood":
+            let args = try JSONDecoder().decode(MoodArgs.self, from: data)
+            behavior?.setMood(args.mood)
+            return Self.encodeResult(["success": behavior != nil, "mood": args.mood])
+
+        case "robot_gesture":
+            let args = try JSONDecoder().decode(GestureArgs.self, from: data)
+            behavior?.requestGesture(args.gesture)
+            // Deliberately not "done": it is queued, and the body may never get a good moment.
+            return Self.encodeResult(["success": behavior != nil, "queued": args.gesture])
+
+        case "get_robot_state":
+            return Self.encode(state: robot == nil ? nil : await robot?.state(), behavior: behavior)
+
+        case "stop_robot" where robot == nil:
+            behavior?.stopMoving()
+            return Self.encodeResult(["success": behavior != nil])
+
+        default:
+            break
+        }
+
+        guard let robot else { throw RobotError.disconnected }
 
         switch name {
         case "drive_cm":
@@ -609,31 +648,47 @@ final class RealtimeVoiceSession: ObservableObject {
             try await robot.setLights(red: args.red, green: args.green, blue: args.blue)
             return Self.encodeResult(["success": true])
 
-        case "get_robot_state":
-            return Self.encode(state: await robot.state())
-
         default:
             return Self.encodeResult(["success": false, "error": "unknown tool \(name)"])
         }
     }
 
-    /// Ages are rounded to whole seconds and omitted when there is nothing to report: "I measured
-    /// 20cm" means something very different four seconds later than four minutes later, and an
-    /// absent field reads more honestly to the model than a zero would.
-    private static func encode(state: RobotState) -> String {
-        var fields: [String: Any] = [
-            "success": true,
-            "connected": state.connected,
-            "address": state.address,
-            "busy": state.busy,
-        ]
-        if let face = state.face { fields["face"] = face.rawValue }
-        if let action = state.lastAction { fields["lastAction"] = action }
-        if let result = state.lastActionResult { fields["lastActionResult"] = result }
-        if let age = state.secondsSinceLastAction { fields["secondsSinceLastAction"] = age.rounded() }
-        if let cm = state.lastDistanceCm { fields["lastDistanceCm"] = cm }
-        if let age = state.secondsSinceDistanceReading { fields["secondsSinceDistanceReading"] = age.rounded() }
-        return encodeResult(fields)
+    /// What the body is and has recently been doing, from whichever sources exist.
+    ///
+    /// Ages are rounded to whole seconds and absent fields are omitted: "I measured 20cm" means
+    /// something very different four seconds later than four minutes later, and a missing field
+    /// reads more honestly to the model than a zero would. The autonomous history is the reason
+    /// ages matter most -- those reactions are usually finished before anyone can mention them.
+    private static func encode(state: RobotState?, behavior: BehaviorMonitor?) -> String {
+        var fields: [String: Any] = ["success": true]
+
+        if let state {
+            fields["connected"] = state.connected
+            fields["address"] = state.address
+            fields["busy"] = state.busy
+            if let face = state.face { fields["face"] = face.rawValue }
+            if let action = state.lastAction { fields["lastAction"] = action }
+            if let result = state.lastActionResult { fields["lastActionResult"] = result }
+            if let age = state.secondsSinceLastAction { fields["secondsSinceLastAction"] = age.rounded() }
+            if let cm = state.lastDistanceCm { fields["lastDistanceCm"] = cm }
+            if let age = state.secondsSinceDistanceReading { fields["secondsSinceDistanceReading"] = age.rounded() }
+        }
+
+        if let behavior, behavior.connected {
+            fields["movingOnItsOwn"] = true
+            fields["doingNow"] = behavior.mode
+            fields["mood"] = behavior.mood
+            fields["recently"] = behavior.recentHistory()
+        } else if state == nil {
+            fields["connected"] = false
+        }
+
+        // JSONSerialization rather than the flat encoder: the history is nested, and hand-rolling
+        // that is how malformed tool output gets shipped.
+        guard let data = try? JSONSerialization.data(withJSONObject: fields),
+            let json = String(data: data, encoding: .utf8)
+        else { return encodeResult(["success": false, "error": "could not encode state"]) }
+        return json
     }
 
     private struct DriveArgs: Decodable {
@@ -650,6 +705,38 @@ final class RealtimeVoiceSession: ObservableObject {
         let red: Int
         let green: Int
         let blue: Int
+    }
+
+    private struct MoodArgs: Decodable {
+        let mood: String
+    }
+
+    private struct GestureArgs: Decodable {
+        let gesture: String
+    }
+
+    /// Tells Rocky, unprompted, that something just happened to his body.
+    ///
+    /// Phrased as a thing that *has already happened*, because it has: a flinch is over in a
+    /// second and he cannot speak in under two. Suppressed while he is already talking, and rate
+    /// limited, so a robot being bumped repeatedly does not turn him into a commentator.
+    private func narrate(_ event: BehaviorEvent) {
+        guard state == .connected, !speaking else { return }
+        if let lastNarratedAt, Date().timeIntervalSince(lastNarratedAt) < Self.narrationCooldown { return }
+        lastNarratedAt = Date()
+
+        let what = event.mode == "dizzy"
+            ? "Something just bumped into your body and it spun around."
+            : "Something startled your body -- it flinched and backed away."
+        log("narrating: \(event.mode)")
+        client.send(
+            ResponseCreateEvent(
+                instructions: what
+                    + " It is over now. Say one short line reacting to it, in your own way of speaking,"
+                    + " as something that just happened to you. Do not describe it as a state or a mode,"
+                    + " and do not ask what to do next."
+            )
+        )
     }
 
     private struct FaceArgs: Decodable {
