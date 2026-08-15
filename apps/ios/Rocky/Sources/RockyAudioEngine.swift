@@ -16,8 +16,15 @@ final class RockyAudioEngine {
     static let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
     var sampleRate: Double { Self.format.sampleRate }
 
+    /// The two things Rocky plays. Fixed channels rather than a player per session: connecting
+    /// again used to attach another pair of nodes to the same engine and never detach the old
+    /// ones.
+    enum Channel: CaseIterable {
+        case voice, chords
+    }
+
     private let engine = AVAudioEngine()
-    private var players: [AVAudioPlayerNode] = []
+    private var players: [Channel: AVAudioPlayerNode] = [:]
     private var observer: NSObjectProtocol?
 
     private init() {
@@ -35,13 +42,16 @@ final class RockyAudioEngine {
         }
     }
 
-    /// Attaches a player and returns it ready to be scheduled onto.
-    func makePlayer(volume: Float) -> AVAudioPlayerNode {
+    /// The player for a channel, attached on first use and reused for the app's lifetime.
+    func player(for channel: Channel) -> AVAudioPlayerNode {
+        if let existing = players[channel] {
+            ensureRunning()
+            return existing
+        }
         let player = AVAudioPlayerNode()
-        player.volume = volume
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: Self.format)
-        players.append(player)
+        players[channel] = player
         ensureRunning()
         return player
     }
@@ -65,7 +75,7 @@ final class RockyAudioEngine {
                 return
             }
         }
-        for player in players where !wasRunning || !player.isPlaying {
+        for player in players.values where !wasRunning || !player.isPlaying {
             player.play()
         }
     }

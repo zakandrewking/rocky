@@ -22,16 +22,17 @@ final class EridianAudio {
     private let player: AVAudioPlayerNode
     private let sampleRate: Double
 
-    /// Write cursor on the player's own timeline. Not a queue: chords are scheduled straight onto
-    /// the audio clock and this is the only state tying successive batches together.
-    private var nextStartFrame: AVAudioFramePosition = 0
+    /// How much chatter is queued but not yet heard, so a long reply can't build a backlog.
+    private var queuedSeconds = 0.0
     private var transcriptBuffer = ""
 
     init(volume: Double = defaultVolume, timeScale: Double = defaultTimeScale) {
         self.volume = min(0.18, max(0, volume))
         self.timeScale = min(1, max(0.45, timeScale))
         self.sampleRate = RockyAudioEngine.shared.sampleRate
-        self.player = RockyAudioEngine.shared.makePlayer(volume: 1)
+        // Node volume stays at unity: the level lives in each chord's envelope peak, exactly as
+        // it does in the Web Audio original.
+        self.player = RockyAudioEngine.shared.player(for: .chords)
     }
 
     // MARK: - Text in
@@ -58,64 +59,54 @@ final class EridianAudio {
     func stop() {
         player.stop()
         transcriptBuffer = ""
+        queuedSeconds = 0
+        // stop() leaves the node not playing; this puts it back, engine included.
         RockyAudioEngine.shared.ensureRunning()
-        // stop() rewinds the node's sample clock, so the old cursor would schedule the next chord
-        // far past the end of time. Same trap as HumePcmPlayer.
-        nextStartFrame = 0
     }
 
     // MARK: - Scheduling
 
-    private func currentFrame() -> AVAudioFramePosition {
-        guard let nodeTime = player.lastRenderTime,
-            let playerTime = player.playerTime(forNodeTime: nodeTime)
-        else { return 0 }
-        return playerTime.sampleTime
-    }
-
-    private func frames(_ seconds: Double) -> AVAudioFramePosition {
-        AVAudioFramePosition(seconds * sampleRate)
-    }
-
+    /// Chords are queued back to back rather than pinned to absolute sample times, so the gap
+    /// after each one is rendered into its own buffer as silence. Same result, without depending
+    /// on a node clock that resets whenever WebRTC restarts the engine underneath us -- see
+    /// HumePcmPlayer for what that cost.
     private func schedule(_ tokens: [String]) {
         guard !tokens.isEmpty, volume > 0 else { return }
         RockyAudioEngine.shared.ensureRunning()
 
-        let now = currentFrame()
-        var start = max(now + frames(0.015), nextStartFrame)
-        // Nothing is ever queued further out than this. Overflow chords are dropped rather than
-        // deferred, which is what keeps a long reply from becoming a runaway drone.
-        let latestEnd = now + frames(EridianVoice.maxUtteranceSeconds)
-
+        let gap = 0.018 * timeScale
         for token in tokens {
             for chord in EridianVoice.chords(for: token) {
-                if start >= latestEnd {
-                    nextStartFrame = latestEnd
-                    return
-                }
+                // Nothing is queued past this horizon. Overflow chords are dropped rather than
+                // deferred, which is what keeps a long reply from becoming a runaway drone.
+                guard queuedSeconds < EridianVoice.maxUtteranceSeconds else { return }
                 let duration = max(0.045, chord.durationSeconds * timeScale)
-                let end = min(start + frames(duration), latestEnd)
-                guard end > start, let buffer = render(chord, frameCount: AVAudioFrameCount(end - start)) else {
-                    start = end
-                    continue
+                let total = duration + gap
+                guard let buffer = render(chord, duration: duration, totalDuration: total) else { continue }
+                queuedSeconds += total
+                player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                    Task { @MainActor in
+                        guard let self else { return }
+                        self.queuedSeconds = max(0, self.queuedSeconds - total)
+                    }
                 }
-                player.scheduleBuffer(buffer, at: AVAudioTime(sampleTime: start, atRate: sampleRate))
-                start = end + frames(0.018 * timeScale)
             }
         }
-        nextStartFrame = start
     }
 
     /// One chord: its voices summed (not averaged -- each oscillator is full-scale and the
     /// envelope scales the sum, as in Web Audio) under a two-stage exponential attack/decay.
-    private func render(_ chord: EridianChord, frameCount: AVAudioFrameCount) -> AVAudioPCMBuffer? {
-        guard frameCount > 0,
+    /// `duration` is the sounding part; `totalDuration` adds the silent gap that follows it.
+    private func render(_ chord: EridianChord, duration: Double, totalDuration: Double) -> AVAudioPCMBuffer? {
+        let frameCount = AVAudioFrameCount(totalDuration * sampleRate)
+        let toneFrames = Int(duration * sampleRate)
+        guard frameCount > 0, toneFrames > 0,
             let buffer = AVAudioPCMBuffer(pcmFormat: RockyAudioEngine.format, frameCapacity: frameCount),
             let samples = buffer.floatChannelData?[0]
         else { return nil }
         buffer.frameLength = frameCount
+        samples.update(repeating: 0, count: Int(frameCount))
 
-        let duration = Double(frameCount) / sampleRate
         let peak = min(0.18, max(0, volume * (chord.emphasis ? 1.35 : 1)))
         guard peak > 0 else { return nil }
         let attack = min(0.018, duration * 0.3)
@@ -128,7 +119,7 @@ final class EridianAudio {
             frequency * pow(2, (Double(index) - 1) * 2.5 / 1200)
         }
 
-        for frame in 0..<Int(frameCount) {
+        for frame in 0..<toneFrames {
             let t = Double(frame) / sampleRate
             let envelope: Double
             if t < attack, attack > 0 {

@@ -2,13 +2,17 @@ import AVFoundation
 
 /// Plays the PCM Hume streams back, ported from apps/desktop/src/renderer/src/humePcmAudio.ts.
 ///
-/// Chunks are scheduled on an absolute timeline rather than queued: each starts at
-/// `max(now + lead, nextStart)` so consecutive chunks butt up against each other gaplessly even
-/// though they arrive at whatever pace the network allows.
+/// Desktop schedules each chunk at an absolute time on the AudioContext clock. This does not: it
+/// queues buffers back to back on an AVAudioPlayerNode and lets the node play them in order,
+/// which is gapless by construction.
+///
+/// That divergence is deliberate and was earned. Absolute sample times depend on a clock that
+/// resets to zero whenever the node is stopped -- and iOS stops it for us, because WebRTC taking
+/// the audio session for the microphone restarts the whole engine. Every version of "keep our own
+/// cursor on that clock" produced audio scheduled into the far future: silence, with no error
+/// raised, no buffer ever completing, and nothing in the API to notice it by.
 @MainActor
 final class HumePcmPlayer {
-    /// How far ahead of "now" a chunk is scheduled, so scheduling never races the render thread.
-    private static let scheduleLead = 0.012
     /// Silence appended to the final chunk so the tail isn't clipped.
     private static let finalPaddingSeconds = 0.280
 
@@ -17,24 +21,18 @@ final class HumePcmPlayer {
 
     private let player: AVAudioPlayerNode
     private let sampleRate: Double
-    private let initialDelay: Double
 
-    private var nextStartFrame: AVAudioFramePosition = 0
-    private var delayNextChunk = false
     private var pendingChunks = 0
+    private var queuedSeconds = 0.0
     private var isSpeaking = false
 
-    /// `initialDelaySeconds` holds the first chunk of each response back a little, which lets the
-    /// Eridian chord layer lead the voice (desktop's ROCKY_HUME_EXTRA_DELAY_MS, default 0).
-    init(initialDelaySeconds: Double = 0) {
-        self.initialDelay = min(1, max(0, initialDelaySeconds))
+    init() {
         self.sampleRate = RockyAudioEngine.shared.sampleRate
-        self.player = RockyAudioEngine.shared.makePlayer(volume: 1)
+        self.player = RockyAudioEngine.shared.player(for: .voice)
     }
 
-    /// Call at the start of each response so the extra first-chunk delay applies again.
+    /// Call at the start of each response.
     func beginResponse() {
-        delayNextChunk = initialDelay > 0
         chunksThisResponse = 0
     }
 
@@ -53,24 +51,22 @@ final class HumePcmPlayer {
             channel.advanced(by: samples.count).update(repeating: 0, count: padding)
         }
 
-        let extraDelay = delayNextChunk ? initialDelay : 0
-        delayNextChunk = false
-        let now = currentFrame()
-        let start = max(now + AVAudioFramePosition((Self.scheduleLead + extraDelay) * sampleRate), nextStartFrame)
-        nextStartFrame = start + AVAudioFramePosition(frameCount)
-
+        let seconds = Double(frameCount) / sampleRate
         pendingChunks += 1
         chunksThisResponse += 1
+        queuedSeconds += seconds
         setSpeaking(true)
-        player.scheduleBuffer(buffer, at: AVAudioTime(sampleTime: start, atRate: sampleRate)) { [weak self] in
-            Task { @MainActor in self?.chunkFinished() }
+        // .dataPlayedBack fires when the audio has actually been heard, not merely consumed --
+        // which is what "Rocky finished speaking" has to mean for the mic to reopen safely.
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            Task { @MainActor in self?.chunkFinished(seconds: seconds) }
         }
     }
 
-    /// Milliseconds of audio still queued ahead of now -- used to tell "Rocky is mid-sentence"
-    /// apart from "Rocky is stuck".
+    /// Roughly how much audio is still to be heard -- enough to tell "Rocky is mid-sentence" from
+    /// "Rocky is stuck", which is all the turn watchdog needs of it.
     var millisecondsUntilPlaybackEnd: Double {
-        max(0, Double(nextStartFrame - currentFrame()) / sampleRate * 1000)
+        max(0, queuedSeconds * 1000)
     }
 
     var speaking: Bool { isSpeaking }
@@ -79,41 +75,31 @@ final class HumePcmPlayer {
     /// early" are different failures and look identical from the outside.
     private(set) var chunksThisResponse = 0
 
-    /// Barge-in: drop everything queued and reset the timeline, or the next thing Rocky says
-    /// would wait behind audio nobody is listening to any more.
+    /// Barge-in: drop everything queued, or the next thing Rocky says waits behind audio nobody
+    /// is listening to any more.
     func stop() {
         player.stop()
         pendingChunks = 0
         chunksThisResponse = 0
-        delayNextChunk = false
+        queuedSeconds = 0
+        // stop() leaves the node not playing; this puts it back, engine included.
         RockyAudioEngine.shared.ensureRunning()
-        // AVAudioPlayerNode.stop() resets the node's own sample clock to zero, so a cursor taken
-        // from the old timeline is meaningless afterwards. Carrying it over scheduled the next
-        // audio tens of seconds into the future -- which is silence, not a delay, and looked
-        // exactly like Rocky ignoring you.
-        nextStartFrame = 0
         setSpeaking(false)
     }
 
-    private func chunkFinished() {
+    private func chunkFinished(seconds: Double) {
         pendingChunks = max(0, pendingChunks - 1)
-        if pendingChunks == 0 { setSpeaking(false) }
+        queuedSeconds = max(0, queuedSeconds - seconds)
+        if pendingChunks == 0 {
+            queuedSeconds = 0
+            setSpeaking(false)
+        }
     }
 
     private func setSpeaking(_ speaking: Bool) {
         guard speaking != isSpeaking else { return }
         isSpeaking = speaking
         onSpeakingChange?(speaking)
-    }
-
-    /// Zero, not `nextStartFrame`, when the node isn't rendering yet: a node that has just been
-    /// started is at the beginning of its clock, and answering with a stale cursor is what pushed
-    /// audio into the far future after a stop.
-    private func currentFrame() -> AVAudioFramePosition {
-        guard let nodeTime = player.lastRenderTime,
-            let playerTime = player.playerTime(forNodeTime: nodeTime)
-        else { return 0 }
-        return playerTime.sampleTime
     }
 
     /// Hume's wire format: base64 of signed 16-bit little-endian mono samples. Pure, so it is
