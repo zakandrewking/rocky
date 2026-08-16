@@ -73,7 +73,7 @@ final class WorldStore: ObservableObject {
             linkUp = true
             log.write(.link, hasBeenLost ? "body back" : "body found", seq: seq + 1)
             commit { $0.body = .here }
-            if hasBeenLost { record(.bodyBack, detail: "my body is back") }
+            if hasBeenLost { record(.bodyBack, detail: "I can feel my body again") }
         } else {
             refreshPresence()
         }
@@ -88,7 +88,7 @@ final class WorldStore: ObservableObject {
         // Anything in flight is now unknowable, not failed. Doing this before the state change so
         // the snapshot that goes out already carries the honest action status.
         if let live = liveAction {
-            markAction(live.id, status: .lost, reason: "I lost track of my body")
+            markAction(live.id, status: .lost, reason: "I lost track of myself before it happened")
         }
         commit {
             $0.body = .gone
@@ -224,9 +224,9 @@ final class WorldStore: ObservableObject {
         guard !silent else { return }
         switch status {
         case .succeeded:
-            record(.finished, detail: "\(action.intent.word) — done", during: id)
+            record(.finished, detail: "I finished \(action.intent.continuous)", during: id)
         case .blocked:
-            record(.blocked, detail: reason ?? "something was in the way", during: id)
+            record(.blocked, detail: reason ?? "something got in my way", during: id)
         case .failed, .lost:
             record(.failed, detail: reason ?? "it didn't work", during: id)
         default:

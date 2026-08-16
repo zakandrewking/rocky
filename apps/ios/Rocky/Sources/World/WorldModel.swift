@@ -89,6 +89,16 @@ enum ActionIntent: String, Sendable, Codable {
         case .stop: return "stop"
         }
     }
+
+    /// The same thing while it is happening. A repeated gesture is one act to a person -- "I am
+    /// spinning" for the whole of a spin-three-times, not six alternating machine states.
+    var continuous: String {
+        switch self {
+        case .spin: return "spinning"
+        case .wiggle: return "wiggling"
+        case .stop: return "stopping"
+        }
+    }
 }
 
 /// One thing Rocky asked her body to do, from the tool call to whatever became of it.
@@ -137,17 +147,40 @@ struct RobotAction: Sendable, Identifiable, Equatable {
 
 // MARK: - Events
 
+/// How much a thing that happened deserves to cut somebody off.
+///
+/// Not every notable event is equally notable, and treating them as one class had a concrete cost.
+/// In the first live session the robot was in a cluttered room: ten `blocked` events (routine
+/// obstacle avoidance) against three `startled` ones -- and because a single shared cooldown was
+/// spent first-come-first-served, the furniture crowded out every startle but the first. Being
+/// frightened is the most dramatic thing that happens to this robot, and Rocky was silent for two
+/// of the three.
+enum EventUrgency: Int, Sendable, Comparable {
+    /// Bookkeeping. She should know; she should never stop talking for it.
+    case none = 0
+    /// Ordinary life. Worth knowing, worth mentioning only if it contradicts her.
+    case routine = 1
+    /// Something happened *to* her. This is what interruption is for.
+    case startling = 2
+
+    static func < (lhs: EventUrgency, rhs: EventUrgency) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
 /// The kinds of thing that happen to a body. Deliberately small to begin with, and every one of
 /// them is something the board already reports -- nothing here is aspirational.
 enum WorldEventKind: String, Sendable, Codable {
     case bumped, startled, blocked, finished, failed, bodyGone, bodyBack
 
-    /// Whether this is worth considering an interruption for at all. Not the decision -- see
-    /// SalienceJudge -- just the filter that keeps routine bookkeeping out of that machinery.
-    var isNotable: Bool {
+    var urgency: EventUrgency {
         switch self {
-        case .bumped, .startled, .blocked, .bodyGone: return true
-        case .finished, .failed, .bodyBack: return false
+        // Startle and flee is the big one: a loud noise, a jump, a fast retreat, wide eyes. If any
+        // event should stop a sentence dead, it is this. Being physically bumped, and going numb,
+        // are the same order of thing.
+        case .startled, .bumped, .bodyGone: return .startling
+        // Turning away from an obstacle is how this robot gets around a room. In a cluttered one it
+        // is near-constant, and narrating it would make her a sports commentator.
+        case .blocked: return .routine
+        case .finished, .failed, .bodyBack: return .none
         }
     }
 }
@@ -185,7 +218,7 @@ enum Doing: String, Sendable, Codable {
 
     var word: String {
         switch self {
-        case .still: return "still"
+        case .still: return "sitting still"
         case .rollingForward: return "rolling forward"
         case .rollingBack: return "rolling backward"
         case .turning: return "turning"
@@ -207,12 +240,15 @@ enum Doing: String, Sendable, Codable {
 enum DoingCause: String, Sendable, Codable {
     case youAsked, onItsOwn, reflex, unknown
 
-    var phrase: String {
+    /// First person, and a complete thought. "on its own" invites Rocky to talk about her body as
+    /// a separate thing that has its own reasons; "I felt like it" is the same fact said as
+    /// herself, which is the only way she ever gets to say it out loud.
+    var phrase: String? {
         switch self {
-        case .youAsked: return "you asked"
-        case .onItsOwn: return "on its own"
-        case .reflex: return "couldn't help it"
-        case .unknown: return "not sure"
+        case .youAsked: return "you asked me to"
+        case .onItsOwn: return "I felt like it"
+        case .reflex: return "I couldn't help it"
+        case .unknown: return nil
         }
     }
 }
@@ -234,17 +270,35 @@ struct WorldSnapshot: Sendable, Equatable {
     /// make this say the robot is moving.
     var moving: Bool { doing.isMoving }
 
+    /// What Rocky would say she is doing, in one first-person verb.
+    ///
+    /// While something she asked for is underway this is *that* act, not whatever the board's
+    /// state machine is flapping between underneath it. A spin-three-times really does alternate
+    /// turning/settling/turning six times in nine seconds, and showing her each flip was most of
+    /// why she sounded like she was reading a status board: by the time she could speak, the
+    /// picture she was speaking from was two transitions old.
+    var visibleDoing: String {
+        if let action, action.status.isLive, action.intent != .stop {
+            return action.intent.continuous
+        }
+        return doing.word
+    }
+
     /// The fields that are worth waking the model up for. Two snapshots that agree here say the
     /// same thing about the world however much telemetry moved underneath them -- which is what
     /// keeps `speed=.47 → .48 → .46` from ever reaching the conversation.
+    ///
+    /// `action.done` is deliberately absent: the repeat count is worth *showing* whenever a
+    /// projection happens anyway, and is not worth causing one. Counting "two of three" out loud
+    /// is the sound of a machine, not of somebody enjoying a spin.
     var semanticIdentity: String {
         [
             body.rawValue,
-            doing.rawValue,
+            visibleDoing,
             cause.rawValue,
             blocked ? "blocked" : "clear",
             feeling ?? "-",
-            action.map { "\($0.id):\($0.status.rawValue):\($0.evidence.rawValue):\($0.done)" } ?? "-",
+            action.map { "\($0.id):\($0.status.isLive ? "going" : $0.status.rawValue)" } ?? "-",
         ].joined(separator: "|")
     }
 }

@@ -78,23 +78,31 @@ salience tickets, response ledger entries. This is the single clock that makes s
 It is **not** the robot's clock. The board's `utime.ticks_ms()` wraps and is unrelatable to wall
 time; board timestamps are carried as opaque debug detail only, never used for ordering.
 
-### 3.2 Robot state — current conditions, last-write-wins
+### 3.2 Sensation — current conditions, last-write-wins
 
 ```
-<robot-state seq="192">
-{
-  "body": "here",
-  "doing": "spinning",
-  "why": "you asked",
-  "moving": true,
-  "blocked": false,
-  "feeling": "excitable",
-  "action": { "id": "act_83", "intent": "spin", "status": "running", "sure": true, "for": "2s" },
-  "nearest_cm": 24,
-  "measured": "3s ago"
-}
-</robot-state>
+<i-feel seq="192">
+{"i_am": "spinning", "because": "you asked me to", "how_many_so_far": "2 of 3", "going_for": "4s"}
+</i-feel>
 ```
+
+and, when she has decided to do something that has not begun:
+
+```
+<i-feel seq="153">
+{"i_am": "rolling forward", "because": "I felt like it", "about_to": "spin", "decided": "just now"}
+</i-feel>
+```
+
+**First person, always, and the wording is load-bearing.** The first live session produced *"spinning
+may start when rolling is done"* and talk of what "the body" was doing. Both were faithful readings
+of what she was handed: a field literally named `body` gives her the noun, and a field named
+`doing_because_you_asked` holding something that is *not* happening gives her a work queue to
+narrate. She read the picture correctly — the picture was wrong. A decision is now `about_to`, and
+nothing in the payload names her body as a separate thing.
+
+The tags are first-person for the same reason: `<robot-state>` put a word she is forbidden to say
+in front of her hundreds of times a session.
 
 Rules, stated explicitly because these are the ones that decide whether the model can be trusted:
 
@@ -108,10 +116,15 @@ Rules, stated explicitly because these are the ones that decide whether the mode
   crosses this boundary at all.
 - **`why` separates intent from origin**: `"you asked"` (a voice action), `"on its own"` (the
   autonomous loop chose it), `"reflex"` (a startle/bump/obstacle response nothing chose).
-- **`moving` is observed reality, `action.status` is intent.** They are allowed to disagree, and
-  that disagreement is the whole point: `intent: drive_forward, status: running, moving: false,
-  blocked: true` is what lets voice say *"I'm trying to go forward, but something's in my way"*
+- **What she wants and what is happening are separate fields.** They are allowed to disagree, and
+  that disagreement is the whole point: `i_am: "sitting still"` beside `about_to: "spin"` and
+  `something_in_my_way: true` is what lets her say *"I'm trying, but something's in my way"*
   instead of lying.
+- **A repeated gesture is one act.** A spin-three-times really does alternate turning/settling six
+  times in nine seconds on the board. While something she asked for is underway, `i_am` is *that
+  act* — not the state machine underneath it. Showing every flip was most of why she sounded like
+  she was reading a dial: she cannot speak in under two seconds, so the picture she spoke from was
+  always two transitions old.
 - **`body`** is link freshness: `"here"` (heard from within 3s), `"quiet"` (3–10s), `"gone"`
   (>10s or socket closed). This is what makes "I've lost track of my body" sayable.
 - **Ages are relative and rounded** (`"3s ago"`, `"a while ago"` past 60s). Absolute timestamps are
@@ -283,23 +296,29 @@ Two questions, deliberately answered by different machinery:
 
 `SalienceVerdict`: `ignore | context | afterUtterance | interrupt | urgent`.
 
-### 5.1 Deterministic tier — immediate, no model in the loop
+### 5.1 Not every event is equally notable
 
-Safety and self-contradiction never wait on an LLM round trip:
+Events carry an **urgency**, and it decides both whether they may interrupt and how long they hold
+the floor afterwards:
 
-| Condition | Verdict |
-| --- | --- |
-| A stop was commanded, or the body stopped itself for an obstacle **while voice is asserting motion** | `urgent` |
-| `bumped` / `startled` while voice is speaking | `interrupt` |
-| An action voice announced reached `blocked` / `failed` / `lost` while voice is speaking | `interrupt` |
-| Voice is silent and the event is notable | `interrupt` (a fresh response — nothing to cut off) |
-| Any other state change | `context` |
-| A duplicate inside its cooldown, or pure telemetry | `ignore` |
+| Urgency | Events | Behaviour |
+| --- | --- | --- |
+| `startling` | `startled`, `bumped`, `bodyGone` | Interrupts on sight, whether she is speaking or silent. 5 s floor. |
+| `routine` | `blocked` | Never starts a response on its own. Interrupts only if it contradicts what she is saying. 20 s floor. |
+| `none` | `finished`, `failed`, `bodyBack` | Context only, always. |
 
-Rate limits: at most one speech interruption per 8s, and never two consecutive interruptions for
-the same event kind. A robot being bumped repeatedly must not become a commentator.
+This is tuned from a real session, not guessed. In a cluttered room the robot produced **ten
+`blocked` events against three `startled` ones**, and a single shared cooldown spent
+first-come-first-served meant the furniture crowded out every startle but the first — Rocky was
+silent for two of the three most dramatic things that happened to her. A startle-and-flee (loud
+noise, jump, fast retreat, wide eyes) is the single event most worth stopping a sentence for.
 
-### 5.2 Judged tier — out-of-band, for the ambiguous middle
+So: **a higher urgency always gets through a lower one's quiet period.** The only thing that stops
+a startle is another startle within four seconds, which is one thing happening twice.
+
+### 5.2 Deterministic tier — immediate, no model in the loop
+
+### 5.3 Judged tier — out-of-band, for the ambiguous middle
 
 Anything not resolved above and arriving *while a response is generating* goes to the model
 itself, out of band, text-only:
@@ -323,7 +342,7 @@ a server-side item that may be cancelled underneath it.
 Returns `{"decision": ..., "reason": "..."}`. Runtime consumes the enum; the reason is kept for the
 debug log, verbatim.
 
-### 5.3 Race safety
+### 5.4 Race safety
 
 Every judgment carries a `SalienceTicket`:
 

@@ -20,6 +20,9 @@ final class BehaviorWorldSource {
     /// from one it made because she asked.
     private var gestureActionId: String?
     private var gestureRepeatsSeen = 0
+    /// Whether the board has confirmed the feeling it is actually running with. False between
+    /// asking and hearing back.
+    private(set) var confirmedFeeling = false
 
     init(store: WorldStore) {
         self.store = store
@@ -38,14 +41,27 @@ final class BehaviorWorldSource {
             note(mode: mode, detail: detail)
             apply(mode: mode, detail: detail)
         case .acknowledged(let of, let id):
-            // The board has the intention in hand. Not "it is happening" -- it happens at the
-            // loop's next safe seam, which may be a second or two away, and claiming otherwise is
-            // exactly the kind of small lie this whole design exists to prevent.
+            // A mood is the one intention the board applies the instant it hears it, so its ack is
+            // the confirmation -- and until it arrives, how wound up she is is only what the phone
+            // *asked for*. Same rule as everything else here: do not claim what you have not been
+            // told.
+            if of == "mood" {
+                confirmedFeeling = true
+                return
+            }
+            // A gesture ack means the board has the wish in hand. Not "it is happening" -- that
+            // waits for the loop's next safe seam, which may be a second or two away, and claiming
+            // otherwise is exactly the kind of small lie this design exists to prevent.
             guard of == "gesture", let id, id == gestureActionId else { return }
             store.markAction(id, status: .accepted, evidence: .confirmed)
         case .disconnected:
-            store.linkLost("the connection to my body dropped")
+            store.linkLost("I lost track of my body")
         }
+    }
+
+    /// A feeling Rocky just asked for. Unconfirmed until the board says so.
+    func expectFeelingChange() {
+        confirmedFeeling = false
     }
 
     /// A gesture Rocky just asked for. The board decides when; this only records that she asked.
@@ -91,15 +107,20 @@ final class BehaviorWorldSource {
     private func note(mode: String, detail: String) {
         switch mode {
         case "dizzy":
-            store.record(.bumped, detail: "something touched me")
+            store.record(.bumped, detail: "something bumped into me")
         case "startled":
-            store.record(.startled, detail: detail.contains("close") ? "something came at me" : "a sudden loud noise")
+            store.record(
+                .startled,
+                detail: detail.contains("close")
+                    ? "something came right at me — I jumped and bolted backwards"
+                    : "a sudden loud noise — it made me jump and run"
+            )
         case "turning" where detail.contains("obstacle"):
-            store.record(.blocked, detail: "something was in the way")
+            store.record(.blocked, detail: "something got in my way and I had to turn")
         case "listening" where detail.contains("expired"):
             guard let id = gestureActionId else { return }
             gestureActionId = nil
-            store.markAction(id, status: .failed, reason: "my body never got a free moment for it")
+            store.markAction(id, status: .failed, reason: "I never got a free moment for it")
         case "turning", "recovering":
             guard isGesture(detail), let id = gestureActionId else { return }
             gestureRepeatsSeen += 1

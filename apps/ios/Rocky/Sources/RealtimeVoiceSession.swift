@@ -823,8 +823,7 @@ final class RealtimeVoiceSession: ObservableObject {
             responseText = event.text ?? responseText
             sendToHume("", flush: true)
             eridian?.flushTranscript()
-            let words = responseText.split(whereSeparator: \.isWhitespace).count
-            log("text complete: \(words) words, \(responseText.count) chars")
+            log("said: \(responseText)")
             armFirstAudioWatchdog()
             armTurnWatchdog()
 
@@ -844,6 +843,10 @@ final class RealtimeVoiceSession: ObservableObject {
             }
         case "response.output_audio_transcript.done":
             eridian?.flushTranscript()
+            // The one thing missing when "she talked about the body again" had to be diagnosed:
+            // the log knew how many words she said and not which. Everything else here is already
+            // recorded against a response id, so her own words belong beside them.
+            if !utteranceSoFar.isEmpty { log("said: \(utteranceSoFar)") }
 
         case "output_audio_buffer.started":
             // WebRTC's own signal that audio is actually leaving for the speaker -- a better
@@ -990,6 +993,7 @@ final class RealtimeVoiceSession: ObservableObject {
             // Deliberately not an action. How wound up she is has no beginning, middle or end to
             // track -- and registering it as one would supersede whatever movement was actually in
             // flight, so settling down mid-spin would silently abandon the spin.
+            behaviorSource.expectFeelingChange()
             behavior.setMood(args.mood, id: "mood")
             world.noteFeeling(args.mood)
             return Self.encodeResult(["ok": true])
@@ -1006,7 +1010,7 @@ final class RealtimeVoiceSession: ObservableObject {
             behaviorSource.expect(gesture: action.id)
             behavior.requestGesture(args.gesture, times: times, id: action.id)
             world.markAction(action.id, status: .accepted)
-            return Self.accepted(action)
+            return Self.decided(action)
 
         case "stop_robot":
             let action = world.beginAction(.stop, expectedDuration: 0.3)
@@ -1014,7 +1018,7 @@ final class RealtimeVoiceSession: ObservableObject {
             world.markAction(action.id, status: .accepted)
             world.noteDoing(.still, cause: .youAsked)
             world.markAction(action.id, status: .succeeded, evidence: .assumed)
-            return Self.accepted(action)
+            return Self.decided(action)
 
         case "get_robot_state":
             return Self.encodeState(world)
@@ -1026,48 +1030,42 @@ final class RealtimeVoiceSession: ObservableObject {
 
     /// What a movement tool returns, and deliberately all it returns.
     ///
-    /// `accepted` means the wish is on its way to a body that decides for itself when to honour
-    /// it. It is not a claim that anything moved, and the tool description says so in as many
-    /// words -- because the previous `{"success": true}` was read, entirely reasonably, as "I did
-    /// it", and Rocky would announce a spin that had not begun and might never happen.
-    private static func accepted(_ action: RobotAction) -> String {
-        encodeResult([
-            "action_id": action.id,
-            "status": "accepted",
-            "means": "on its way to your body — not yet happening. It decides when. You will feel it when it does.",
-        ])
+    /// A *decision*, not a receipt and not a job number. `{"success": true}` was read, entirely
+    /// reasonably, as "I did it". Its replacement said "accepted -- on its way, not yet happening"
+    /// and was read, just as reasonably, as a work queue: the first live session produced
+    /// "spinning may start when rolling is done", which is a faithful reading of a pending job
+    /// sitting beside a different current motion.
+    ///
+    /// Both were the same mistake in opposite directions. What a creature has after deciding to
+    /// spin is not a completed spin and not a queue position -- it is an intention, and the
+    /// natural thing to say is "okay, spinning!". So that is what this returns, and the prompt
+    /// says how to speak it.
+    private static func decided(_ action: RobotAction) -> String {
+        encodeResult(["action_id": action.id, "decided_to": action.intent.word])
     }
 
-    /// Rocky's memory of herself, rendered from the one authoritative store -- the same picture
-    /// the pushed state carries, so asking and being told can never disagree.
+    /// Rocky's memory of herself, rendered from the one authoritative store -- the same words the
+    /// pushed sensation uses, so asking and being told can never disagree or sound like different
+    /// voices.
     private static func encodeState(_ world: WorldStore) -> String {
-        var fields: [String: Any] = [:]
         let snapshot = world.snapshot
-        fields["now"] = [
-            "body": snapshot.body.rawValue,
-            "doing": snapshot.doing.word,
-            "moving": snapshot.moving,
-            "why": snapshot.cause.phrase,
-            "blocked": snapshot.blocked,
-        ]
+        var now: [String: Any] = ["i_am": snapshot.visibleDoing]
+        if snapshot.doing != .still, let because = snapshot.cause.phrase { now["because"] = because }
+        if snapshot.blocked { now["something_in_my_way"] = true }
+        if snapshot.body != .here { now["out_of_touch"] = true }
+        var fields: [String: Any] = ["right_now": now]
         if let feeling = snapshot.feeling { fields["feeling"] = feeling }
-        if let action = snapshot.action {
-            fields["right_now"] = WorldProjector.describe(action)
-        }
-        // Recent history, newest first. This is what makes "did that work?" answerable about an
-        // action that finished a minute ago -- the live snapshot has long since stopped carrying
-        // it, and that is correct: it is history now, not a condition.
-        fields["just_did"] = world.actions.reversed().prefix(5).map { action in
+
+        // History, newest first. This is what makes "did that work?" answerable about something
+        // that finished a minute ago -- the live picture has long since stopped carrying it, and
+        // that is correct: it is a memory now, not a condition.
+        fields["i_have_just"] = world.actions.reversed().prefix(5).map { action in
             var entry = WorldProjector.describe(action)
             entry["when"] = WorldWords.ago(Date().timeIntervalSince(action.endedAt ?? action.requestedAt))
             return entry
         }
-        fields["just_happened"] = world.events.reversed().prefix(5).map { event in
-            [
-                "what": event.kind.rawValue,
-                "detail": event.detail,
-                "when": WorldWords.ago(event.secondsAgo),
-            ]
+        fields["happened_to_me"] = world.events.reversed().prefix(5).map { event in
+            ["what": event.detail, "when": WorldWords.ago(event.secondsAgo)]
         }
 
         guard let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]),

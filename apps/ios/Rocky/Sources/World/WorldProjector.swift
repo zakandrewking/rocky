@@ -163,54 +163,67 @@ final class WorldProjector {
 
     // MARK: - Rendering
     //
-    // Tagged blocks rather than prose, so the boundary between "something Rocky senses" and
-    // "something a person said" is unmistakable, and so the system prompt can define the tags once
-    // instead of every message having to explain itself.
+    // First person, always. This is Rocky's own sensation, not a report about a machine, and the
+    // wording is load-bearing rather than cosmetic: the first live session had her saying things
+    // like "spinning may start when rolling is done" and describing what "the body" was doing,
+    // and both came straight out of what she was being handed. A field literally named `body`
+    // gives her the noun; a field named `doing_because_you_asked` holding something that is *not*
+    // happening gives her a queue to narrate. She was reading the picture correctly -- the picture
+    // was wrong.
+    //
+    // Tagged, so the boundary between "something Rocky senses" and "something a person said" is
+    // unmistakable. The tags are first-person too, because `<robot-state>` contains a word she is
+    // forbidden to say and putting it in front of her hundreds of times was asking for trouble.
 
     static func render(_ snapshot: WorldSnapshot) -> String {
-        var fields: [String: Any] = [
-            "body": snapshot.body.rawValue,
-            "doing": snapshot.doing.word,
-            "moving": snapshot.moving,
-        ]
-        if snapshot.doing != .still && snapshot.doing != .unknown {
-            fields["why"] = snapshot.cause.phrase
+        var fields: [String: Any] = ["i_am": snapshot.visibleDoing]
+
+        if snapshot.doing != .still, let because = snapshot.cause.phrase {
+            fields["because"] = because
         }
-        if snapshot.blocked {
-            fields["blocked"] = true
-            if let detail = snapshot.blockedDetail { fields["in_the_way"] = detail }
-        }
+        if snapshot.blocked { fields["something_in_my_way"] = true }
         if let feeling = snapshot.feeling { fields["feeling"] = feeling }
-        if let action = snapshot.action { fields["doing_because_you_asked"] = describe(action) }
-        return "<robot-state seq=\"\(snapshot.seq)\">\n\(json(fields))\n</robot-state>"
+        // Named only when it is a problem. Saying "here" every time is what gave her the noun.
+        switch snapshot.body {
+        case .here: break
+        case .quiet: fields["out_of_touch"] = "for a moment"
+        case .gone: fields["out_of_touch"] = "completely — I cannot feel myself"
+        }
+
+        if let action = snapshot.action {
+            if action.status.isLive {
+                if action.total > 1 { fields["how_many_so_far"] = "\(action.done) of \(action.total)" }
+                if let started = action.startedAt {
+                    fields["going_for"] = WorldWords.lasting(Date().timeIntervalSince(started))
+                }
+            } else {
+                // Decided, not queued. The difference is the whole complaint: "about to spin" is
+                // something a creature says; a status of `accepted` sitting beside a *different*
+                // current motion is a work queue, and she narrated it as one.
+                fields["about_to"] = action.intent.word
+                fields["decided"] = WorldWords.ago(Date().timeIntervalSince(action.requestedAt))
+            }
+        }
+        return "<i-feel seq=\"\(snapshot.seq)\">\n\(json(fields))\n</i-feel>"
     }
 
     static func render(_ event: WorldEvent) -> String {
-        var fields: [String: Any] = [
-            "what": event.kind.rawValue,
-            "detail": event.detail,
-        ]
-        if let during = event.during { fields["while_doing"] = during }
+        var fields: [String: Any] = ["what": event.detail]
         if event.again > 1 { fields["again"] = event.again }
         let when = WorldWords.ago(event.secondsAgo)
-        return "<robot-event id=\"\(event.id)\" seq=\"\(event.seq)\" when=\"\(when)\">\n\(json(fields))\n</robot-event>"
+        return "<just-happened id=\"\(event.id)\" seq=\"\(event.seq)\" when=\"\(when)\">\n\(json(fields))\n</just-happened>"
     }
 
-    /// The action, as something Rocky could say. `sure` is the load-bearing field: it is the
-    /// difference between "I'm turning" and "I think I'm turning", and it is false whenever the
-    /// body has not actually confirmed anything.
+    /// The action, for `get_robot_state` and the debug view -- somewhere a fuller picture is
+    /// wanted than the live snapshot carries.
     static func describe(_ action: RobotAction) -> [String: Any] {
-        var fields: [String: Any] = [
-            "id": action.id,
-            "trying_to": action.intent.word,
-            "how_it_is_going": action.status.rawValue,
-            "sure": action.evidence == .confirmed,
-        ]
-        if action.total > 1 { fields["done"] = "\(action.done) of \(action.total)" }
+        var fields: [String: Any] = ["id": action.id, "what": action.intent.word]
+        fields["how_it_went"] = action.status.isLive ? "happening now" : action.status.rawValue
+        if action.total > 1 { fields["how_many"] = "\(action.done) of \(action.total)" }
         if let started = action.startedAt {
             fields["going_for"] = WorldWords.lasting(Date().timeIntervalSince(started))
         } else {
-            fields["asked"] = WorldWords.ago(Date().timeIntervalSince(action.requestedAt))
+            fields["decided"] = WorldWords.ago(Date().timeIntervalSince(action.requestedAt))
         }
         if let reason = action.reason { fields["because"] = reason }
         return fields

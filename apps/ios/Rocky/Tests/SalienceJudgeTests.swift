@@ -48,11 +48,43 @@ final class SalienceJudgeTests: XCTestCase {
         XCTAssertEqual(judge.rule(on: event(.bumped), action: nil, moment: silent), .interrupt)
     }
 
-    /// Being cut off while describing motion is unambiguous. Being cut off mid-anecdote is not,
-    /// and that is precisely what the out-of-band judge is for -- so the rules must decline it.
+    /// Being frightened mid-sentence is unambiguous and handled by rule. A routine obstacle turn
+    /// mid-anecdote is not, and that is precisely what the out-of-band judge is for -- so the rules
+    /// must decline it.
     func testAnAmbiguousEventMidSentenceIsLeftToTheJudge() {
         let judge = SalienceJudge()
-        XCTAssertNil(judge.rule(on: event(.bumped), action: nil, moment: speaking("and then the tunnel")))
+        XCTAssertNil(judge.rule(on: event(.blocked), action: nil, moment: speaking("and then the tunnel")))
+    }
+
+    /// From the first live session: ten obstacle turns against three startles, one shared cooldown,
+    /// first-come-first-served -- and the furniture silently spent the budget every startle after
+    /// the first needed. Two of three startles never reached her.
+    func testFurnitureCannotCrowdOutAStartle() {
+        let judge = SalienceJudge()
+
+        let routine = judge.rule(on: event(.blocked, id: "evt_1"), action: nil, moment: speaking("I'm rolling"))
+        XCTAssertEqual(routine, .urgent, "it contradicted her, so it interrupted")
+
+        // Immediately afterwards, well inside any cooldown a routine event would impose.
+        let startle = judge.rule(on: event(.startled, id: "evt_2", seq: 11), action: nil, moment: silent)
+        XCTAssertEqual(startle, .interrupt, "a bigger thing gets through a smaller one's quiet period")
+    }
+
+    /// The other half of the same rule: a startle does not get to fire twice in a breath either.
+    func testTheSameStartleTwiceInABreathIsOneStartle() {
+        let judge = SalienceJudge()
+        XCTAssertEqual(judge.rule(on: event(.startled, id: "evt_1"), action: nil, moment: silent), .interrupt)
+        XCTAssertEqual(
+            judge.rule(on: event(.startled, id: "evt_2", seq: 11), action: nil, moment: silent),
+            .context
+        )
+    }
+
+    /// Routine events must not start a response out of nowhere. "I nudged a chair", unprompted,
+    /// every few seconds is the sports-commentator failure this whole policy exists to avoid.
+    func testARoutineEventNeverStartsAResponseOnItsOwn() {
+        let judge = SalienceJudge()
+        XCTAssertEqual(judge.rule(on: event(.blocked), action: nil, moment: silent), .context)
     }
 
     func testBookkeepingEventsAreNeverWorthInterruptingFor() {
@@ -70,6 +102,11 @@ final class SalienceJudgeTests: XCTestCase {
             .context,
             "she still learns about it; she just doesn't say anything"
         )
+    }
+
+    func testBookkeepingNeverInterruptsHoweverQuietSheIs() {
+        let judge = SalienceJudge()
+        XCTAssertEqual(judge.rule(on: event(.finished), action: nil, moment: silent), .context)
     }
 
     // MARK: - Race guards

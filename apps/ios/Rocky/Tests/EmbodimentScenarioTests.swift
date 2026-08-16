@@ -27,7 +27,9 @@ final class EmbodimentScenarioTests: XCTestCase {
         projector = WorldProjector(store: store, channel: channel)
         store.onChange = { [weak projector] change in projector?.handle(change) }
         behaviour = BehaviorWorldSource(store: store)
-        store.heard()
+        // The board sends a snapshot twice a second, so "sitting still, listening" is the real
+        // resting state -- not the never-heard-from `unknown` a bare store starts in.
+        behaviour.handle(.snapshot(mode: "listening", mood: "normal"))
     }
 
     override func tearDown() {
@@ -47,9 +49,7 @@ final class EmbodimentScenarioTests: XCTestCase {
         return try Self.fields(in: text)
     }
 
-    private func action(in state: [String: Any]) throws -> [String: Any] {
-        try XCTUnwrap(state["doing_because_you_asked"] as? [String: Any])
-    }
+    private func iAm(_ state: [String: Any]) -> String? { state["i_am"] as? String }
 
     /// What the `robot_gesture` tool does, exactly as the session's handler does it.
     @discardableResult
@@ -68,12 +68,14 @@ final class EmbodimentScenarioTests: XCTestCase {
         askForSpin()
         projector.flush("test")
 
-        let described = try action(in: try liveState())
-        XCTAssertEqual(described["how_it_is_going"] as? String, "accepted")
-        XCTAssertEqual(described["sure"] as? Bool, false)
-        XCTAssertNotNil(described["asked"], "how long ago she asked, since nothing has begun")
-        XCTAssertNil(described["going_for"])
-        XCTAssertEqual(try liveState()["moving"] as? Bool, false)
+        let state = try liveState()
+        // A decision, not a queue position. This is the shape that produced "spinning may start
+        // when rolling is done" when it was a status word sitting beside a different motion.
+        XCTAssertEqual(state["about_to"] as? String, "spin")
+        XCTAssertNotNil(state["decided"], "how long ago she decided, since nothing has begun")
+        XCTAssertNil(state["going_for"])
+        XCTAssertNil(state["how_it_is_going"])
+        XCTAssertEqual(iAm(state), "sitting still")
     }
 
     /// The board acknowledging an intention means *heard*, not *doing*. Claiming otherwise here
@@ -85,7 +87,7 @@ final class EmbodimentScenarioTests: XCTestCase {
 
         XCTAssertEqual(store.action(id: spin.id)?.status, .accepted)
         XCTAssertEqual(store.action(id: spin.id)?.evidence, .confirmed, "confirmed it was heard")
-        XCTAssertEqual(try liveState()["moving"] as? Bool, false)
+        XCTAssertEqual(iAm(try liveState()), "sitting still")
     }
 
     /// Nothing is ever assumed to have started. Ticking on with no word from the board must not
@@ -105,10 +107,9 @@ final class EmbodimentScenarioTests: XCTestCase {
         projector.flush("test")
 
         let state = try liveState()
-        XCTAssertEqual(state["doing"] as? String, "spinning")
-        XCTAssertEqual(state["moving"] as? Bool, true)
-        XCTAssertEqual(state["why"] as? String, "you asked")
-        XCTAssertEqual(try action(in: state)["sure"] as? Bool, true)
+        XCTAssertEqual(iAm(state), "spinning")
+        XCTAssertEqual(state["because"] as? String, "you asked me to")
+        XCTAssertNil(state["about_to"], "it is happening, so there is nothing to be about to do")
     }
 
     // MARK: - How it ended
@@ -120,8 +121,8 @@ final class EmbodimentScenarioTests: XCTestCase {
         behaviour.handle(.transition(mode: "listening", detail: ""))
         projector.flush("test")
 
-        XCTAssertNil(try liveState()["doing_because_you_asked"], "it is history now, not a condition")
-        XCTAssertEqual(try liveState()["moving"] as? Bool, false)
+        XCTAssertNil(try liveState()["about_to"], "it is history now, not a condition")
+        XCTAssertEqual(iAm(try liveState()), "sitting still")
         let event = try XCTUnwrap(store.events.last)
         XCTAssertEqual(event.kind, .finished)
         XCTAssertTrue(channel.inserted.contains { $0.id == "rw_event_\(event.id)" })
@@ -165,7 +166,8 @@ final class EmbodimentScenarioTests: XCTestCase {
         projector.flush("test")
 
         XCTAssertEqual(store.action(id: spin.id)?.status, .superseded)
-        XCTAssertEqual(try action(in: try liveState())["id"] as? String, wiggle.id)
+        XCTAssertEqual(try liveState()["about_to"] as? String, "wiggle")
+        XCTAssertEqual(store.snapshot.action?.id, wiggle.id)
     }
 
     /// A stop cancels rather than supersedes -- "you told me to stop" and "never mind, doing this
@@ -187,9 +189,9 @@ final class EmbodimentScenarioTests: XCTestCase {
         behaviour.handle(.transition(mode: "turning", detail: "obstacle"))
         projector.flush("test")
 
-        XCTAssertEqual(try liveState()["why"] as? String, "couldn't help it")
+        XCTAssertEqual(try liveState()["because"] as? String, "I couldn't help it")
         XCTAssertEqual(store.events.last?.kind, .blocked)
-        XCTAssertEqual(store.events.last?.detail, "something was in the way")
+        XCTAssertEqual(store.events.last?.detail, "something got in my way and I had to turn")
     }
 
     /// "I asked, but I've lost track of my body." Not a failure -- nobody said it failed.
@@ -201,9 +203,8 @@ final class EmbodimentScenarioTests: XCTestCase {
 
         XCTAssertEqual(store.action(id: spin.id)?.status, .lost)
         let state = try liveState()
-        XCTAssertEqual(state["body"] as? String, "gone")
-        XCTAssertEqual(state["doing"] as? String, "not sure")
-        XCTAssertEqual(state["moving"] as? Bool, false)
+        XCTAssertEqual(iAm(state), "not sure")
+        XCTAssertEqual(state["out_of_touch"] as? String, "completely — I cannot feel myself")
     }
 
     // MARK: - Churn
@@ -221,7 +222,7 @@ final class EmbodimentScenarioTests: XCTestCase {
             projector.flush("test")
         }
 
-        XCTAssertEqual(try liveState()["doing"] as? String, "rolling forward")
+        XCTAssertEqual(iAm(try liveState()), "rolling forward")
         let live = try XCTUnwrap(projector.liveStateItemId)
         let seq = { (id: String) in Int(id.replacingOccurrences(of: "rw_state_", with: "")) ?? 0 }
         for survivor in channel.stateItems where survivor != live {
@@ -250,13 +251,13 @@ final class EmbodimentScenarioTests: XCTestCase {
         behaviour.handle(.transition(mode: "dizzy", detail: "bump"))
         XCTAssertEqual(store.snapshot.doing, .spinning)
         XCTAssertEqual(store.snapshot.cause, .reflex)
-        XCTAssertEqual(store.events.last?.detail, "something touched me")
+        XCTAssertEqual(store.events.last?.detail, "something bumped into me")
 
         behaviour.handle(.transition(mode: "startled", detail: "came close"))
-        XCTAssertEqual(store.events.last?.detail, "something came at me")
+        XCTAssertEqual(store.events.last?.detail, "something came right at me — I jumped and bolted backwards")
 
         behaviour.handle(.transition(mode: "startled", detail: "loud noise"))
-        XCTAssertEqual(store.events.last?.detail, "a sudden loud noise")
+        XCTAssertEqual(store.events.last?.detail, "a sudden loud noise — it made me jump and run")
     }
 
     /// A spin she asked for, a spin because something bumped it, and driving of its own accord all

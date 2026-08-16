@@ -120,18 +120,25 @@ describe("createDeviceSessionConfig", () => {
       expect(instructions).toContain(machinery);
     }
     expect(instructions).toContain("oof -- I bumped into something");
-    expect(instructions).toContain("I've told my body to turn -- it hasn't gone yet.");
+
+    // From the first live session: she narrated a pending gesture as a work queue, and referred to
+    // herself in the third person. Both were faithful readings of what she was being handed, and
+    // both now have the exact failing line written down next to what to say instead.
+    expect(instructions).toContain("spinning may start when rolling is done");
+    expect(instructions).toContain("okay — spinning!");
+    expect(instructions).toContain('Never "the body"');
   });
 
-  it("explains the tags her own body sense arrives in", () => {
+  it("explains the tags her own sensations arrive in", () => {
     const instructions = (createDeviceSessionConfig() as SessionConfig).instructions as string;
 
     // These reach her as user messages, so without this she would answer them as if a person had
-    // spoken, or read them aloud.
-    expect(instructions).toContain("<robot-state>");
-    expect(instructions).toContain("<robot-event>");
-    expect(instructions).toContain("are your own body sense");
-    expect(instructions).toContain("must never be answered as if they were");
+    // spoken, or read them aloud. First-person tag names on purpose: <robot-state> put a word she
+    // is forbidden to say in front of her hundreds of times a session.
+    expect(instructions).toContain("<i-feel>");
+    expect(instructions).toContain("<just-happened>");
+    expect(instructions).toContain("are your own sensations");
+    expect(instructions).toContain("never answer them");
     // Deleting a superseded snapshot is only free while it is still the last item in the
     // conversation; past that, deleting it would rewrite the cached prefix behind everything said
     // since. So an older one can survive in history, and the rule the model follows has to be the

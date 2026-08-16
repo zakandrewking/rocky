@@ -66,9 +66,20 @@ struct SalienceTicket: Sendable, Identifiable {
 ///   -- which bounds cost and removes "two verdicts disagree" as a state that can exist.
 @MainActor
 final class SalienceJudge {
-    /// At most one spoken interruption this often. A robot being bumped repeatedly must not turn
-    /// into a commentator.
-    private static let interruptionCooldown: TimeInterval = 8
+    /// How long each tier holds the floor after interrupting. A startle is rare and worth hearing
+    /// about nearly every time; bumping furniture is neither, and in a cluttered room it happens
+    /// every few seconds.
+    private static func cooldown(for urgency: EventUrgency) -> TimeInterval {
+        switch urgency {
+        case .startling: return 5
+        case .routine: return 20
+        case .none: return .infinity
+        }
+    }
+
+    /// The same thing happening twice this close together is one thing happening twice, whatever
+    /// its urgency.
+    private static let repeatFloor: TimeInterval = 4
     /// A judgment older than this is stale by definition -- the sentence it was about is over.
     private static let ticketLifetime: TimeInterval = 4
 
@@ -80,6 +91,7 @@ final class SalienceJudge {
     private var resolvedEventIds: Set<String> = []
     private var lastInterruptionAt: Date?
     private var lastInterruptedKind: WorldEventKind?
+    private var lastInterruptedUrgency: EventUrgency = .none
     private var nextTicketNumber = 0
 
     private var log: WorldLog { WorldLog.shared }
@@ -90,6 +102,7 @@ final class SalienceJudge {
         resolvedEventIds = []
         lastInterruptionAt = nil
         lastInterruptedKind = nil
+        lastInterruptedUrgency = .none
     }
 
     // MARK: - Tier one: rules
@@ -108,19 +121,27 @@ final class SalienceJudge {
             return note(.urgent, event, "lost the body mid-action")
         }
 
+        let urgency = event.kind.urgency
+        guard urgency > .none else { return .context }
+
         guard moment.isGenerating else {
-            // Nothing to cut off. A notable event with no response running is simply a reason to
-            // start one -- which is a different act from interrupting, and cheaper to get wrong.
-            guard event.kind.isNotable else { return .context }
-            guard allowInterruption(event.kind) else { return note(.context, event, "still cooling down") }
-            return note(.interrupt, event, "she was quiet; this is worth saying")
+            // Nothing to cut off, so this is starting a response rather than interrupting one --
+            // a different act, and cheaper to get wrong. Still not for routine events: "I nudged a
+            // chair", unprompted, every few seconds is the sports-commentator failure.
+            guard urgency == .startling else { return .context }
+            guard allowInterruption(event.kind) else { return note(.context, event, "just said so") }
+            return note(.interrupt, event, "she was quiet and this is worth saying")
         }
 
-        guard event.kind.isNotable else { return .context }
         guard allowInterruption(event.kind) else { return note(.context, event, "still cooling down") }
 
-        // Something happened to a body whose voice is describing that body's motion. That is the
-        // clearest possible case for cutting in, and it does not need a second opinion.
+        // Something happened *to* her, mid-sentence. Nothing about that is ambiguous and it does
+        // not need a second opinion -- a creature that gets frightened stops talking.
+        if urgency == .startling {
+            return note(.interrupt, event, "something happened to her while she was talking")
+        }
+
+        // Routine, but it contradicts what she is currently saying about her own motion.
         if moment.claimsMotion { return note(.interrupt, event, "contradicts what she is saying") }
 
         // Everything else while she is talking is genuinely a judgement call.
@@ -226,16 +247,23 @@ final class SalienceJudge {
     // MARK: - Rate limiting
 
     private func allowInterruption(_ kind: WorldEventKind) -> Bool {
+        let urgency = kind.urgency
+        guard urgency > .none else { return false }
         guard let last = lastInterruptionAt else { return true }
-        if Date().timeIntervalSince(last) >= Self.interruptionCooldown { return true }
-        // Inside the cooldown, a *different* kind of thing is still allowed through once: being
-        // bumped twice is repetition, but being bumped and then losing the body is two things.
-        return lastInterruptedKind != kind && Date().timeIntervalSince(last) >= Self.interruptionCooldown / 2
+        let elapsed = Date().timeIntervalSince(last)
+
+        // The same thing twice in a breath is one thing, however big.
+        if kind == lastInterruptedKind, elapsed < Self.repeatFloor { return false }
+        if elapsed >= Self.cooldown(for: urgency) { return true }
+        // A bigger thing always gets through a smaller one's quiet period. This is the whole point
+        // of the tiers: without it, ten obstacle turns silently spend the budget a startle needed.
+        return urgency > lastInterruptedUrgency
     }
 
     private func stampInterruption(_ kind: WorldEventKind) {
         lastInterruptionAt = Date()
         lastInterruptedKind = kind
+        lastInterruptedUrgency = kind.urgency
     }
 
     private func note(_ verdict: SalienceVerdict, _ event: WorldEvent, _ reason: String) -> SalienceVerdict {

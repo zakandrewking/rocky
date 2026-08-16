@@ -147,7 +147,7 @@ final class WorldProjectorTests: XCTestCase {
 
     // MARK: - Rendering
 
-    func testAStateSnapshotIsWholeAndOmitsWhatItDoesNotKnow() throws {
+    func testASnapshotIsFirstPersonAndOmitsWhatItDoesNotKnow() throws {
         var snapshot = WorldSnapshot()
         snapshot.seq = 192
         snapshot.body = .here
@@ -155,72 +155,92 @@ final class WorldProjectorTests: XCTestCase {
         snapshot.cause = .youAsked
 
         let rendered = WorldProjector.render(snapshot)
-        XCTAssertTrue(rendered.hasPrefix("<robot-state seq=\"192\">"))
+        XCTAssertTrue(rendered.hasPrefix("<i-feel seq=\"192\">"))
         let fields = try Self.fields(in: rendered)
 
-        XCTAssertEqual(fields["doing"] as? String, "spinning")
-        XCTAssertEqual(fields["moving"] as? Bool, true)
-        XCTAssertEqual(fields["why"] as? String, "you asked")
+        XCTAssertEqual(fields["i_am"] as? String, "spinning")
+        XCTAssertEqual(fields["because"] as? String, "you asked me to")
         // Absent, not false: an omitted field means "not known", so a `blocked: false` would be a
         // claim rather than a silence.
-        XCTAssertNil(fields["blocked"])
+        XCTAssertNil(fields["something_in_my_way"])
         XCTAssertNil(fields["feeling"])
+        // Naming the body when nothing is wrong with it is what handed her the noun. She refers to
+        // herself in the third person the moment a field called `body` is in front of her.
+        XCTAssertNil(fields["out_of_touch"])
+        XCTAssertFalse(rendered.lowercased().contains("body"))
     }
 
-    /// The load-bearing field. `sure` is what separates "I'm turning" from "I think I'm turning",
-    /// and it must be false whenever the body has confirmed nothing.
-    func testAnAssumedActionSaysOutLoudThatItIsAssumed() throws {
-        var action = RobotAction(id: "act_1", intent: .spin, expectedDuration: 2)
-        action.status = .running
-        action.evidence = .assumed
+    /// The exact failure from the first live session: a pending gesture beside a different current
+    /// motion read as a work queue, and she said "spinning may start when rolling is done". A
+    /// decision is not a queue position, and must not look like one.
+    func testADecisionIsNotShownAsAQueuedJob() throws {
+        var action = RobotAction(id: "act_7", intent: .spin, expectedDuration: 8)
+        action.status = .accepted
         var snapshot = WorldSnapshot()
         snapshot.body = .here
-        snapshot.doing = .turning
-        snapshot.cause = .youAsked
+        snapshot.doing = .rollingForward
+        snapshot.cause = .onItsOwn
         snapshot.action = action
 
         let fields = try Self.fields(in: WorldProjector.render(snapshot))
-        let described = try XCTUnwrap(fields["doing_because_you_asked"] as? [String: Any])
 
-        XCTAssertEqual(described["sure"] as? Bool, false)
-        XCTAssertEqual(described["how_it_is_going"] as? String, "running")
-        XCTAssertEqual(described["trying_to"] as? String, "spin")
+        XCTAssertEqual(fields["i_am"] as? String, "rolling forward")
+        XCTAssertEqual(fields["about_to"] as? String, "spin")
+        XCTAssertNil(fields["how_it_is_going"], "no status word to narrate")
+        XCTAssertNil(fields["sure"])
     }
 
-    func testIntentAndObservationAreBothPresentWhenTheyDisagree() throws {
+    /// A spin-three-times really does alternate turning/settling six times in nine seconds. To a
+    /// person it is one act, and showing every flip was most of why she sounded like she was
+    /// reading a dial: by the time she could speak, the picture was two transitions old.
+    func testARepeatedGestureReadsAsOneActWhileItRuns() {
+        let (store, channel, projector) = make()
+        store.heard()
+        let spin = store.beginAction(.spin, expectedDuration: 9, total: 3)
+        store.markAction(spin.id, status: .running, evidence: .confirmed)
+
+        for mode in [Doing.turning, .still, .spinning, .turning, .still, .spinning] {
+            store.noteDoing(mode, cause: .youAsked)
+            projector.flush("test")
+        }
+
+        XCTAssertEqual(channel.stateItems.count, 1, "one act, one picture")
+        XCTAssertEqual(store.snapshot.visibleDoing, "spinning")
+    }
+
+    /// The disagreement case, in the new vocabulary: she has decided to spin, she is not moving,
+    /// and something is in the way. All three have to be present and none of them may be a status
+    /// word she could read aloud.
+    func testWhatSheWantsAndWhatIsHappeningAreBothPresentWhenTheyDisagree() throws {
         var action = RobotAction(id: "act_1", intent: .spin, expectedDuration: 3)
-        action.status = .running
-        action.evidence = .assumed
+        action.status = .accepted
         var snapshot = WorldSnapshot()
         snapshot.body = .here
         snapshot.doing = .still
         snapshot.blocked = true
-        snapshot.blockedDetail = "something was in the way"
         snapshot.action = action
 
         let fields = try Self.fields(in: WorldProjector.render(snapshot))
 
-        // "I'm trying to go forward, but something's in my way" needs all three of these at once.
-        XCTAssertEqual(fields["moving"] as? Bool, false)
-        XCTAssertEqual(fields["blocked"] as? Bool, true)
-        XCTAssertEqual(
-            (fields["doing_because_you_asked"] as? [String: Any])?["trying_to"] as? String,
-            "spin"
-        )
+        XCTAssertEqual(fields["i_am"] as? String, "sitting still")
+        XCTAssertEqual(fields["something_in_my_way"] as? Bool, true)
+        XCTAssertEqual(fields["about_to"] as? String, "spin")
     }
 
-    func testAnEventCarriesItsIdAndWhatItInterrupted() throws {
+    /// An event is a complete first-person sentence, because that is how it will be read. The
+    /// action id it happened during stays in the log, where it is a correlation key -- in front of
+    /// Rocky "act_83" is a noise she cannot use and might repeat.
+    func testAnEventIsAWholeSentenceSheCouldSay() throws {
         let event = WorldEvent(
-            id: "evt_31", seq: 193, kind: .bumped, detail: "something touched me",
+            id: "evt_31", seq: 193, kind: .bumped, detail: "something bumped into me",
             at: Date(), during: "act_83", again: 1
         )
         let rendered = WorldProjector.render(event)
 
-        XCTAssertTrue(rendered.contains("id=\"evt_31\""))
+        XCTAssertTrue(rendered.hasPrefix("<just-happened id=\"evt_31\""))
         XCTAssertTrue(rendered.contains("when=\"just now\""))
-        let fields = try Self.fields(in: rendered)
-        XCTAssertEqual(fields["what"] as? String, "bumped")
-        XCTAssertEqual(fields["while_doing"] as? String, "act_83")
+        XCTAssertFalse(rendered.contains("act_83"))
+        XCTAssertEqual(try Self.fields(in: rendered)["what"] as? String, "something bumped into me")
     }
 
     private static func seq(of itemId: String) -> Int {
