@@ -299,6 +299,8 @@ _state = {
     "drive_started": None,  # start of the current unbroken run of commitments, for the 8s cap
     "turn_ms": TURN_MS,  # how long "turning" spins for -- parameterized so the personality
     "turn_rpm": TURN_RPM,  # 8s-timeout turn and the collision-avoidance turn can differ
+    "turn_reason": "",  # carried through "settling" so the eventual "turning" transition can say
+    # why it is turning; the two turns look identical on the wire otherwise
     "baseline": 0.0,
     "flee_ms": FLEE_MS_MIN,
     "recover_index": 0,
@@ -326,6 +328,8 @@ _state = {
     "gesture": None,  # (name, expires_at_ticks) or None
     "gesture_repeats": 0,  # how many more times to do it once the current one finishes
     "gesture_name": "",
+    "gesture_id": "",  # the caller's own id for this intention, echoed back so it can follow
+    # what became of it instead of guessing from timing
 }
 
 
@@ -394,7 +398,7 @@ def _apply_intent(message, now):
         mood = message.get("mood")
         if mood in MOODS:
             _state["mood"] = mood
-            _emit({"type": "ack", "t": now, "of": "mood", "mood": mood})
+            _emit({"type": "ack", "t": now, "of": "mood", "id": str(message.get("id", "")), "mood": mood})
         return
 
     if kind == "gesture":
@@ -410,7 +414,17 @@ def _apply_intent(message, now):
             _state["gesture"] = (gesture, utime.ticks_add(now, GESTURE_TTL_MS))
             _state["gesture_name"] = gesture
             _state["gesture_repeats"] = times - 1
-            _emit({"type": "ack", "t": now, "of": "gesture", "gesture": gesture, "times": times})
+            _state["gesture_id"] = str(message.get("id", ""))
+            _emit(
+                {
+                    "type": "ack",
+                    "t": now,
+                    "of": "gesture",
+                    "id": _state["gesture_id"],
+                    "gesture": gesture,
+                    "times": times,
+                }
+            )
         return
 
 
@@ -734,7 +748,10 @@ def _tick_listening(now):
         headroom = SENSOR_MAX - STARTLE_CUTOFF
         surprise = min(1.0, max(0.0, (external - STARTLE_CUTOFF) / headroom))
         _state["flee_ms"] = int(FLEE_MS_MIN + surprise * (FLEE_MS_MAX - FLEE_MS_MIN))
-        _enter("startled", now)
+        # The reason travels with the transition. "startled" alone cannot be turned into anything
+        # a person would say -- being frightened by a shout and being crowded by something moving
+        # in are different experiences, and the observer has no other way to tell them apart.
+        _enter("startled", now, "loud noise")
         _show_face("O   O", (255, 255, 255))
         _send_telemetry(',"loud":{},"external":{}'.format(loudness, round(external, 1)))
         return
@@ -786,7 +803,7 @@ def _tick_listening(now):
             surprise = 1.0 - (distance / APPROACH_CM)  # closer -> more startled, see STARTLE_CUTOFF
             _state["flee_ms"] = int(FLEE_MS_MIN + surprise * (FLEE_MS_MAX - FLEE_MS_MIN))
             _state["was_close"] = close_now
-            _enter("startled", now)
+            _enter("startled", now, "came close")
             _show_face("O   O", (255, 255, 255))
             _send_telemetry(',"approach_cm":{}'.format(distance) + reflect_extra)
             return
@@ -820,6 +837,7 @@ def _tick_driving(now):
         _state["turn_ms"] = OBSTACLE_TURN_MS
         _state["turn_rpm"] = TURN_RPM * _random_sign()
         _state["return_to"] = "turning"
+        _state["turn_reason"] = "obstacle"
         _enter("settling", now)
         _send_telemetry(',"obstacle_cm":{}'.format(distance))
         return
@@ -829,6 +847,7 @@ def _tick_driving(now):
         _state["turn_ms"] = TURN_MS
         _state["turn_rpm"] = TURN_RPM
         _state["return_to"] = "turning"
+        _state["turn_reason"] = "been going a while"
         _enter("settling", now)
         return
 
@@ -855,7 +874,7 @@ def _tick_settling(now):
         _send_telemetry("")
         return
     if _state["return_to"] == "turning":
-        _enter("turning", now)
+        _enter("turning", now, _state["turn_reason"])
         _show_face("O   O", (255, 150, 0))
     else:
         _state["level"] = 0.0

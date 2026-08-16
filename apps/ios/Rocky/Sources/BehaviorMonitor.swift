@@ -1,13 +1,28 @@
 import Foundation
 import Network
 
-/// One thing the robot did, as history rather than status.
+/// One thing the robot did, as history rather than status. Kept for the on-screen debug list;
+/// the world model gets the richer BehaviorMessage below.
 struct BehaviorEvent: Sendable, Equatable {
     let mode: String
     let detail: String
     let at: Date
 
     var secondsAgo: Double { Date().timeIntervalSince(at) }
+}
+
+/// What the board just said, in the board's own vocabulary.
+///
+/// Deliberately untranslated. `rocky_behavior.py` speaks in state-machine names ("dizzy",
+/// "recovering") that came out of eleven versions of motion tuning and mean nothing to a person;
+/// turning them into something Rocky could say is BehaviorWorldSource's job, and keeping the two
+/// apart means the tuning record and the character can each change without the other.
+enum BehaviorMessage: Sendable {
+    case hello(mode: String, mood: String)
+    case transition(mode: String, detail: String)
+    case snapshot(mode: String, mood: String)
+    case acknowledged(of: String, id: String?)
+    case disconnected
 }
 
 /// Watches the robot's autonomous behaviour (apps/robot/device/rocky_behavior.py) and passes the
@@ -41,9 +56,12 @@ final class BehaviorMonitor: ObservableObject {
     @Published private(set) var mood = "normal"
     @Published private(set) var events: [BehaviorEvent] = []
 
-    /// Fired for the reactions worth interrupting a conversation over -- being startled or
-    /// bumped, not every routine drive.
-    var onNotableEvent: ((BehaviorEvent) -> Void)?
+    /// Every line the board sends, verbatim in its own vocabulary. Deciding what any of it means
+    /// -- and whether it is worth saying anything about -- happens downstream, in the world model.
+    /// This used to be an `onNotableEvent` hook that went straight to "make Rocky talk about it",
+    /// which conflated two questions that turn out to have different answers: should she know,
+    /// and should she interrupt herself.
+    var onBoardMessage: ((BehaviorMessage) -> Void)?
 
     private let beaconPort: NWEndpoint.Port
     private let eventPort: NWEndpoint.Port
@@ -221,7 +239,10 @@ final class BehaviorMonitor: ObservableObject {
                     RockyLog.write("behavior: watching the robot at \(host):\(port)")
                     self?.receive()
                 case .failed, .cancelled:
-                    if self?.connected == true { RockyLog.write("robot: lost the behaviour connection") }
+                    if self?.connected == true {
+                        RockyLog.write("robot: lost the behaviour connection")
+                        self?.onBoardMessage?(.disconnected)
+                    }
                     self?.connected = false
                 default:
                     break
@@ -237,6 +258,7 @@ final class BehaviorMonitor: ObservableObject {
                 guard let self else { return }
                 if let data, !data.isEmpty { self.ingest(data) }
                 if isComplete || error != nil {
+                    if self.connected { self.onBoardMessage?(.disconnected) }
                     self.connected = false
                     self.connection?.cancel()
                     self.connection = nil
@@ -271,13 +293,20 @@ final class BehaviorMonitor: ObservableObject {
             )
             mode = event.mode
             append(event)
+            onBoardMessage?(.transition(mode: event.mode, detail: event.detail))
         case "snapshot":
             mode = message["mode"] as? String ?? mode
             mood = message["mood"] as? String ?? mood
+            onBoardMessage?(.snapshot(mode: mode, mood: mood))
         case "hello":
             mode = message["mode"] as? String ?? mode
             mood = message["mood"] as? String ?? mood
             RockyLog.write("behavior: robot says hello (mode \(mode), mood \(mood))")
+            onBoardMessage?(.hello(mode: mode, mood: mood))
+        case "ack":
+            onBoardMessage?(
+                .acknowledged(of: message["of"] as? String ?? "", id: (message["id"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+            )
         default:
             break
         }
@@ -288,11 +317,6 @@ final class BehaviorMonitor: ObservableObject {
         events.removeAll { $0.secondsAgo > Self.historyWindow }
         if events.count > Self.maxEvents { events.removeFirst(events.count - Self.maxEvents) }
         RockyLog.write("behavior: \(event.mode)\(event.detail.isEmpty ? "" : " (\(event.detail))")")
-        // Only reactions worth interrupting a conversation over. Narrating every routine drive
-        // would make Rocky a sports commentator.
-        if event.mode == "startled" || event.mode == "dizzy" {
-            onNotableEvent?(event)
-        }
     }
 
     // MARK: - What the character would like
@@ -310,15 +334,19 @@ final class BehaviorMonitor: ObservableObject {
         RockyLog.write("behavior: asked the robot to stop")
     }
 
-    func setMood(_ mood: String) {
-        send(["type": "mood", "mood": mood])
+    func setMood(_ mood: String, id: String) {
+        send(["type": "mood", "mood": mood, "id": id])
         RockyLog.write("behavior: asked for mood \(mood)")
     }
 
-    func requestGesture(_ gesture: String, times: Int = 1) {
+    /// `id` is Rocky's own action id, echoed back by the board in its ack -- which is what makes
+    /// a gesture's fate correlatable rather than inferred from timing. Whether the board ever
+    /// finds a safe seam to honour it is still the board's call, which is why this is an
+    /// intention and the ack means "heard", not "doing".
+    func requestGesture(_ gesture: String, times: Int = 1, id: String) {
         let repeats = max(1, min(10, times))
-        send(["type": "gesture", "gesture": gesture, "times": repeats])
-        RockyLog.write("behavior: gesture \(gesture)\(repeats > 1 ? " x\(repeats)" : "")")
+        send(["type": "gesture", "gesture": gesture, "times": repeats, "id": id])
+        RockyLog.write("behavior: gesture \(gesture)\(repeats > 1 ? " x\(repeats)" : "") (\(id))")
     }
 
     /// Recent history, newest first, as the model should read it: what happened and how long ago.

@@ -1,49 +1,67 @@
 import Foundation
 
-/// What the robot is and has just done, as a snapshot the model can ask for.
-///
-/// Every field is something the phone already knows from having issued the commands itself --
-/// nothing here needs the board to report anything new. That matters: the CyberPi's published API
-/// documents no battery or IMU readout (apps/cyberpi/docs/cyberos-api-surface.md), so inventing
-/// device-side state would mean guessing at firmware rather than reading it.
-struct RobotState: Sendable {
-    var connected: Bool
-    var address: String
-    var busy: Bool
-    var face: FaceState?
-    var lastAction: String?
-    var lastActionResult: String?
-    var secondsSinceLastAction: Double?
-    var lastDistanceCm: Double?
-    var secondsSinceDistanceReading: Double?
+/// What became of an action, or of the link carrying it. The only thing this layer says about the
+/// world -- everything semantic (what "blocked" means, whether it is worth mentioning) happens in
+/// MotionWorldSource, on the far side of this boundary.
+enum ActionReport: Sendable {
+    case started(actionId: String)
+    case succeeded(actionId: String)
+    case blocked(actionId: String, reason: String)
+    case failed(actionId: String, reason: String)
+    /// The deadline passed with no outcome. Deliberately not `failed`: nobody said it failed.
+    case lost(actionId: String, reason: String)
+    case distance(cm: Double)
+    /// Traffic arrived, which on this hardware is the only real proof the board is running.
+    case alive
+    case gone(String)
 }
 
-/// Thin actor wrapper around Robot, giving RealtimeVoiceSession's tool-call handler a general
-/// passthrough instead of a fixed vocabulary -- the model picks its own distances/angles per
-/// request, bounded the same way everything else is (protocol.ts's boundCommand equivalent,
-/// enforced inside Robot itself, not here).
+/// Runs Rocky's movement instructions against the motion agent, and reports what became of them.
 ///
-/// It also remembers what just happened. Without that the model is amnesiac between tool calls:
-/// it drives, reads a distance, and by the next turn has no idea it moved or what it saw.
+/// The important property is that **movement never blocks the caller**. `drive` and `turn` return
+/// as soon as the command is on the wire; whether it started, finished, was refused or was never
+/// heard of again arrives afterwards, through `onReport`, and lands in the world model.
+///
+/// It used to be the other way round -- the tool-call handler awaited physical completion, which
+/// meant Rocky went silent for the length of every movement and, worse, that a drive lasting
+/// longer than a flat three-second timeout was reported to her as a failure while the robot was
+/// still happily driving. Both of those were the same mistake: treating a physical act as a
+/// function call.
+///
+/// It no longer remembers anything either. WorldStore is the single authoritative memory now, so
+/// having a second, quietly-diverging copy of "what the robot just did" living here would be one
+/// answer too many to the same question.
 actor RobotController {
     private let robot: Robot
-    private let host: String
+    let host: String
 
     private var connected = false
-    private var busy = false
-    private var face: FaceState?
-    private var lastAction: String?
-    private var lastActionResult: String?
-    private var lastActionAt: Date?
-    private var lastDistanceCm: Double?
-    private var lastDistanceAt: Date?
+    /// Wire command id → the action id Rocky knows it by. The board speaks in its own sequence
+    /// numbers; nothing above this layer should ever have to.
+    private var actionForCommand: [String: String] = [:]
+    private var report: (@Sendable (ActionReport) -> Void)?
 
     init(host: String, port: UInt16 = 8765) {
         self.host = host
         self.robot = Robot(host: host, port: port)
     }
 
+    func observe(_ report: @escaping @Sendable (ActionReport) -> Void) {
+        self.report = report
+    }
+
     func connect() async throws {
+        await robot.observe(
+            started: { [weak self] commandId in
+                Task { await self?.noteStarted(commandId) }
+            },
+            traffic: { [weak self] in
+                Task { await self?.emit(.alive) }
+            },
+            disconnected: { [weak self] error in
+                Task { await self?.noteDisconnected(error) }
+            }
+        )
         try await robot.connect()
         connected = true
     }
@@ -53,65 +71,113 @@ actor RobotController {
         connected = false
     }
 
-    func state() -> RobotState {
-        RobotState(
-            connected: connected,
-            address: host,
-            busy: busy,
-            face: face,
-            lastAction: lastAction,
-            lastActionResult: lastActionResult,
-            secondsSinceLastAction: lastActionAt.map { Date().timeIntervalSince($0) },
-            lastDistanceCm: lastDistanceCm,
-            secondsSinceDistanceReading: lastDistanceAt.map { Date().timeIntervalSince($0) }
-        )
-    }
+    var isConnected: Bool { connected }
 
-    /// Runs one robot action, recording what it was and how it went either way. A failure is part
-    /// of the state the model should be able to see -- "I tried to drive and it failed" is more
-    /// useful to it than silence.
-    private func record<T>(_ action: String, _ body: () async throws -> T) async throws -> T {
-        busy = true
-        lastAction = action
-        lastActionAt = Date()
-        defer { busy = false }
-        do {
-            let result = try await body()
-            lastActionResult = "ok"
-            return result
-        } catch {
-            lastActionResult = "failed: \(error.localizedDescription)"
-            throw error
+    // MARK: - Movement (fire and report)
+
+    func drive(actionId: String, distanceCm: Double, speed: Double) async {
+        let estimate = RobotLimits.estimatedDriveSeconds(distanceCm: distanceCm, speed: speed)
+        await run(actionId: actionId, estimate: estimate) { commandId, deadline in
+            try await self.robot.drive(
+                id: commandId, distanceCm: distanceCm, speed: speed, timeout: deadline
+            )
         }
     }
 
-    @discardableResult
-    func drive(distanceCm: Double, speed: Double) async throws -> TelemetryMessage {
-        try await record("drive \(Int(distanceCm))cm") { try await robot.drive(distanceCm: distanceCm, speed: speed) }
+    func turn(actionId: String, degrees: Double, speed: Double) async {
+        let estimate = RobotLimits.estimatedTurnSeconds(degrees: degrees, speed: speed)
+        await run(actionId: actionId, estimate: estimate) { commandId, deadline in
+            try await self.robot.turn(id: commandId, degrees: degrees, speed: speed, timeout: deadline)
+        }
     }
 
-    @discardableResult
-    func turn(degrees: Double, speed: Double) async throws -> TelemetryMessage {
-        try await record("turn \(Int(degrees))°") { try await robot.turn(degrees: degrees, speed: speed) }
+    /// Stop is the one movement worth awaiting: it is short, it is the safety path, and the
+    /// difference between "asked to stop" and "stopped" is one a person can hear.
+    func stop(actionId: String) async {
+        do {
+            _ = try await robot.stop()
+            emit(.succeeded(actionId: actionId))
+        } catch {
+            emit(Self.outcome(for: actionId, error: error))
+        }
     }
 
-    func stop() async throws {
-        try await record("stop") { try await robot.stop() }
+    /// Sends, returns, and reports the outcome whenever it turns up.
+    private func run(
+        actionId: String,
+        estimate: TimeInterval,
+        _ body: @escaping @Sendable (String, TimeInterval) async throws -> TelemetryMessage
+    ) async {
+        let commandId = await robot.nextCommandId()
+        actionForCommand[commandId] = actionId
+        let deadline = RobotLimits.completionDeadline(estimate: estimate)
+        Task { [weak self] in
+            do {
+                _ = try await body(commandId, deadline)
+                await self?.finish(commandId, with: .succeeded(actionId: actionId))
+            } catch {
+                await self?.finish(commandId, with: Self.outcome(for: actionId, error: error))
+            }
+        }
     }
+
+    private func finish(_ commandId: String, with report: ActionReport) {
+        actionForCommand.removeValue(forKey: commandId)
+        emit(report)
+    }
+
+    private func noteStarted(_ commandId: String) {
+        guard let actionId = actionForCommand[commandId] else { return }
+        emit(.started(actionId: actionId))
+    }
+
+    private func noteDisconnected(_ error: Error?) {
+        connected = false
+        actionForCommand.removeAll()
+        emit(.gone(error.map { $0.localizedDescription } ?? "the connection to my body dropped"))
+    }
+
+    /// Turns a transport error into the honest report. The distinction that matters here is
+    /// `blocked` and `lost` versus `failed`: something got in the way, versus we never found out,
+    /// versus the body actually said no. Those are three different sentences.
+    private static func outcome(for actionId: String, error: Error) -> ActionReport {
+        switch error {
+        case RobotError.commandFailed(let message) where message.contains("obstacle"):
+            return .blocked(actionId: actionId, reason: "something was in the way")
+        case RobotError.commandFailed(let message) where message.contains("busy"):
+            return .failed(actionId: actionId, reason: "my body was already doing something")
+        case RobotError.commandFailed(let message):
+            return .failed(actionId: actionId, reason: message)
+        case RobotError.timedOut:
+            return .lost(actionId: actionId, reason: "I never felt it finish")
+        case RobotError.disconnected:
+            return .lost(actionId: actionId, reason: "I lost track of my body")
+        default:
+            return .failed(actionId: actionId, reason: error.localizedDescription)
+        }
+    }
+
+    private func emit(_ report: ActionReport) {
+        self.report?(report)
+    }
+
+    // MARK: - Queries and instant effects
+    //
+    // These stay awaited. A distance reading is a question whose answer is the whole point, and
+    // a face or a light changes the instant the board reads the line -- there is no "in progress"
+    // for either, so there is nothing for the action lifecycle to describe.
 
     func readDistanceCm() async throws -> Double {
-        let cm = try await record("read distance") { try await robot.readDistance() }
-        lastDistanceCm = cm
-        lastDistanceAt = Date()
+        let cm = try await robot.readDistance()
+        emit(.distance(cm: cm))
         return cm
     }
 
     func setFace(_ face: FaceState) async throws {
-        try await record("set face \(face.rawValue)") { try await robot.setFace(face) }
-        self.face = face
+        try await robot.setFace(face)
     }
 
     func setLights(red: Int, green: Int, blue: Int) async throws {
-        try await record("set lights") { try await robot.setLights(r: red, g: green, b: blue) }
+        try await robot.setLights(r: red, g: green, b: blue)
     }
 }

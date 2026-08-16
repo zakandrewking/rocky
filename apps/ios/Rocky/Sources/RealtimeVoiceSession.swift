@@ -1,12 +1,20 @@
 import Foundation
 
-/// Owns one Realtime voice conversation: mints an ephemeral secret directly from OpenAI
-/// (OpenAIRealtimeMinter), opens a direct WebRTC connection (RealtimeWebRTCClient), and
-/// dispatches tool calls (drive_cm, rotate_degrees, stop_robot, read_distance, set_face --
-/// defined in services/device-api/src/session.ts, the single source of truth baked into the
-/// bundled session config at build time) onto a connected RobotController. Replaces the fixed
-/// five-word vocabulary (VoiceCommandRecognizer) entirely -- this is real conversation, not
-/// string matching.
+/// Owns one Realtime voice conversation, and owns Rocky's sense of her own body while it runs.
+///
+/// Two responsibilities that used to be one. The conversation half is unchanged from before:
+/// mint an ephemeral secret (OpenAIRealtimeMinter), open a direct WebRTC connection
+/// (RealtimeWebRTCClient), time every leg of every turn, and keep the microphone honest. The
+/// embodiment half is new, and lives mostly elsewhere on purpose -- WorldStore holds what is
+/// true, WorldProjector decides what Rocky gets told, SalienceJudge decides whether it is worth
+/// interrupting her for, and this class is the only thing that talks to OpenAI. See
+/// apps/ios/docs/embodiment.md.
+///
+/// The rule that shapes the tool handling below: **a tool call registers an intent and returns.**
+/// It never waits for the body. What actually happened arrives afterwards, as its own truth, and
+/// reaches Rocky as state and events rather than as a return value. A function returning `true`
+/// is not evidence that a robot moved, and the previous version of this file treated it as if it
+/// were.
 @MainActor
 final class RealtimeVoiceSession: ObservableObject {
     enum State: Equatable {
@@ -20,6 +28,16 @@ final class RealtimeVoiceSession: ObservableObject {
         are back and listening. Do not introduce yourself, do not greet your friend as if meeting
         them, and do not repeat anything from your first greeting. Pick up where you left off.
         """
+
+    /// What to say about something that just happened to her body. Phrased as a thing already
+    /// over, because it is: a flinch lasts under a second and she cannot speak in under two.
+    private static func reactionPrompt(to event: WorldEvent) -> String {
+        """
+        This just happened to your body: \(event.detail). It is over now. Say one short line
+        reacting to it as something that happened to you, in your own way of speaking. Do not name
+        it, do not describe it as a state or a mode, and do not ask what to do next.
+        """
+    }
 
     /// A paused session is held open, but not forever: the connection would go stale on its own
     /// eventually, and holding a Realtime session all day to save a resume nobody asked for is
@@ -39,6 +57,20 @@ final class RealtimeVoiceSession: ObservableObject {
     private var robot: RobotController?
     private var greeted = false
 
+    // MARK: - The world
+    //
+    // The authoritative picture of the body, and the machinery that decides what reaches Rocky.
+    // Public for the debug panel, which is the whole point of building it this way: what she knew
+    // and when she knew it is inspectable rather than reconstructed.
+
+    let world = WorldStore()
+    private lazy var projector = WorldProjector(store: world, channel: self)
+    private let salience = SalienceJudge()
+    private lazy var motionSource = MotionWorldSource(store: world)
+    private lazy var behaviorSource = BehaviorWorldSource(store: world)
+    private var behavior: BehaviorMonitor?
+    private var worldTicker: Task<Void, Never>?
+
     /// The synthesiser, present only when the active character actually wants one. Characters
     /// voiced by the Realtime model itself speak over the WebRTC track and never touch this --
     /// one network hop instead of two, which is most of why it sounds quicker.
@@ -47,13 +79,6 @@ final class RealtimeVoiceSession: ObservableObject {
     private var humeTextBuffer = ""
     /// The quiet alien chatter under her voice.
     private var eridian: EridianAudio?
-
-    /// The robot's own autonomous behaviour, when it is the payload running on the board.
-    private var behavior: BehaviorMonitor?
-    /// Notable reactions are worth interrupting a conversation over, but not every one of them --
-    /// a robot that gets bumped repeatedly would otherwise talk over itself indefinitely.
-    private var lastNarratedAt: Date?
-    private static let narrationCooldown: TimeInterval = 20
 
     // MARK: - Turn timing and recovery
     //
@@ -76,6 +101,28 @@ final class RealtimeVoiceSession: ObservableObject {
     /// True while Rocky's own un-cancelled audio could otherwise be heard as an interruption.
     private var gatedForOwnVoice = false
 
+    // MARK: - Response lifecycle
+    //
+    // The Realtime API allows exactly one in-band response at a time; a second `response.create`
+    // while one is live is rejected outright. Before this, two separate paths could each ask for
+    // one (a tool-call follow-up and an unprompted reaction to a bump), and whichever lost simply
+    // vanished with an error in the log. Everything that wants Rocky to speak now goes through
+    // `requestResponse`, and exactly one request can be waiting.
+
+    private var activeResponseId: String?
+    private var parkedRequest: (instructions: String?, reason: String)?
+    /// The assistant message item currently being spoken -- needed to truncate it if she is cut
+    /// off, so her memory of what she said matches what was actually heard.
+    private var currentAssistantItemId: String?
+    private var audioStartedAt: Date?
+    private var utteranceSoFar = ""
+    /// Salience judgments run as out-of-band responses on the same data channel as everything
+    /// else, so their ids have to be recognised or their deltas would be mistaken for speech.
+    private var salienceResponses: [String: String] = [:]
+    private var salienceText: [String: String] = [:]
+    /// An event judged worth reacting to, but not worth cutting a sentence in half for.
+    private var reactAfterUtterance: WorldEvent?
+
     /// How long to wait for Hume's first audio before assuming the request was lost.
     private static let firstAudioTimeout: Duration = .milliseconds(2500)
 
@@ -96,9 +143,6 @@ final class RealtimeVoiceSession: ObservableObject {
     /// are dropped from the session rather than left to fail (see OpenAIRealtimeMinter).
     func connect(robot: RobotController?, behavior: BehaviorMonitor? = nil) async {
         self.behavior = behavior
-        behavior?.onNotableEvent = { [weak self] event in
-            Task { @MainActor in self?.narrate(event) }
-        }
         guard state == .disconnected || isFailed else { return }
         self.robot = robot
         state = .connecting
@@ -109,6 +153,8 @@ final class RealtimeVoiceSession: ObservableObject {
         isPaused = false
         gatedForOwnVoice = false
         userStoppedSpeakingAt = nil
+
+        wireWorld(robot: robot, behavior: behavior)
 
         let connectStart = Date()
         if let startedAt { log("connect beginning \(Self.ms(since: startedAt)) after the tap") }
@@ -154,6 +200,197 @@ final class RealtimeVoiceSession: ObservableObject {
         }
     }
 
+    // MARK: - Wiring the world
+
+    /// Points the world model at whichever body was found, and points the salience judge at the
+    /// data channel. Only one payload runs on the board at a time, so at most one of these two
+    /// sources will ever see traffic -- but both are wired, because which one it is is discovered
+    /// at runtime, not chosen here.
+    private func wireWorld(robot: RobotController?, behavior: BehaviorMonitor?) {
+        world.onChange = { [weak self] change in
+            self?.worldChanged(change)
+        }
+        salience.askOutOfBand = { [weak self] ticket, prompt in
+            self?.sendSalienceRequest(ticket, prompt)
+        }
+        behavior?.onBoardMessage = { [weak self] message in
+            self?.behaviorSource.handle(message)
+        }
+        if let robot {
+            Task {
+                await robot.observe { [weak self] report in
+                    Task { @MainActor in self?.motionSource.handle(report) }
+                }
+                // A connected motion agent is a body that is present. Nothing else says so: this
+                // agent sends no unprompted traffic, so without this the world would open with
+                // "my body is gone" while the robot sat there answering commands.
+                if await robot.isConnected { self.world.heard() }
+            }
+        }
+        worldTicker?.cancel()
+        worldTicker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                await self?.tickWorld()
+            }
+        }
+    }
+
+    private func tickWorld() {
+        world.tick()
+        projector.checkpoint()
+    }
+
+    /// The one place a change in the world becomes a decision about speech. Projection happens
+    /// for everything; interrupting almost never does.
+    private func worldChanged(_ change: WorldChange) {
+        projector.handle(change)
+        guard case .event(let event) = change else { return }
+        consider(event)
+    }
+
+    private func consider(_ event: WorldEvent) {
+        let moment = currentMoment()
+        if let verdict = salience.rule(on: event, action: world.liveAction, moment: moment) {
+            apply(verdict, to: event)
+            return
+        }
+        // Genuinely ambiguous, and she is mid-sentence. Ask her -- out of band, so the question
+        // and the answer never touch the conversation she is having.
+        salience.ask(about: event, snapshot: world.snapshot, moment: moment)
+    }
+
+    private func apply(_ verdict: SalienceVerdict, to event: WorldEvent) {
+        switch verdict {
+        case .ignore, .context:
+            break  // she already knows; the projection did that
+        case .afterUtterance:
+            reactAfterUtterance = event
+        case .interrupt, .urgent:
+            if activeResponseId != nil {
+                interrupt(because: event)
+            } else {
+                requestResponse(instructions: Self.reactionPrompt(to: event), reason: "reacting to \(event.id)")
+            }
+        }
+    }
+
+    private func currentMoment() -> VoiceMoment {
+        VoiceMoment(
+            isGenerating: activeResponseId != nil,
+            responseId: activeResponseId,
+            utteranceSoFar: utteranceSoFar,
+            worldSeq: world.seq
+        )
+    }
+
+    // MARK: - Speaking
+
+    /// The single door to `response.create`. Anything that wants Rocky to say something asks here,
+    /// and one request at most can be waiting -- a newer reason to speak replaces an older one
+    /// rather than queueing behind it, because by the time the older one gets its turn the moment
+    /// that prompted it has passed.
+    private func requestResponse(instructions: String? = nil, reason: String) {
+        guard client.isDataChannelOpen, !isPaused else { return }
+        if activeResponseId != nil {
+            parkedRequest = (instructions, reason)
+            log("holding a response request (\(reason)) until the current one finishes")
+            return
+        }
+        // Nothing goes out until she has the current picture. This is the promise the whole design
+        // rests on: every response Rocky begins, begins grounded.
+        projector.flush(reason)
+        client.send(ResponseCreateEvent(instructions: instructions))
+        WorldLog.shared.write(.response, "asked for a response: \(reason)", seq: world.seq)
+    }
+
+    private func releaseParkedRequest() {
+        guard let parked = parkedRequest else {
+            if let event = reactAfterUtterance {
+                reactAfterUtterance = nil
+                requestResponse(instructions: Self.reactionPrompt(to: event), reason: "reacting after the utterance")
+            }
+            return
+        }
+        parkedRequest = nil
+        reactAfterUtterance = nil
+        requestResponse(instructions: parked.instructions, reason: parked.reason)
+    }
+
+    /// The full interruption, in the order that actually works.
+    ///
+    /// Cancelling stops the model generating, but it cannot un-send audio already buffered for
+    /// playback, and it does not stop a synthesiser running outside WebRTC entirely. Truncating
+    /// last is what keeps her memory of what she said matching what was heard -- otherwise she
+    /// remembers finishing a sentence nobody heard the end of, and refers back to it.
+    private func interrupt(because event: WorldEvent) {
+        guard let responseId = activeResponseId else { return }
+        log("interrupting \(responseId) for \(event.id) (\(event.kind.rawValue))")
+        client.send(ResponseCancelEvent(responseId: responseId))
+        client.send(OutputAudioBufferClearEvent())
+        stopLocalAudio()
+        hume?.cancel()
+        if let itemId = currentAssistantItemId, let started = audioStartedAt {
+            // Approximate, and honestly so: on WebRTC the exact playback position is not
+            // reported, so this is how long audio had been arriving. Erring long would delete
+            // words she did say; erring short leaves a fragment she did not. Elapsed-since-first-
+            // audio is the closest thing to the truth available here.
+            let heard = Int(Date().timeIntervalSince(started) * 1000)
+            client.send(ConversationItemTruncateEvent(itemId: itemId, audioEndMs: heard))
+        }
+        WorldLog.shared.closeLedger(responseId, outcome: "interrupted", interruptedBy: event.id)
+        activeResponseId = nil
+        speaking = false
+        finishResponse(reason: "interrupted by \(event.id)")
+        requestResponse(instructions: Self.reactionPrompt(to: event), reason: "interrupted by \(event.id)")
+    }
+
+    // MARK: - Out-of-band salience
+
+    private func sendSalienceRequest(_ ticket: SalienceTicket, _ prompt: String) {
+        guard client.isDataChannelOpen else { return }
+        salienceResponses[ticket.id] = ticket.id
+        client.send(
+            OutOfBandResponseEvent(
+                metadata: ["purpose": "salience", "ticket": ticket.id],
+                instructions: prompt,
+                input: "Decide now."
+            )
+        )
+    }
+
+    /// A judgment came back. Everything about whether it still means anything lives in the judge;
+    /// this only has to not act on a nil.
+    private func resolveSalience(ticketId: String, text: String) {
+        // Read before resolving: the judge clears its pending slot as part of deciding, and the
+        // event this was ever about is only recoverable from the ticket.
+        let eventId = salience.pending?.id == ticketId ? salience.pending?.eventId : nil
+        let (decision, reason) = Self.parseVerdict(text)
+        guard let verdict = salience.resolve(
+            ticketId: ticketId, decision: decision, reason: reason, moment: currentMoment()
+        ) else { return }
+        guard let eventId, let event = world.events.last(where: { $0.id == eventId }) else { return }
+        apply(verdict, to: event)
+    }
+
+    /// Tolerant on purpose. A judge that wraps its JSON in a sentence should still be understood;
+    /// one that says something unrecognisable should fall through to "ignore" rather than to a
+    /// crash or, worse, to an interruption.
+    static func parseVerdict(_ text: String) -> (decision: String, reason: String) {
+        guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end else {
+            return ("ignore", "no JSON in the reply")
+        }
+        let slice = String(text[start...end])
+        guard let data = slice.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return ("ignore", "unparseable reply") }
+        return (
+            object["decision"] as? String ?? "ignore",
+            object["reason"] as? String ?? "no reason given"
+        )
+    }
+
     /// Stops listening and speaking without tearing anything down.
     ///
     /// The WebRTC connection and the Realtime session stay open, which is the whole point: the
@@ -167,10 +404,13 @@ final class RealtimeVoiceSession: ObservableObject {
         hume?.cancel()
         // Unconditionally, not only mid-response: generation may have finished while audio is
         // still arriving, and cancelling a response that has already ended is harmless.
-        client.send(ResponseCancelEvent())
+        client.send(ResponseCancelEvent(responseId: activeResponseId))
         // Silences a character voiced by the Realtime model, whose audio plays through the peer
         // connection rather than any local player -- stopping local audio leaves it talking.
         client.setRemoteAudioEnabled(false)
+        activeResponseId = nil
+        parkedRequest = nil
+        reactAfterUtterance = nil
         finishResponse(reason: "paused")
         refreshMicrophone("paused")
         speaking = false
@@ -195,7 +435,7 @@ final class RealtimeVoiceSession: ObservableObject {
         client.setRemoteAudioEnabled(true)
         refreshMicrophone("resumed")
         log("resumed, asking Rocky to acknowledge waking")
-        client.send(ResponseCreateEvent(instructions: Self.wakePrompt))
+        requestResponse(instructions: Self.wakePrompt, reason: "resumed")
     }
 
     private func endLongPause() {
@@ -215,6 +455,8 @@ final class RealtimeVoiceSession: ObservableObject {
         turnWatchdog?.cancel()
         pauseTimeout?.cancel()
         pauseTimeout = nil
+        worldTicker?.cancel()
+        worldTicker = nil
         responseStartedAt = nil
         userStoppedSpeakingAt = nil
         micOpen = true
@@ -225,6 +467,17 @@ final class RealtimeVoiceSession: ObservableObject {
         state = .disconnected
         robot = nil
         greeted = false
+        activeResponseId = nil
+        parkedRequest = nil
+        reactAfterUtterance = nil
+        currentAssistantItemId = nil
+        utteranceSoFar = ""
+        salienceResponses = [:]
+        salienceText = [:]
+        // The conversation is gone, so every item id in it is gone with it -- but the body is
+        // exactly where it was, so the store is deliberately left alone.
+        projector.reset()
+        salience.reset()
     }
 
     // MARK: - Rocky's voice and her alien chatter
@@ -238,6 +491,7 @@ final class RealtimeVoiceSession: ObservableObject {
             guard let self else { return }
             if self.firstAudioAt == nil, let started = self.responseStartedAt {
                 self.firstAudioAt = Date()
+                self.audioStartedAt = Date()
                 self.log("hume first audio after \(Self.ms(since: started)) (text→voice latency)")
             }
             if isLastChunk {
@@ -347,7 +601,7 @@ final class RealtimeVoiceSession: ObservableObject {
     private func greetIfNeeded() {
         guard !greeted else { return }
         greeted = true
-        client.send(ResponseCreateEvent())
+        requestResponse(reason: "greeting")
         if let startedAt {
             log("asked Rocky to greet, \(Self.ms(since: startedAt)) after the tap")
         }
@@ -437,7 +691,10 @@ final class RealtimeVoiceSession: ObservableObject {
         responseStartedAt = nil
         firstTextAt = nil
         firstAudioAt = nil
+        audioStartedAt = nil
         responseText = ""
+        utteranceSoFar = ""
+        currentAssistantItemId = nil
         humeTextBuffer = ""
         retriedThisResponse = false
         humeSawLastChunk = false
@@ -465,6 +722,12 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     private func handle(_ event: RealtimeServerEvent) async {
+        // Out-of-band salience judgments arrive on the same data channel as Rocky's own speech.
+        // Routing them out first, before anything else looks at them, is what stops a judgment
+        // being mistaken for her talking -- which would start watchdogs, gate the microphone and
+        // put deliberation into the chord layer.
+        if handleOutOfBand(event) { return }
+
         switch event.type {
         case "error":
             log("realtime error: \(event.error?.message ?? "unknown")")
@@ -478,18 +741,28 @@ final class RealtimeVoiceSession: ObservableObject {
             }
             log("user started speaking")
             handleUserStartedSpeaking()
+            // The earliest reliable warning that a response is coming. Getting the current picture
+            // in now, rather than when the response is already being generated, is what makes
+            // "every response begins grounded" true for turns the person starts.
+            projector.flush("user started speaking")
 
         case "input_audio_buffer.speech_stopped":
             userStoppedSpeakingAt = Date()
             log("user stopped speaking")
+            projector.flush("user stopped speaking")
 
         case "response.created":
+            activeResponseId = event.response?.id
             responseStartedAt = Date()
             retriedThisResponse = false
             humeSawLastChunk = false
             responseText = ""
+            utteranceSoFar = ""
+            currentAssistantItemId = nil
+            audioStartedAt = nil
             firstTextAt = nil
             firstAudioAt = nil
+            recordLedger()
             if let stopped = userStoppedSpeakingAt {
                 log("response started \(Self.ms(since: stopped)) after user stopped (think latency)")
             } else {
@@ -506,6 +779,14 @@ final class RealtimeVoiceSession: ObservableObject {
             // deadline from the moment it closes.
             armTurnWatchdog()
 
+        case "response.output_item.added":
+            // The only event carrying the assistant item's id, and truncating an interrupted
+            // utterance needs it. Captured for message items only; a function_call item has
+            // nothing spoken to truncate.
+            if event.item?.type == "message", let id = event.item?.id {
+                currentAssistantItemId = id
+            }
+
         // Hume path: OpenAI streams words, Hume speaks them, and the chord layer follows the
         // same text.
         case "response.output_text.delta":
@@ -515,6 +796,7 @@ final class RealtimeVoiceSession: ObservableObject {
                     log("first word \(Self.ms(since: started)) after response started")
                 }
                 responseText += delta
+                utteranceSoFar += delta
                 eridian?.pushTranscriptDelta(delta)
                 sendToHume(delta)
             }
@@ -534,19 +816,30 @@ final class RealtimeVoiceSession: ObservableObject {
             if let delta = event.delta {
                 if firstAudioAt == nil, let started = responseStartedAt {
                     firstAudioAt = Date()
+                    audioStartedAt = Date()
                     log("first audio \(Self.ms(since: started)) after response started")
                 }
+                utteranceSoFar += delta
                 noteRockyStartedSpeaking()
                 eridian?.pushTranscriptDelta(delta)
             }
         case "response.output_audio_transcript.done":
             eridian?.flushTranscript()
 
+        case "output_audio_buffer.started":
+            // WebRTC's own signal that audio is actually leaving for the speaker -- a better
+            // clock for "how much did they hear" than the transcript, which runs ahead of it.
+            audioStartedAt = Date()
+
         case "response.done":
             let status = event.response?.status ?? "unknown"
             if status != "completed" {
                 let detail = event.response?.status_details
                 log("response ended as \(status): \(detail?.reason ?? detail?.error?.message ?? "no reason given")")
+            }
+            if let id = event.response?.id, id == activeResponseId {
+                WorldLog.shared.closeLedger(id, outcome: status)
+                activeResponseId = nil
             }
             // With Hume, the turn normally ends when playback does, not when the text does --
             // unless there was no text, in which case nothing will ever play and waiting for
@@ -558,6 +851,7 @@ final class RealtimeVoiceSession: ObservableObject {
                 log("response produced no text, nothing to speak — releasing the turn")
                 finishResponse(reason: "empty response")
             }
+            releaseParkedRequest()
 
         default:
             // Everything not explicitly handled, minus the high-frequency streaming events. Worth
@@ -573,17 +867,73 @@ final class RealtimeVoiceSession: ObservableObject {
         }
     }
 
+    /// Returns true when the event belonged to a salience judgment and has been dealt with.
+    private func handleOutOfBand(_ event: RealtimeServerEvent) -> Bool {
+        if event.type == "response.created", let ticket = event.response?.metadata?["ticket"],
+            let id = event.response?.id {
+            salienceResponses[id] = ticket
+            salienceText[id] = ""
+            return true
+        }
+        guard let responseId = event.response_id ?? event.response?.id,
+            let ticket = salienceResponses[responseId]
+        else { return false }
+
+        switch event.type {
+        case "response.output_text.delta":
+            salienceText[responseId, default: ""] += event.delta ?? ""
+        case "response.output_text.done":
+            if let text = event.text { salienceText[responseId] = text }
+        case "response.done":
+            let text = salienceText[responseId] ?? ""
+            salienceResponses.removeValue(forKey: responseId)
+            salienceText.removeValue(forKey: responseId)
+            resolveSalience(ticketId: ticket, text: text)
+        default:
+            break
+        }
+        return true
+    }
+
+    /// Writes down what Rocky actually had in front of her at the instant this response began.
+    ///
+    /// Recorded here rather than reconstructed later, because reconstruction is exactly what
+    /// cannot be trusted: by the time anyone asks "what did she know when she said that", the
+    /// world has moved on and the superseded state is gone.
+    private func recordLedger() {
+        guard let responseId = activeResponseId else { return }
+        let action = world.liveAction
+        WorldLog.shared.record(
+            ResponseLedger(
+                id: responseId,
+                at: Date(),
+                worldSeq: world.seq,
+                activeAction: action.map {
+                    "\($0.id) \($0.intent.word) \($0.status.rawValue) (\($0.evidence.rawValue))"
+                },
+                mostRecentEvent: world.mostRecentEvent.map {
+                    "\($0.id) \($0.kind.rawValue) \(WorldWords.ago($0.secondsAgo))"
+                },
+                liveStateItem: projector.liveStateItemId,
+                supersededStateItems: projector.supersededStateItemIds
+            )
+        )
+    }
+
+    // MARK: - Tools
+
     private func performToolCall(name: String, argumentsJSON: String, callId: String) async {
         RockyLog.write("tool call: \(name) \(argumentsJSON)")
+        WorldLog.shared.write(.tool, "\(name) \(argumentsJSON)", seq: world.seq)
         lastToolCall = name
         let output: String
         do {
             output = try await execute(name: name, argumentsJSON: argumentsJSON)
         } catch {
-            output = Self.encodeResult(["success": false, "error": error.localizedDescription])
+            output = Self.encodeResult(["ok": false, "problem": error.localizedDescription])
         }
         client.send(FunctionCallOutputEvent(callId: callId, output: output))
-        client.send(ResponseCreateEvent())
+        requestResponse(reason: "after \(name)")
     }
 
     private func execute(name: String, argumentsJSON: String) async throws -> String {
@@ -594,21 +944,40 @@ final class RealtimeVoiceSession: ObservableObject {
         switch name {
         case "set_robot_mood":
             let args = try JSONDecoder().decode(MoodArgs.self, from: data)
-            behavior?.setMood(args.mood)
-            return Self.encodeResult(["success": behavior != nil, "mood": args.mood])
+            guard let behavior else { return Self.encodeResult(["ok": false, "problem": "no body listening"]) }
+            let action = world.beginAction(.settle, expectedDuration: 0.2)
+            world.markAction(action.id, status: .accepted)
+            behavior.setMood(args.mood, id: action.id)
+            world.noteFeeling(args.mood)
+            world.markAction(action.id, status: .succeeded, evidence: .assumed, silent: true)
+            return Self.encodeResult(["ok": true])
 
         case "robot_gesture":
             let args = try JSONDecoder().decode(GestureArgs.self, from: data)
+            guard let behavior else { return Self.encodeResult(["ok": false, "problem": "no body listening"]) }
             let times = max(1, min(10, Int(args.times ?? 1)))
-            behavior?.requestGesture(args.gesture, times: times)
-            return Self.encodeResult(["success": behavior != nil, "doing": args.gesture, "times": Double(times)])
+            let intent: ActionIntent = args.gesture == "wiggle" ? .wiggle : .spin
+            // The board honours gestures at its own seams, so this is genuinely open-ended: the
+            // expected duration is a bound for calling it lost, not a promise about when.
+            let action = world.beginAction(
+                intent, expectedDuration: Double(times) * 2.5 + 6, total: times
+            )
+            behaviorSource.expect(gesture: action.id)
+            behavior.requestGesture(args.gesture, times: times, id: action.id)
+            world.markAction(action.id, status: .accepted)
+            return Self.accepted(action)
 
         case "get_robot_state":
-            return Self.encode(state: robot == nil ? nil : await robot?.state(), behavior: behavior)
+            return Self.encodeState(world)
 
         case "stop_robot" where robot == nil:
-            behavior?.stopMoving()
-            return Self.encodeResult(["success": behavior != nil])
+            guard let behavior else { return Self.encodeResult(["ok": false, "problem": "no body listening"]) }
+            let action = world.beginAction(.stop, expectedDuration: 0.3)
+            behavior.stopMoving()
+            world.markAction(action.id, status: .accepted)
+            world.noteDoing(.still, cause: .youAsked)
+            world.markAction(action.id, status: .succeeded, evidence: .assumed)
+            return Self.accepted(action)
 
         default:
             break
@@ -619,75 +988,112 @@ final class RealtimeVoiceSession: ObservableObject {
         switch name {
         case "drive_cm":
             let args = try JSONDecoder().decode(DriveArgs.self, from: data)
-            try await robot.drive(distanceCm: args.distanceCm, speed: args.speed ?? RobotLimits.defaultSpeed)
-            return Self.encodeResult(["success": true])
+            let speed = args.speed ?? RobotLimits.defaultSpeed
+            let action = world.beginAction(
+                args.distanceCm < 0 ? .driveBackward : .driveForward,
+                expectedDuration: RobotLimits.estimatedDriveSeconds(distanceCm: args.distanceCm, speed: speed)
+            )
+            motionSource.expect(action.intent)
+            world.markAction(action.id, status: .accepted)
+            await robot.drive(actionId: action.id, distanceCm: args.distanceCm, speed: speed)
+            return Self.accepted(action)
 
         case "rotate_degrees":
             let args = try JSONDecoder().decode(TurnArgs.self, from: data)
-            try await robot.turn(degrees: args.degrees, speed: args.speed ?? RobotLimits.defaultSpeed)
-            return Self.encodeResult(["success": true])
+            let speed = args.speed ?? RobotLimits.defaultSpeed
+            let action = world.beginAction(
+                abs(args.degrees) >= 300 ? .spin : .turn,
+                expectedDuration: RobotLimits.estimatedTurnSeconds(degrees: args.degrees, speed: speed)
+            )
+            motionSource.expect(action.intent)
+            world.markAction(action.id, status: .accepted)
+            await robot.turn(actionId: action.id, degrees: args.degrees, speed: speed)
+            return Self.accepted(action)
 
         case "stop_robot":
-            try await robot.stop()
-            return Self.encodeResult(["success": true])
+            let action = world.beginAction(.stop, expectedDuration: 0.3)
+            world.markAction(action.id, status: .accepted)
+            world.noteDoing(.still, cause: .youAsked)
+            await robot.stop(actionId: action.id)
+            return Self.accepted(action)
 
         case "read_distance":
+            // A query, not a movement: the answer *is* the point, and it arrives in milliseconds,
+            // so there is nothing here for the action lifecycle to describe.
             let cm = try await robot.readDistanceCm()
-            return Self.encodeResult(["success": true, "distanceCm": cm])
+            return Self.encodeResult(["ok": true, "nearestCm": cm])
 
         case "set_face":
             let args = try JSONDecoder().decode(FaceArgs.self, from: data)
             guard let face = FaceState(rawValue: args.face) else {
-                return Self.encodeResult(["success": false, "error": "unknown face \(args.face)"])
+                return Self.encodeResult(["ok": false, "problem": "no such face"])
             }
             try await robot.setFace(face)
-            return Self.encodeResult(["success": true])
+            return Self.encodeResult(["ok": true])
 
         case "set_lights":
             let args = try JSONDecoder().decode(LightArgs.self, from: data)
             try await robot.setLights(red: args.red, green: args.green, blue: args.blue)
-            return Self.encodeResult(["success": true])
+            return Self.encodeResult(["ok": true])
 
         default:
-            return Self.encodeResult(["success": false, "error": "unknown tool \(name)"])
+            return Self.encodeResult(["ok": false, "problem": "I don't have that"])
         }
     }
 
-    /// What the body is and has recently been doing, from whichever sources exist.
+    /// What a movement tool returns, and deliberately all it returns.
     ///
-    /// Ages are rounded to whole seconds and absent fields are omitted: "I measured 20cm" means
-    /// something very different four seconds later than four minutes later, and a missing field
-    /// reads more honestly to the model than a zero would. The autonomous history is the reason
-    /// ages matter most -- those reactions are usually finished before anyone can mention them.
-    private static func encode(state: RobotState?, behavior: BehaviorMonitor?) -> String {
-        var fields: [String: Any] = ["success": true]
+    /// `accepted` means the instruction is on its way. It is not a claim that anything moved, and
+    /// the tool description says so in as many words -- because the previous `{"success": true}`
+    /// was read, entirely reasonably, as "I did it", and Rocky would announce a spin that had not
+    /// begun and might never happen.
+    private static func accepted(_ action: RobotAction) -> String {
+        encodeResult([
+            "action_id": action.id,
+            "status": "accepted",
+            "means": "on its way to your body — not yet happening. You will feel it when it does.",
+        ])
+    }
 
-        if let state {
-            fields["connected"] = state.connected
-            fields["address"] = state.address
-            fields["busy"] = state.busy
-            if let face = state.face { fields["face"] = face.rawValue }
-            if let action = state.lastAction { fields["lastAction"] = action }
-            if let result = state.lastActionResult { fields["lastActionResult"] = result }
-            if let age = state.secondsSinceLastAction { fields["secondsSinceLastAction"] = age.rounded() }
-            if let cm = state.lastDistanceCm { fields["lastDistanceCm"] = cm }
-            if let age = state.secondsSinceDistanceReading { fields["secondsSinceDistanceReading"] = age.rounded() }
+    /// Rocky's memory of herself, rendered from the one authoritative store -- the same picture
+    /// the pushed state carries, so asking and being told can never disagree.
+    private static func encodeState(_ world: WorldStore) -> String {
+        var fields: [String: Any] = [:]
+        let snapshot = world.snapshot
+        fields["now"] = [
+            "body": snapshot.body.rawValue,
+            "doing": snapshot.doing.word,
+            "moving": snapshot.moving,
+            "why": snapshot.cause.phrase,
+            "blocked": snapshot.blocked,
+        ]
+        if let feeling = snapshot.feeling { fields["feeling"] = feeling }
+        if let cm = snapshot.nearestCm, let measured = snapshot.measuredAt {
+            fields["nearest_cm"] = Int(cm.rounded())
+            fields["measured"] = WorldWords.ago(Date().timeIntervalSince(measured))
+        }
+        if let action = snapshot.action {
+            fields["right_now"] = WorldProjector.describe(action)
+        }
+        // Recent history, newest first. This is what makes "did that work?" answerable about an
+        // action that finished a minute ago -- the live snapshot has long since stopped carrying
+        // it, and that is correct: it is history now, not a condition.
+        fields["just_did"] = world.actions.reversed().prefix(5).map { action in
+            var entry = WorldProjector.describe(action)
+            entry["when"] = WorldWords.ago(Date().timeIntervalSince(action.endedAt ?? action.requestedAt))
+            return entry
+        }
+        fields["just_happened"] = world.events.reversed().prefix(5).map { event in
+            [
+                "what": event.kind.rawValue,
+                "detail": event.detail,
+                "when": WorldWords.ago(event.secondsAgo),
+            ]
         }
 
-        if let behavior, behavior.connected {
-            fields["movingOnItsOwn"] = true
-            fields["doingNow"] = behavior.mode
-            fields["mood"] = behavior.mood
-            fields["recently"] = behavior.recentHistory()
-        } else if state == nil {
-            fields["connected"] = false
-        }
-
-        // JSONSerialization rather than the flat encoder: the history is nested, and hand-rolling
-        // that is how malformed tool output gets shipped.
-        guard let data = try? JSONSerialization.data(withJSONObject: fields),
+        guard let data = try? JSONSerialization.data(withJSONObject: fields, options: [.sortedKeys]),
             let json = String(data: data, encoding: .utf8)
-        else { return encodeResult(["success": false, "error": "could not encode state"]) }
+        else { return encodeResult(["ok": false, "problem": "I can't tell right now"]) }
         return json
     }
 
@@ -716,30 +1122,6 @@ final class RealtimeVoiceSession: ObservableObject {
         let times: Double?
     }
 
-    /// Tells Rocky, unprompted, that something just happened to his body.
-    ///
-    /// Phrased as a thing that *has already happened*, because it has: a flinch is over in a
-    /// second and he cannot speak in under two. Suppressed while he is already talking, and rate
-    /// limited, so a robot being bumped repeatedly does not turn him into a commentator.
-    private func narrate(_ event: BehaviorEvent) {
-        guard state == .connected, !speaking else { return }
-        if let lastNarratedAt, Date().timeIntervalSince(lastNarratedAt) < Self.narrationCooldown { return }
-        lastNarratedAt = Date()
-
-        let what = event.mode == "dizzy"
-            ? "Something just bumped into your body and it spun around."
-            : "Something startled your body -- it flinched and backed away."
-        log("narrating: \(event.mode)")
-        client.send(
-            ResponseCreateEvent(
-                instructions: what
-                    + " It is over now. Say one short line reacting to it, in your own way of speaking,"
-                    + " as something that just happened to you. Do not describe it as a state or a mode,"
-                    + " and do not ask what to do next."
-            )
-        )
-    }
-
     private struct FaceArgs: Decodable {
         let face: String
     }
@@ -749,7 +1131,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// JSON encoder, just enough to avoid hand-building JSON strings with string interpolation.
     private static func encodeResult(_ fields: [String: Any]) -> String {
         var parts: [String] = []
-        for (key, value) in fields {
+        for (key, value) in fields.sorted(by: { $0.key < $1.key }) {
             let encodedValue: String
             switch value {
             case let bool as Bool:
@@ -767,5 +1149,22 @@ final class RealtimeVoiceSession: ObservableObject {
             parts.append("\"\(key)\":\(encodedValue)")
         }
         return "{\(parts.joined(separator: ","))}"
+    }
+}
+
+// MARK: - VoiceChannel
+
+/// The narrow surface the projector is allowed to use. Everything else about the Realtime
+/// connection is private to this class, so there is exactly one way for a robot fact to become
+/// something Rocky knows.
+extension RealtimeVoiceSession: VoiceChannel {
+    var canReachVoice: Bool { client.isDataChannelOpen && !isPaused }
+
+    func insertWorldItem(id: String, text: String) {
+        client.send(ConversationItemCreateEvent(id: id, text: text))
+    }
+
+    func removeWorldItem(id: String) {
+        client.send(ConversationItemDeleteEvent(id: id))
     }
 }

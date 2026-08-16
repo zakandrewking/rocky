@@ -10,6 +10,33 @@ enum RobotLimits {
     static let defaultSpeed = 50.0
     static let driveDistanceMaxCm = 300.0
     static let turnDegreesMax = 360.0
+
+    // The board's own working figures (rocky_agent.py's CM_PER_SECOND_AT_MAX_RPM and
+    // DEGREES_PER_SECOND_AT_MAX_RPM). Still uncalibrated on real hardware -- STEPS.md step 9 is
+    // open -- so treat these as "roughly how long this ought to take", which is all they are used
+    // for: sizing the completion deadline, and deciding when an action with no outcome should be
+    // called lost rather than waited on forever.
+    static let centimetresPerSecondAtFullSpeed = 30.0
+    static let degreesPerSecondAtFullSpeed = 90.0
+
+    static func estimatedDriveSeconds(distanceCm: Double, speed: Double) -> TimeInterval {
+        let rate = max(centimetresPerSecondAtFullSpeed * (speed / 100), 1)
+        return abs(distanceCm) / rate
+    }
+
+    static func estimatedTurnSeconds(degrees: Double, speed: Double) -> TimeInterval {
+        let rate = max(degreesPerSecondAtFullSpeed * (speed / 100), 1)
+        return abs(degrees) / rate
+    }
+
+    /// How long to wait for a movement to report back before deciding the outcome will never
+    /// arrive. Generous on purpose, and generous in one place only, so the transport's timeout and
+    /// the world model's "is this overdue" question can never disagree -- the earlier version of
+    /// this had a flat 3s in the transport and nothing at all in the model, which is how a healthy
+    /// six-second drive got reported as a failure.
+    static func completionDeadline(estimate: TimeInterval) -> TimeInterval {
+        estimate * 2 + 2
+    }
 }
 
 enum FaceState: String, Codable, Sendable {
@@ -81,6 +108,14 @@ extension CommandMessage: Encodable {
 
 enum TelemetryMessage: Sendable {
     case ack(id: String)
+    /// A drive or turn has physically begun. `ack` only ever arrives on *completion*, so without
+    /// this a client spends the whole of a multi-second movement with nothing to go on but its own
+    /// assumption -- see apps/ios/docs/embodiment.md on why an assumed action and a confirmed one
+    /// have to be tellable apart.
+    case started(id: String)
+    /// A reply to `heartbeat`, proving the board's interpreter is actually running its loop. An
+    /// open socket does not prove that on this hardware (see protocol.ts).
+    case pong(id: String)
     case error(id: String, message: String)
     case distance(id: String, cm: Double)
     case lineSensors(id: String, values: [Double])
@@ -89,7 +124,8 @@ enum TelemetryMessage: Sendable {
     /// nil for `status`, which is an unprompted beacon with no request to correlate against.
     var id: String? {
         switch self {
-        case .ack(let id), .error(let id, _), .distance(let id, _), .lineSensors(let id, _):
+        case .ack(let id), .started(let id), .pong(let id), .error(let id, _), .distance(let id, _),
+            .lineSensors(let id, _):
             return id
         case .status:
             return nil
@@ -108,6 +144,10 @@ extension TelemetryMessage: Decodable {
         switch type {
         case "ack":
             self = .ack(id: try container.decode(String.self, forKey: .id))
+        case "started":
+            self = .started(id: try container.decode(String.self, forKey: .id))
+        case "pong":
+            self = .pong(id: try container.decode(String.self, forKey: .id))
         case "error":
             self = .error(
                 id: try container.decode(String.self, forKey: .id),

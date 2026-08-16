@@ -333,8 +333,14 @@ def handle_command(command, send):
     command_id = command.get("id")
 
     if command_type == "heartbeat":
-        return  # no reply needed, and skip the screen log below -- heartbeats arrive every
-        # ~500ms and would just be noise over whatever's actually useful
+        # Answered, but deliberately NOT through `send`: a reply that went through the logging
+        # wrapper would repaint the result line twice a second and bury whatever was actually
+        # useful there. The reply itself matters because an open TCP socket does not prove this
+        # interpreter is running -- a frozen board still completes handshakes (TODOS.md's
+        # board-freeze incident), and a client with no positive liveness signal cannot tell
+        # "quiet" from "hung."
+        _send_raw({"type": "pong", "id": command_id, "ok": True})
+        return
 
     _set_command_line("cmd: {}".format(command_type))
 
@@ -343,11 +349,16 @@ def handle_command(command, send):
             send({"type": "error", "id": command_id, "ok": False, "message": "busy"})
             return
         _start_drive(command["distanceCm"], command["speed"], command_id, send)
+        # Sent the moment the maneuver begins, where the `ack` below only comes when it finishes.
+        # For a multi-second drive that gap is the whole movement, and a client with nothing in it
+        # can only guess whether the robot ever moved. See apps/ios/docs/embodiment.md.
+        send({"type": "started", "id": command_id, "ok": True})
     elif command_type == "turn":
         if _action is not None:
             send({"type": "error", "id": command_id, "ok": False, "message": "busy"})
             return
         _start_turn(command["degrees"], command["speed"], command_id, send)
+        send({"type": "started", "id": command_id, "ok": True})
     elif command_type == "stop":
         _action = None  # cancel any in-progress drive/turn -- stop always wins
         stop_motors()
@@ -370,12 +381,25 @@ def _log_result(message):
     message_type = message.get("type")
     if message_type == "ack":
         _set_result_line("ok")
+    elif message_type == "started":
+        _set_result_line("started")
     elif message_type == "error":
         _set_result_line("err: {}".format(message.get("message", "?"))[:20])
     elif message_type == "distance":
         _set_result_line("dist: {}cm".format(message.get("cm")))
     elif message_type == "lineSensors":
         _set_result_line("line sensors sent")
+
+
+def _send_raw(message):
+    """A reply that bypasses the on-screen result line. Only for traffic that arrives so often
+    that displaying it would destroy the display's usefulness -- i.e. heartbeat replies."""
+    if _conn is None:
+        return
+    try:
+        _conn.sendall(ujson.dumps(message) + "\n")
+    except Exception:
+        pass  # the client is gone; the next tick's heartbeat-timeout check cleans this up
 
 
 def _make_send(connection):

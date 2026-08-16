@@ -30,6 +30,22 @@ export type CommandMessage =
 
 export type TelemetryMessage =
   | { type: "ack"; id: string; ok: true }
+  /**
+   * A drive or turn has physically begun. Sent as soon as the agent starts the maneuver, where
+   * `ack` only ever arrives when it *finishes* — which for a multi-second drive is a long time to
+   * have nothing at all to go on. Without this, a client can only assume a movement started;
+   * with it, it knows. (See apps/ios/docs/embodiment.md: the difference between an assumed and a
+   * confirmed action is the difference between "I think I'm turning" and "I'm turning".)
+   */
+  | { type: "started"; id: string; ok: true }
+  /**
+   * A reply to `heartbeat`. Proves the board's interpreter is running the loop, which an open
+   * TCP socket does not: this project has already had a board whose port answered SYN with
+   * SYN-ACK while the interpreter was hung and nothing was ever serviced (see TODOS.md's
+   * board-freeze incident). Deliberately not an `ack` so it never lands on the board's own status
+   * display, which heartbeats would otherwise overwrite twice a second.
+   */
+  | { type: "pong"; id: string; ok: true }
   | { type: "error"; id: string; ok: false; message: string }
   | { type: "distance"; id: string; ok: true; cm: number }
   | { type: "lineSensors"; id: string; ok: true; values: number[] }
