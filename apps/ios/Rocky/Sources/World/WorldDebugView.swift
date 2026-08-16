@@ -226,6 +226,20 @@ struct WorldDebugView: View {
                                 )
                         }
                         line("began at", "world seq \(ledger.worldSeq)")
+                        if let input = ledger.inputTokens {
+                            let cached = ledger.cachedTokens ?? 0
+                            let share = input > 0 ? Int((Double(cached) / Double(input) * 100).rounded()) : 0
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text("input").foregroundStyle(RockyTheme.teal.opacity(0.7))
+                                    .frame(width: 118, alignment: .leading)
+                                // The number worth watching. This world model edits conversation
+                                // history, and prompt caching is exact-prefix -- so a cached share
+                                // that collapses right under a projection is this design's bill.
+                                Text("\(input) tokens · \(share)% cached")
+                                    .foregroundStyle(share >= 50 ? RockyTheme.mintBright.opacity(0.8) : RockyTheme.rust)
+                                    .monospacedDigit()
+                            }
+                        }
                         line("doing", ledger.activeAction ?? "nothing")
                         line("last thing", ledger.mostRecentEvent ?? "nothing")
                         line("state it could see", ledger.liveStateItem ?? "none")

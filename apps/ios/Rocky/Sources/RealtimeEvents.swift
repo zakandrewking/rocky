@@ -34,6 +34,31 @@ struct RealtimeServerEvent: Decodable, Sendable {
         /// Echoed back verbatim from `response.create`. The correlation channel for out-of-band
         /// salience judgments, which is why they can run several deep without being confusable.
         let metadata: [String: String]?
+        /// What this response actually cost. Read for one specific reason: prompt caching is
+        /// exact-prefix, and this world model *edits* conversation history, so how much of the
+        /// prefix survived is a direct measurement of what that editing costs. Guessing at it
+        /// would be exactly the kind of unmeasured constant this project keeps regretting.
+        let usage: Usage?
+
+        struct Usage: Decodable, Sendable {
+            let input_tokens: Int?
+            let output_tokens: Int?
+            let input_token_details: InputTokenDetails?
+
+            struct InputTokenDetails: Decodable, Sendable {
+                let cached_tokens: Int?
+                let text_tokens: Int?
+                let audio_tokens: Int?
+            }
+
+            /// The share of input tokens that came from the cache, 0-100. The number to watch: a
+            /// long conversation should sit high, and a drop right after a state projection means
+            /// a deletion rewrote history behind something.
+            var cachedPercent: Int {
+                guard let total = input_tokens, total > 0 else { return 0 }
+                return Int((Double(input_token_details?.cached_tokens ?? 0) / Double(total) * 100).rounded())
+            }
+        }
 
         struct StatusDetails: Decodable, Sendable {
             let type: String?

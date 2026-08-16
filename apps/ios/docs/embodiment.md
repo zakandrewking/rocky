@@ -101,10 +101,9 @@ Rules, stated explicitly because these are the ones that decide whether the mode
 - **Full snapshots, never patches.** Every `<robot-state>` is a complete picture of the projected
   fields. An omitted field means *"not known, or not applicable"* — it never means "unchanged".
   There is no accumulation to do.
-- **Exactly one `<robot-state>` is live in the conversation at any moment.** Projecting a new one
-  deletes the previous one (`conversation.item.delete`, client-assigned ids `rw_state_<seq>`).
-  Superseded state does not merely rank lower; it is gone. The model cannot read a stale snapshot
-  because there is no stale snapshot to read.
+- **The newest `<robot-state>` is the only one that counts**, and the previous one is deleted
+  whenever deleting it is free (`conversation.item.delete`, client-assigned ids `rw_state_<seq>`).
+  See §4.1 — "free" is doing real work there.
 - **Semantic, not telemetric.** `"doing": "spinning"` is what enters voice. Wheel RPM, loudness,
   reflect channels, tick rates stay in the store and the debug log. `speed=.47 → .48 → .46` never
   crosses this boundary at all.
@@ -225,6 +224,50 @@ Every projection is a `conversation.item.create` with `role: "user"`, a client-a
 one tagged block as `input_text`. The system prompt defines these tags as *your own body sense,
 not a person talking* — which is why they are user-role rather than system-role: they are fresh
 incoming sensation, not standing rules.
+
+### 4.1 Deleting superseded state without burning the prompt cache
+
+Deletion is the strongest possible form of supersession, and it is not free. Prompt caching is
+**exact-prefix**: *"changing, deleting, or reordering earlier content changes the prefix and can
+cause a cache miss"*, and the Realtime API is the same — *"any change to the prefix will break the
+cache."* So the cost of deleting a state item is exactly **the number of tokens added to the
+conversation since it was inserted**:
+
+| Where the item sits | Cost |
+| --- | --- |
+| Still the last thing in history | Delete + insert is a pure tail operation. The prefix is untouched. **Free.** |
+| Conversation has piled on top of it | Everything from its old position onward is a cache miss. |
+
+The second case is not a corner: the projector deliberately *suppresses* projections when nothing
+semantic changes, so a robot sitting still through three minutes of conversation leaves its last
+snapshot three minutes back — and then one bump would re-charge full price for three minutes of
+**audio** tokens to remove eighty tokens of stale JSON. That trade is upside down.
+
+So the policy is:
+
+1. **Delete when it is free.** The projector tracks whether anything has been appended since the
+   live snapshot went in (`noteConversationAdvanced`, called generously — over-reporting only
+   defers a free deletion, while under-reporting makes the expensive mistake). While nothing has,
+   the old item is deleted outright. This is the common case *during motion*, when projections
+   cluster a few hundred milliseconds apart, so history stays clean exactly when it churns most.
+2. **Otherwise leave it, and let `seq` supersede it.** Every snapshot is whole, so "highest seq
+   wins" is a *max*, not a merge — there is still nothing for the model to accumulate. The system
+   prompt states this rule rather than the stronger one, because a prompt that promises an
+   invariant the system does not guarantee is worse than one that states the real rule.
+3. **Sweep in batches, not one at a time.** Once six stale snapshots have accumulated, delete them
+   together: the oldest one invalidates everything after it anyway, so the rest come along for
+   free. One cache miss instead of six — the same reasoning OpenAI applies to its own context
+   truncation, where the fix for repeated cache-busting was to truncate *harder, less often*.
+
+The system prompt sits at position 0 and nothing is ever deleted before it, so the largest single
+cached block is never at risk.
+
+**And it is measured, not argued about.** `response.done` carries
+`usage.input_token_details.cached_tokens`, so every response now records its cached share into
+`world.jsonl` and onto its ledger card in the Body panel. A cached percentage that collapses
+directly under a projection is this design's bill arriving, visible in the same view as the
+projection that caused it. The threshold of six is a guess in exactly the sense every constant in
+`rocky_behavior.py` is a guess — and now it is one with an instrument pointed at it.
 
 ---
 
@@ -432,7 +475,7 @@ reconsider · **(4)** the natural line.
 | 10 | Several events in a burst | 3 events in 400ms | coalesced: one state + the newest event with `again: 3` | one interruption | *"Hey — stop poking me!"* |
 | 11 | Two judgments race | tickets `sal_9`, `sal_10` | — | `sal_9` superseded on issue; only `sal_10` can act | (nothing visible — that is the point) |
 | 12 | Stale verdict arrives | `sal_9` for `resp_R17`, now on `R18` | — | dropped: `forResponseId` mismatch | (nothing) |
-| 13 | State changed many times before voice speaks again | 9 transitions | exactly one `<robot-state>`; 8 predecessors deleted | none | *"I've been rolling around a bit."* |
+| 13 | State changed many times before voice speaks again | 9 transitions | the newest `<robot-state>`; predecessors deleted where free, otherwise outranked by `seq` | none | *"I've been rolling around a bit."* |
 | 14 | Contact lost | link watchdog | state: `body: "gone"`, action → `lost` + `evt body_gone` | `interrupt` if an action was live | *"I've lost track of my body — I can't feel it."* |
 | 15 | Says running, sensors say still | `running(assumed)` + `moving:false` | both fields, disagreeing, unedited | `context` | *"I'm trying to move — but I don't think I'm going anywhere."* |
 

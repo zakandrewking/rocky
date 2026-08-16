@@ -56,6 +56,43 @@ final class WorldProjectorTests: XCTestCase {
         XCTAssertEqual(channel.liveStateItems.count, 1)
         XCTAssertEqual(channel.liveStateItems.first, projector.liveStateItemId)
         XCTAssertEqual(channel.removed.count, 2, "each new snapshot deletes the one it replaces")
+        XCTAssertTrue(projector.staleStateItemIds.isEmpty)
+    }
+
+    /// Once conversation has piled on top of a snapshot, deleting it would rewrite the cached
+    /// prefix behind everything said since -- minutes of audio tokens, at full price, to remove
+    /// eighty. It stays, and the seq number carries supersession instead.
+    func testAnOldSnapshotIsLeftAloneOnceTheConversationHasMovedOn() {
+        let (store, channel, projector) = make()
+        store.heard()
+        store.noteDoing(.rollingForward, cause: .onItsOwn)
+        projector.flush("first")
+        let buried = projector.liveStateItemId
+
+        projector.noteConversationAdvanced()
+        store.noteDoing(.still, cause: .onItsOwn)
+        projector.flush("second")
+
+        XCTAssertTrue(channel.removed.isEmpty, "deleting it would have cost a cache miss")
+        XCTAssertEqual(projector.staleStateItemIds, [buried])
+        XCTAssertNotEqual(projector.liveStateItemId, buried)
+    }
+
+    /// Deleting the oldest stale snapshot invalidates everything after it anyway, so the rest come
+    /// along for free. One cache miss instead of six -- the same reasoning OpenAI applies to its
+    /// own context truncation.
+    func testStaleSnapshotsAreSweptTogetherOnceThereAreEnoughOfThem() {
+        let (store, channel, projector) = make()
+        store.heard()
+        let doings: [Doing] = [.rollingForward, .still, .turning, .still, .spinning, .still, .rollingBack, .still]
+        for doing in doings {
+            projector.noteConversationAdvanced()
+            store.noteDoing(doing, cause: .onItsOwn)
+            projector.flush("test")
+        }
+
+        XCTAssertFalse(channel.removed.isEmpty, "they build up, then go in one batch")
+        XCTAssertLessThan(projector.staleStateItemIds.count, 6)
     }
 
     /// Delete before insert, never after: the other order leaves a window where two snapshots are

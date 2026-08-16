@@ -785,12 +785,17 @@ final class RealtimeVoiceSession: ObservableObject {
         case "input_audio_buffer.speech_stopped":
             userStoppedSpeakingAt = Date()
             log("user stopped speaking")
+            // The user's turn is now an item in the conversation, so the live snapshot is no
+            // longer the last thing in it -- replacing it from here on costs a cache miss.
+            projector.noteConversationAdvanced()
             projector.flush("user stopped speaking")
 
         case "response.created":
             activeResponseId = event.response?.id
             awaitingResponse = false
             cancelWatchdog?.cancel()
+            // A response always appends at least one item.
+            projector.noteConversationAdvanced()
             responseStartedAt = Date()
             retriedThisResponse = false
             humeSawLastChunk = false
@@ -875,6 +880,17 @@ final class RealtimeVoiceSession: ObservableObject {
                 let detail = event.response?.status_details
                 log("response ended as \(status): \(detail?.reason ?? detail?.error?.message ?? "no reason given")")
             }
+            if let id = event.response?.id, let usage = event.response?.usage, let input = usage.input_tokens {
+                // The measurement that says whether editing conversation history is costing
+                // anything. A response whose cached share has collapsed, sitting directly under a
+                // projection, is this design's bill arriving.
+                WorldLog.shared.recordCost(
+                    id,
+                    inputTokens: input,
+                    cachedTokens: usage.input_token_details?.cached_tokens ?? 0,
+                    cachedPercent: usage.cachedPercent
+                )
+            }
             if let id = event.response?.id, id == activeResponseId {
                 WorldLog.shared.closeLedger(id, outcome: status)
                 activeResponseId = nil
@@ -897,9 +913,15 @@ final class RealtimeVoiceSession: ObservableObject {
             // Everything not explicitly handled, minus the high-frequency streaming events. Worth
             // the noise: the turn that failed here did so by way of an event this app never
             // mentioned, which made a 20-second silence look like nothing happening at all.
-            // The conversation.item.* echoes are excluded too: every state projection produces a
-            // created and a deleted, so at a few per second they would bury the turn timings this
-            // log exists for -- and world.jsonl already records each projection with its item id.
+            // Any item that is not our own live snapshot means the snapshot is no longer the tail.
+            if event.type.hasPrefix("conversation.item."), event.type.hasSuffix("created"),
+                event.item?.id != projector.liveStateItemId {
+                projector.noteConversationAdvanced()
+            }
+            // The conversation.item.* echoes are excluded from the prose log: every state
+            // projection produces a created and a deleted, so at a few per second they would bury
+            // the turn timings this log exists for -- and world.jsonl already records each
+            // projection with its item id.
             if !event.type.hasSuffix(".delta") && !event.type.hasSuffix(".added")
                 && !event.type.hasPrefix("conversation.item.") {
                 log("event: \(event.type)")
@@ -984,6 +1006,7 @@ final class RealtimeVoiceSession: ObservableObject {
             output = Self.encodeResult(["ok": false, "problem": error.localizedDescription])
         }
         client.send(FunctionCallOutputEvent(callId: callId, output: output))
+        projector.noteConversationAdvanced()
     }
 
     private func execute(name: String, argumentsJSON: String) async throws -> String {

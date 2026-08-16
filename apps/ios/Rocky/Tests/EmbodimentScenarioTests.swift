@@ -37,8 +37,9 @@ final class EmbodimentScenarioTests: XCTestCase {
         super.tearDown()
     }
 
-    /// The one `<robot-state>` the conversation currently holds. There is only ever one; that is
-    /// the property, and reading it this way is what proves it.
+    /// The newest `<robot-state>` -- the only one that counts. An older one can still be sitting
+    /// in history when deleting it would have cost a cache miss, which is exactly why every
+    /// assertion below reads *this* one rather than "the last thing inserted".
     private func liveState() throws -> [String: Any] {
         let id = try XCTUnwrap(projector.liveStateItemId, "nothing has been projected")
         let text = try XCTUnwrap(channel.inserted.last { $0.id == id }?.text)
@@ -170,16 +171,25 @@ final class EmbodimentScenarioTests: XCTestCase {
 
     // MARK: - Churn
 
-    /// The robot moves through nine states while Rocky is mid-sentence. She ends up with exactly
-    /// one picture, and it is the current one -- no accumulation, nothing stale left to read.
-    func testManyChangesLeaveExactlyOnePicture() throws {
+    /// The robot moves through nine states while Rocky is mid-sentence. Whatever survives in
+    /// history, the newest snapshot is the current one and every survivor is strictly older -- so
+    /// "highest seq wins" is a max, never a merge, and there is nothing to piece together.
+    ///
+    /// Not "exactly one" any more, and that is deliberate: a snapshot the conversation has moved
+    /// past can only be deleted by rewriting the cached prefix behind everything said since. See
+    /// WorldProjector -- the invariant that actually holds is this one.
+    func testTheNewestPictureAlwaysWinsHoweverMuchChurnThereWas() throws {
         for mode in ["driving", "settling", "turning", "settling", "listening", "dizzy", "settling", "listening", "driving"] {
             behaviour.handle(.transition(mode: mode, detail: ""))
             projector.flush("test")
         }
 
-        XCTAssertEqual(channel.liveStateItems.count, 1)
         XCTAssertEqual(try liveState()["doing"] as? String, "rolling forward")
+        let live = try XCTUnwrap(projector.liveStateItemId)
+        let seq = { (id: String) in Int(id.replacingOccurrences(of: "rw_state_", with: "")) ?? 0 }
+        for survivor in channel.liveStateItems where survivor != live {
+            XCTAssertLessThan(seq(survivor), seq(live), "anything still readable must be older")
+        }
     }
 
     /// Being poked three times in a second is one thing that happened three times, not three

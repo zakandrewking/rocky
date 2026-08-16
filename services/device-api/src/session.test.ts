@@ -130,7 +130,12 @@ describe("createDeviceSessionConfig", () => {
     expect(instructions).toContain("<robot-event>");
     expect(instructions).toContain("are your own body sense");
     expect(instructions).toContain("must never be answered as if they were");
-    expect(instructions).toContain("There is only ever one of them");
+    // Deleting a superseded snapshot is only free while it is still the last item in the
+    // conversation; past that, deleting it would rewrite the cached prefix behind everything said
+    // since. So an older one can survive in history, and the rule the model follows has to be the
+    // one that is actually true: highest seq wins, no piecing together required.
+    expect(instructions).toContain("Only the newest one is true");
+    expect(instructions).toContain("the highest seq simply wins");
   });
 });
 

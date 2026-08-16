@@ -54,6 +54,11 @@ struct ResponseLedger: Sendable, Identifiable {
     var outcome: String?
     /// The event that cut this response off, when one did.
     var interruptedBy: String?
+    /// What the response cost, and how much of it the cache covered. Here rather than in a
+    /// separate metrics view because the thing worth spotting is a *correlation*: a response whose
+    /// cached share collapsed, sitting right below the projection that rewrote history.
+    var inputTokens: Int?
+    var cachedTokens: Int?
 }
 
 /// The structured record of everything the world model did, and everything voice was told.
@@ -141,6 +146,19 @@ final class WorldLog: ObservableObject {
         guard let index = ledgers.lastIndex(where: { $0.id == responseId }) else { return }
         ledgers[index].outcome = outcome
         if let interruptedBy { ledgers[index].interruptedBy = interruptedBy }
+    }
+
+    func recordCost(_ responseId: String, inputTokens: Int, cachedTokens: Int, cachedPercent: Int) {
+        if let index = ledgers.lastIndex(where: { $0.id == responseId }) {
+            ledgers[index].inputTokens = inputTokens
+            ledgers[index].cachedTokens = cachedTokens
+        }
+        write(
+            .response,
+            "R \(responseId.suffix(6)) input \(inputTokens) tokens, \(cachedPercent)% cached",
+            response: responseId,
+            detail: ["input": "\(inputTokens)", "cached": "\(cachedTokens)"]
+        )
     }
 
     func ledger(for responseId: String) -> ResponseLedger? {
