@@ -26,6 +26,8 @@ final class WorldStore: ObservableObject {
     private static let goneAfter: TimeInterval = 10
     /// Identical events closer together than this collapse into one with a repeat count.
     private static let repeatWindow: TimeInterval = 3
+    /// How long an accepted instruction goes unconfirmed before it is believed to be underway.
+    private static let assumeStartedAfter: TimeInterval = 0.6
 
     @Published private(set) var snapshot = WorldSnapshot()
     @Published private(set) var events: [WorldEvent] = []
@@ -41,6 +43,9 @@ final class WorldStore: ObservableObject {
     private var nextEventNumber = 0
     private var lastHeardFrom: Date?
     private var linkUp = false
+    /// Whether contact has ever been lost. First contact is not news -- announcing "my body is
+    /// back" at the start of every session would be Rocky reacting to her own boot.
+    private var hasBeenLost = false
 
     private static let maxEvents = 40
     private static let maxActions = 24
@@ -70,7 +75,7 @@ final class WorldStore: ObservableObject {
             linkUp = true
             log.write(.link, "body back", seq: seq + 1)
             commit { $0.body = .here }
-            record(.bodyBack, detail: "my body is back")
+            if hasBeenLost { record(.bodyBack, detail: "my body is back") }
         } else {
             refreshPresence()
         }
@@ -79,6 +84,7 @@ final class WorldStore: ObservableObject {
     func linkLost(_ reason: String) {
         guard linkUp else { return }
         linkUp = false
+        hasBeenLost = true
         lastHeardFrom = nil
         log.write(.link, "body gone: \(reason)", seq: seq + 1)
         // Anything in flight is now unknowable, not failed. Doing this before the state change so
@@ -99,8 +105,18 @@ final class WorldStore: ObservableObject {
     /// one where nothing is arriving.
     func tick() {
         refreshPresence()
-        guard let live = liveAction, live.isOverdue else { return }
-        markAction(live.id, status: .lost, reason: "I never felt it finish")
+        guard let live = liveAction else { return }
+        if live.isOverdue {
+            markAction(live.id, status: .lost, reason: "I never felt it finish")
+            return
+        }
+        // An accepted instruction that the body has not confirmed, but plausibly began. Believing
+        // it is right; being sure of it is not, so this is the one transition that deliberately
+        // installs `assumed` evidence -- and the projection says so, which is what lets Rocky say
+        // "I should be turning" rather than "I'm turning".
+        if live.status == .accepted, linkUp, live.age > Self.assumeStartedAfter {
+            markAction(live.id, status: .running, evidence: .assumed, silent: true)
+        }
     }
 
     private func refreshPresence() {
@@ -229,17 +245,6 @@ final class WorldStore: ObservableObject {
         default:
             break
         }
-    }
-
-    /// Belief maintenance for the motion agent, which only ever acks on completion.
-    ///
-    /// Rather than invent a `started` the board never sent, an accepted action becomes
-    /// `running`/`assumed` once it has plausibly begun -- and the projection says out loud that it
-    /// is assumed. Everything downstream can then be honest without the board growing a feature
-    /// it does not have.
-    func assumeRunning(_ id: String) {
-        guard let action = action(id: id), action.status == .accepted else { return }
-        markAction(id, status: .running, evidence: .assumed, silent: true)
     }
 
     // MARK: - Events

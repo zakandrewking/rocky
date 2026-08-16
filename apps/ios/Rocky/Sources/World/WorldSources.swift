@@ -147,8 +147,12 @@ final class MotionWorldSource {
         store.heard()
         switch report {
         case .started(let actionId):
+            // `started` and `running` are the same instant on this hardware -- the board says the
+            // maneuver began and then says nothing until it ends. Recording both would be two
+            // transitions describing one fact; `started` is the one the board actually sent, and
+            // `running` stays for the belief the world model reaches on its own when no `started`
+            // ever arrives (an older payload on the same protocol).
             store.markAction(actionId, status: .started, evidence: .confirmed)
-            store.markAction(actionId, status: .running, evidence: .confirmed)
         case .succeeded(let actionId):
             store.markAction(actionId, status: .succeeded, evidence: .confirmed)
             store.noteDoing(.still, cause: .onItsOwn)

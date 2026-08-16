@@ -92,6 +92,46 @@ describe("createDeviceSessionConfig", () => {
       "robot_gesture",
     ]);
   });
+
+  it("tells the character that asking to move is not the same as having moved", () => {
+    const config = createDeviceSessionConfig() as SessionConfig;
+    const tools = config.tools as Array<{ name: string; description: string }>;
+    const describe_ = (name: string) => tools.find((tool) => tool.name === name)?.description ?? "";
+
+    // The whole failure this design exists to prevent: a tool call returning successfully is not
+    // evidence that a robot moved, and a description that does not say so invites exactly that
+    // claim. See apps/ios/docs/embodiment.md.
+    for (const name of ["drive_cm", "rotate_degrees"]) {
+      expect(describe_(name).toLowerCase()).toContain("on its way");
+    }
+    expect(describe_("drive_cm")).toContain("does NOT mean you have moved");
+  });
+
+  it("defines both vocabularies, so the machinery is never spoken", () => {
+    const config = createDeviceSessionConfig() as SessionConfig;
+    const instructions = config.instructions as string;
+
+    // Each of these is a word the world model uses and Rocky must never say out loud, paired with
+    // what she says instead. A general "don't be technical" instruction has repeatedly not been
+    // enough, so the mapping is explicit and this is what keeps it that way.
+    for (const machinery of ["collision", "obstacle", "accepted", "succeeded", "superseded", "timed out"]) {
+      expect(instructions).toContain(machinery);
+    }
+    expect(instructions).toContain("oof -- I bumped into something");
+    expect(instructions).toContain("I've told my body to turn -- it hasn't gone yet.");
+  });
+
+  it("explains the tags her own body sense arrives in", () => {
+    const instructions = (createDeviceSessionConfig() as SessionConfig).instructions as string;
+
+    // These reach her as user messages, so without this she would answer them as if a person had
+    // spoken, or read them aloud.
+    expect(instructions).toContain("<robot-state>");
+    expect(instructions).toContain("<robot-event>");
+    expect(instructions).toContain("are your own body sense");
+    expect(instructions).toContain("must never be answered as if they were");
+    expect(instructions).toContain("There is only ever one of them");
+  });
 });
 
 describe("mintDeviceSession", () => {

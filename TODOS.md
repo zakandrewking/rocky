@@ -217,3 +217,58 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   unconfirmed-quiet sample is what caused the v6 regression.
 - [ ] Decide whether the motion agent and the behaviour loop should ever coexist. Today they are
   separate payloads and only one runs, which is why "watching" is its own body capability.
+
+## Embodiment: what voice knows about the robot (apps/ios/docs/embodiment.md)
+
+Rocky now keeps an authoritative world model on the phone and projects a curated view of it into
+the Realtime conversation, instead of the conversation being the only record of what her body did.
+Design and scenario matrix are in [`apps/ios/docs/embodiment.md`](apps/ios/docs/embodiment.md);
+the shape is WorldStore (what is true) → WorldProjector (what she is told) → SalienceJudge
+(whether it is worth interrupting her for), with RealtimeVoiceSession as the only thing that talks
+to OpenAI.
+
+- [x] Realtime API mechanics verified against OpenAI's current docs rather than assumed. Three
+  facts the design depends on: exactly one **in-band** response may exist at a time (a second
+  `response.create` is rejected outright), out-of-band responses (`conversation: "none"`) may run
+  concurrently and carry `metadata` echoed back on `response.created`, and conversation items can
+  carry **client-assigned ids** and be deleted — which is what lets superseded state be removed
+  from history rather than merely outranked.
+- [x] Movement tool calls register an intent and return `{action_id, status: "accepted"}`. Fixed
+  three faults that were all the same mistake — treating a physical act as a function call: voice
+  went silent for the length of every movement; a drive longer than the flat 3s command timeout
+  was reported to the model as a *failure* while the robot was still driving; and
+  `{"success": true}` for an accepted command read as "I did it".
+- [x] Action lifecycle with two axes: `status` (what we believe) and `evidence`
+  (`confirmed`/`assumed`/`none` — why). `lost` is deliberately not `failed`: failure is something
+  the body told us, lost is something we never found out, and they make different sentences true.
+- [x] Two protocol additions carrying evidence the board already had but never sent. `started`
+  (a drive/turn has begun, where `ack` only ever meant *finished*) and `pong` (a heartbeat reply,
+  because an open TCP socket does not prove the interpreter is running on this hardware — see the
+  board-freeze incident above, where the port answered SYN while nothing was ever serviced).
+- [x] `rocky_behavior.py` transitions carry their reason (`startled` → "loud noise" vs "came
+  close", the obstacle turn vs the personality turn) and gestures echo the caller's own id, so a
+  gesture's fate is correlated rather than inferred from timing. No tuned constant touched;
+  `check-behavior-parity.mjs` still passes.
+- [x] Salience in two tiers: deterministic rules fire instantly for safety and self-contradiction,
+  and one *superseding* out-of-band judgment slot handles the ambiguous middle. Every judgment
+  carries a ticket (`event_id`, `voice_response_id`, `world_seq`) and is discarded if it comes back
+  referring to a response or a world that is no longer current.
+- [x] The Body panel (one tap from the state chip) and `Documents/world.jsonl`, pulled by
+  `apps/ios/scripts/pull-log.sh` alongside `session.log`. The Responses tab answers "what robot
+  state did the model have available when this response began", written at `response.created`
+  rather than reconstructed — by the time anyone asks, the superseded state is gone.
+- [ ] **Run it on real hardware.** None of this has met a board yet. Two things to watch first:
+  whether `started`/`pong` actually arrive from `rocky_agent.py` (upgrade `assumed` to `confirmed`
+  in the Body panel's action rows), and whether the out-of-band salience judgment comes back fast
+  enough to be worth having — a verdict that arrives after the sentence ends is worth nothing, and
+  if it consistently does, the honest move is to drop that tier and widen the deterministic rules.
+- [ ] Tune the interruption cooldown (8s) and the projection coalescing window (700ms) against a
+  real session rather than a guess. Both are first guesses in the same sense as every constant in
+  `rocky_behavior.py`, and both are the kind of thing that only reads wrong out loud.
+- [ ] `VoiceMoment.claimsMotion` is a keyword match over the utterance so far. It decides whether a
+  bump *contradicts* Rocky or merely happens near her, so it is load-bearing for the deterministic
+  interrupt — worth revisiting once there are real transcripts to check it against.
+- [ ] `audio_end_ms` for truncation is measured from `output_audio_buffer.started`, since WebRTC
+  reports no exact playback position. Erring long deletes words she did say; erring short leaves a
+  fragment she did not. Check against a real interruption whether the approximation is close
+  enough to matter.

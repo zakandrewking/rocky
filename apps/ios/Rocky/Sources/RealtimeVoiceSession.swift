@@ -110,7 +110,16 @@ final class RealtimeVoiceSession: ObservableObject {
     // `requestResponse`, and exactly one request can be waiting.
 
     private var activeResponseId: String?
+    /// Set the instant `response.create` goes out, cleared when the response is created or the
+    /// attempt fails. The id only arrives on `response.created`, which is at least a round trip
+    /// later -- so without this, two requests inside that window both look like the first one, and
+    /// the second is rejected with "Conversation already has an active response". Two tool calls
+    /// in one turn produced exactly that.
+    private var awaitingResponse = false
     private var parkedRequest: (instructions: String?, reason: String)?
+    /// Fires if the `response.done` that should follow a cancel never turns up, so an interrupted
+    /// turn can never leave Rocky permanently unable to ask for another response.
+    private var cancelWatchdog: Task<Void, Never>?
     /// The assistant message item currently being spoken -- needed to truncate it if she is cut
     /// off, so her memory of what she said matches what was actually heard.
     private var currentAssistantItemId: String?
@@ -293,11 +302,12 @@ final class RealtimeVoiceSession: ObservableObject {
     /// that prompted it has passed.
     private func requestResponse(instructions: String? = nil, reason: String) {
         guard client.isDataChannelOpen, !isPaused else { return }
-        if activeResponseId != nil {
+        if activeResponseId != nil || awaitingResponse {
             parkedRequest = (instructions, reason)
             log("holding a response request (\(reason)) until the current one finishes")
             return
         }
+        awaitingResponse = true
         // Nothing goes out until she has the current picture. This is the promise the whole design
         // rests on: every response Rocky begins, begins grounded.
         projector.flush(reason)
@@ -340,17 +350,32 @@ final class RealtimeVoiceSession: ObservableObject {
             client.send(ConversationItemTruncateEvent(itemId: itemId, audioEndMs: heard))
         }
         WorldLog.shared.closeLedger(responseId, outcome: "interrupted", interruptedBy: event.id)
-        activeResponseId = nil
         speaking = false
         finishResponse(reason: "interrupted by \(event.id)")
-        requestResponse(instructions: Self.reactionPrompt(to: event), reason: "interrupted by \(event.id)")
+        // Parked, not sent. The server has not processed the cancel yet, and a `response.create`
+        // that overtakes it is rejected outright -- so the reaction goes out on the
+        // `response.done` the cancel produces. The watchdog covers the case where it never does.
+        parkedRequest = (Self.reactionPrompt(to: event), "interrupted by \(event.id)")
+        cancelWatchdog?.cancel()
+        cancelWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard !Task.isCancelled else { return }
+            await self?.forceReleaseAfterCancel(responseId)
+        }
+    }
+
+    private func forceReleaseAfterCancel(_ responseId: String) {
+        guard activeResponseId == responseId else { return }
+        log("no response.done after cancelling \(responseId); releasing anyway")
+        activeResponseId = nil
+        awaitingResponse = false
+        releaseParkedRequest()
     }
 
     // MARK: - Out-of-band salience
 
     private func sendSalienceRequest(_ ticket: SalienceTicket, _ prompt: String) {
         guard client.isDataChannelOpen else { return }
-        salienceResponses[ticket.id] = ticket.id
         client.send(
             OutOfBandResponseEvent(
                 metadata: ["purpose": "salience", "ticket": ticket.id],
@@ -409,6 +434,8 @@ final class RealtimeVoiceSession: ObservableObject {
         // connection rather than any local player -- stopping local audio leaves it talking.
         client.setRemoteAudioEnabled(false)
         activeResponseId = nil
+        awaitingResponse = false
+        cancelWatchdog?.cancel()
         parkedRequest = nil
         reactAfterUtterance = nil
         finishResponse(reason: "paused")
@@ -468,6 +495,9 @@ final class RealtimeVoiceSession: ObservableObject {
         robot = nil
         greeted = false
         activeResponseId = nil
+        awaitingResponse = false
+        cancelWatchdog?.cancel()
+        cancelWatchdog = nil
         parkedRequest = nil
         reactAfterUtterance = nil
         currentAssistantItemId = nil
@@ -731,6 +761,12 @@ final class RealtimeVoiceSession: ObservableObject {
         switch event.type {
         case "error":
             log("realtime error: \(event.error?.message ?? "unknown")")
+            // A rejected `response.create` never becomes a response, so nothing else would ever
+            // clear this -- and Rocky would be silent for the rest of the session.
+            if awaitingResponse {
+                awaitingResponse = false
+                releaseParkedRequest()
+            }
 
         case "input_audio_buffer.speech_started":
             // Only a real interruption if Rocky isn't the one making the noise. The mic is gated
@@ -753,6 +789,8 @@ final class RealtimeVoiceSession: ObservableObject {
 
         case "response.created":
             activeResponseId = event.response?.id
+            awaitingResponse = false
+            cancelWatchdog?.cancel()
             responseStartedAt = Date()
             retriedThisResponse = false
             humeSawLastChunk = false
@@ -840,6 +878,8 @@ final class RealtimeVoiceSession: ObservableObject {
             if let id = event.response?.id, id == activeResponseId {
                 WorldLog.shared.closeLedger(id, outcome: status)
                 activeResponseId = nil
+                cancelWatchdog?.cancel()
+                cancelWatchdog = nil
             }
             // With Hume, the turn normally ends when playback does, not when the text does --
             // unless there was no text, in which case nothing will ever play and waiting for
@@ -861,9 +901,16 @@ final class RealtimeVoiceSession: ObservableObject {
                 log("event: \(event.type)")
             }
         }
-        for call in event.toolCalls {
+        // Every tool result first, then exactly one request to speak. A response per call meant a
+        // turn with two tool calls asked for two responses, and the second was rejected -- the
+        // model had answered, and nothing came out.
+        let calls = event.toolCalls
+        for call in calls {
             guard let name = call.name, let callId = call.call_id else { continue }
             await performToolCall(name: name, argumentsJSON: call.arguments ?? "{}", callId: callId)
+        }
+        if !calls.isEmpty {
+            requestResponse(reason: "after \(calls.compactMap(\.name).joined(separator: "+"))")
         }
     }
 
@@ -933,7 +980,6 @@ final class RealtimeVoiceSession: ObservableObject {
             output = Self.encodeResult(["ok": false, "problem": error.localizedDescription])
         }
         client.send(FunctionCallOutputEvent(callId: callId, output: output))
-        requestResponse(reason: "after \(name)")
     }
 
     private func execute(name: String, argumentsJSON: String) async throws -> String {
@@ -945,11 +991,11 @@ final class RealtimeVoiceSession: ObservableObject {
         case "set_robot_mood":
             let args = try JSONDecoder().decode(MoodArgs.self, from: data)
             guard let behavior else { return Self.encodeResult(["ok": false, "problem": "no body listening"]) }
-            let action = world.beginAction(.settle, expectedDuration: 0.2)
-            world.markAction(action.id, status: .accepted)
-            behavior.setMood(args.mood, id: action.id)
+            // Deliberately not an action. How wound up she is has no beginning, middle or end to
+            // track -- and registering it as one would supersede whatever movement was actually
+            // in flight, so settling down mid-spin would silently abandon the spin.
+            behavior.setMood(args.mood, id: "mood")
             world.noteFeeling(args.mood)
-            world.markAction(action.id, status: .succeeded, evidence: .assumed, silent: true)
             return Self.encodeResult(["ok": true])
 
         case "robot_gesture":
