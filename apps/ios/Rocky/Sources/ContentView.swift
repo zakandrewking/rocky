@@ -19,6 +19,7 @@ struct ContentView: View {
     @State private var connectionState = ConnectionState.disconnected
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
+    @State private var showBodyPanel = false
     @State private var detailsOpen = false
     @State private var robotSearchReported = false
     /// Set the instant the stone is tapped, before any awaiting, purely so the UI can respond to
@@ -230,6 +231,16 @@ struct ContentView: View {
             if let toolCall = voiceSession.lastToolCall {
                 Text("last action: \(toolCall)").foregroundStyle(RockyTheme.mint.opacity(0.7))
             }
+
+            // What Rocky knew, and what she was responding to. Kept one tap from the state chip
+            // rather than behind a build flag: the questions it answers ("why did she say she was
+            // moving") only come up while a session is running, on the phone, in the room.
+            Button("body: what rocky knows…") { showBodyPanel = true }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
+                .sheet(isPresented: $showBodyPanel) {
+                    WorldDebugView(log: WorldLog.shared, world: voiceSession.world)
+                }
 
             Button("push payload to cyberpi…") { showPayloadPicker = true }
                 .font(.system(size: 11, design: .monospaced))
