@@ -29,7 +29,7 @@ Five real faults fall out of that shape:
 | # | Fault | Consequence |
 | --- | --- | --- |
 | 1 | Tool calls block on physical completion | Voice goes silent for the length of the movement. A 6-second drive is 6 seconds of dead air. |
-| 2 | `Robot.commandTimeout` is a flat 3s, but `rocky_agent.py` only acks on *completion* | Any drive longer than 3s reports **failure** while the robot is happily driving. A false negative reported to the model as fact. |
+| 2 | `Robot.commandTimeout` was a flat 3s, but the motion agent only acked on *completion* | Any drive longer than 3s reported **failure** while the robot was happily driving. A false negative, reported to the model as fact. (That agent is now deprecated; the fault is kept here because the lesson outlived it.) |
 | 3 | The tool result is `{"success": true}` | "The command was accepted" is indistinguishable from "the robot moved". The model says "I turned!" because a function returned. |
 | 4 | State is **pull-only** (`get_robot_state`) | Between tool calls the model is blind. It has to *remember* to ask, and asking costs a turn. |
 | 5 | `BehaviorMonitor.onNotableEvent` → `narrate()` → `response.create` | An unconditional attempt to speak, gated only by a 20s cooldown. No salience judgment; and if a response is already active the Realtime API rejects it outright (`conversation_already_has_active_response`). |
@@ -135,7 +135,7 @@ The starting vocabulary — deliberately small, and every one of them already ex
 | --- | --- | --- |
 | `bumped` | behaviour loop enters `dizzy` | something physically touched the body |
 | `startled` | behaviour loop enters `startled` | a sudden loud noise, or something came close |
-| `blocked` | motion agent `obstacle stop`, or behaviour loop's obstacle turn | the way ahead is not clear |
+| `blocked` | the loop's obstacle turn | the way ahead is not clear |
 | `finished` | action reached `succeeded` | a durable "that one worked" |
 | `failed` | action reached `failed` / `lost` | a durable "that one didn't" |
 | `body_gone` / `body_back` | link watchdog | contact with the body was lost or regained |
@@ -174,16 +174,20 @@ The second axis is the one that makes this honest:
 
 **`evidence: confirmed | assumed | none`.**
 
-The motion agent acks only on *completion*, so between "we wrote the bytes" and "we got an ack"
-there is genuinely nothing to know. Rather than invent a `started` we never received, the store
-records `status: running, evidence: assumed` — derived from *"we sent it, the link is live, the
-estimated duration has not elapsed."* The projection renders that as `"sure": false`, and the
-system prompt turns it into *"I've asked my body to turn — I think it's going"* rather than
-*"I'm turning."*
+The board honours an intention at its own next safe seam, and reports the transition when it does.
+So between "she asked" and "it started" there is a real gap in which nothing is happening yet — and
+in which nothing may ever happen, since a gesture the loop never finds a free moment for expires.
+`accepted` says exactly that, `"sure": false` says it in the projection, and the system prompt
+turns it into *"I've told my body to spin — it hasn't gone yet"* rather than *"I'm spinning."*
 
-The behaviour loop, by contrast, reports its own mode transitions, so a gesture genuinely reaches
-`evidence: confirmed`. Same lifecycle, different amount of truth available — and voice can tell
-which it has.
+**Nothing is ever assumed to have started.** Only the board can say that, and it does. `assumed`
+survives for the one case with nothing to wait on — a stop, where the motors are commanded off and
+there is no separate confirmation coming.
+
+That is a deliberate reversal. The deprecated motion agent was the opposite shape: it began
+immediately and only acked on *completion*, so an assumed `running` was the honest reading there.
+Carrying that assumption over to a body that explicitly tells you when it starts would have Rocky
+believing she was spinning during exactly the window the board is telling her she is not.
 
 `lost` is not `failed`. Failure is something the body told us; lost is something we never learned.
 They produce different sentences, and conflating them is exactly how a model ends up asserting a
@@ -407,9 +411,8 @@ than a general instruction, because "don't be technical" has repeatedly not been
 
 Paired with the epistemic phrasebook — the sentences that must be *available*:
 
-- accepted, not started → *"I've told my body to turn, but it hasn't gone yet."*
-- running, confirmed → *"I'm turning right now."*
-- running, assumed → *"I should be turning — I can't feel it yet."*
+- accepted, not started → *"I've told my body to spin, but it hasn't gone yet."*
+- running, confirmed → *"I'm spinning right now."*
 - succeeded a while ago → *"That finished a few seconds ago."*
 - blocked → *"I tried, but something's in the way."*
 - lost → *"I sent it, but I've lost track of my body."*
@@ -461,12 +464,12 @@ reconsider · **(4)** the natural line.
 
 | # | Scenario | Canonical | Projected to voice | Speech decision | Ideal line |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Asked to spin, not started yet | `act_83 accepted, evidence none` | state: `doing: still, action{spin, accepted, sure:false}` | none (tool result is silent) | *"Okay — hang on."* / if asked: *"I've told my body to spin, it hasn't gone yet."* |
+| 1 | Asked to spin, not started yet | `act_83 accepted` | state: `doing: still, action{spin, accepted, sure:false}` | none (tool result is silent) | *"Okay — hang on."* / if asked: *"I've told my body to spin, it hasn't gone yet."* |
 | 2 | Spin running | `act_83 running, confirmed` | state: `doing: spinning, why: you asked, moving: true, action{running, sure:true}` | `context` | *"Are you doing it?"* → *"I'm spinning right now!"* |
 | 3 | Spin succeeded | `act_83 succeeded` + `evt finished` | state (action cleared) + event | `context` | *"Did you do it?"* → *"Yep, all done — I'm dizzy."* |
 | 4 | Failed before starting (`busy`) | `act_83 failed(busy)` | state + `evt failed` | `context` (silent) or `interrupt` if she announced it | *"I couldn't — my body was already doing something."* |
 | 5 | Interrupted midway | `act_83 cancelled`, `act_84 accepted` | state + `evt` | `interrupt` if she was asserting the spin | *"Oh — I stopped."* |
-| 6 | Physically blocked | `act_85 blocked` | state: `moving:false, blocked:true` + `evt blocked` | `urgent` if she claimed motion | *"I'm trying to go forward, but something's in my way."* |
+| 6 | Physically blocked | body turned away from an obstacle | state: `why: couldn't help it` + `evt blocked` | `urgent` if she claimed motion | *"Something's in my way."* |
 | 7 | Superseded by a new command | `act_83 superseded`, `act_86 accepted` | one state snapshot showing only `act_86` | `context` | *"Never mind that — doing this instead."* |
 | 8 | Event while speaking | mid-utterance `bumped` | judge OOB → `interrupt` | cancel → clear → truncate → new response | *"— oof! Something bumped me."* |
 | 9 | Event while silent | `startled` | deterministic `interrupt` (nothing to cut) | fresh response | *"Whoa. Something loud."* |
@@ -485,19 +488,11 @@ Scenario 15 is the reason `moving` is a separate field from `action.status` and 
 
 Small, additive, and none of them touch a tuned constant (`check-behavior-parity.mjs` stays green).
 
-**`rocky_agent.py`** — send `{"type":"started","id":…}` when a drive/turn begins, so a motion-agent
-action can reach `evidence: confirmed` instead of being assumed for its whole duration. Completion
-acks and the `obstacle stop` error are unchanged.
-
-**`rocky_behavior.py`** — carry detail through transitions that currently have none, so the event
-stream says *what happened* rather than only *which mode was entered*: `startled` gains
-`"loud noise"` vs `"something came close"`, the obstacle turn gains `"obstacle"`, and gesture
-intents carry an optional client `id` echoed in the ack and in the transition detail, so a
-gesture's lifecycle is genuinely correlatable rather than inferred by timing.
-
-**Client side** — `Robot.commandTimeout` splits into an *acceptance* deadline (~1.5s, for
-`started`/immediate ack) and a *completion* deadline scaled to the estimated duration. Expiry of
-the completion deadline yields `lost`, not `failed`.
+**`rocky_agent.py`** — carry detail through transitions that had none, so the event stream says
+*what happened* rather than only *which mode was entered*: `startled` gains `"loud noise"` vs
+`"came close"`, the obstacle turn gains `"obstacle"` so it can be told from the personality turn,
+and gesture intents carry the caller's own `id`, echoed in the ack and used to follow the gesture
+through to its end. A gesture's lifecycle is now correlated rather than inferred from timing.
 
 ---
 
@@ -510,10 +505,10 @@ apps/ios/Rocky/Sources/World/
   WorldProjector.swift   — diff, coalesce, supersede, deliver; owns conversation item ids
   SalienceJudge.swift    — deterministic rules + OOB tickets + race guards
   WorldLog.swift         — structured JSONL + the response ledger
-  WorldSources.swift     — adapters: motion agent → store, behaviour loop → store
+  WorldSources.swift     — the adapter: the board's own vocabulary → the store
 ```
 
-Only one payload runs on the board at a time, so the two adapters are alternatives, never both —
-same fact `BehaviorMonitor`'s single sweep already encodes. `RealtimeVoiceSession` keeps its
-existing turn timing, watchdogs and audio handling, and gains the response gate and the
-projection/salience wiring.
+One payload runs on the board (`apps/robot/device/rocky_agent.py`), so there is one adapter — and
+it is the only place that vocabulary exists, which is why nothing downstream had to change when the
+commanded-motion agent was deprecated. `RealtimeVoiceSession` keeps its existing turn timing,
+watchdogs and audio handling, and gains the response gate and the projection/salience wiring.

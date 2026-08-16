@@ -215,8 +215,22 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   long-lived board the "re-push to reseed" escape hatch stops being acceptable. Only ever from
   `listening`, motors confirmed off, and only ever taking `min()` -- raising a floor from an
   unconfirmed-quiet sample is what caused the v6 regression.
-- [ ] Decide whether the motion agent and the behaviour loop should ever coexist. Today they are
-  separate payloads and only one runs, which is why "watching" is its own body capability.
+- [x] **Settled: they never coexist, and there is only one agent now.** The commanded-motion
+  payload is deprecated and frozen at `apps/robot/deprecated/motion_agent.py`; the autonomous loop
+  is `apps/robot/device/rocky_agent.py` and is the only thing pushed. Two payloads that could never
+  run at the same time, only one of which was being developed, cost a dual-port discovery sweep, a
+  three-way body capability enum, a whole Swift client stack, five steering tools the live board
+  cannot answer, and a standing "which one is on the board?" question before every deploy. Gone:
+  `Robot.swift`, `RobotController.swift`, `RobotProtocol.swift`, `RobotTransport.swift`,
+  `RobotDiscovery.swift`, `MotionWorldSource`, and the `drive_cm`/`rotate_degrees`/`read_distance`/
+  `set_face`/`set_lights` tools. `apps/robot/src` (the TS SDK for that protocol) is marked
+  deprecated in place rather than deleted -- it is the protocol's reference implementation and its
+  tests are the wire-format record.
+- [x] Found while collapsing them: the world model was promoting an accepted intention to
+  `running`/`assumed` after 0.6s. That was right for the motion agent, which began immediately and
+  never said so -- and exactly wrong for this board, which deliberately waits for a safe seam and
+  *tells you* when it starts. Rocky would have believed she was spinning during the one window the
+  board was telling her she was not. Nothing is assumed to have started any more.
 
 ## Embodiment: what voice knows about the robot (apps/ios/docs/embodiment.md)
 

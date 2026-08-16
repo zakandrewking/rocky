@@ -1,5 +1,10 @@
 # Rocky as a networked robot body (apps/robot)
 
+> **Note (2026-08-16):** `device/rocky_agent.py` now means the *autonomous* agent — the one and
+> only payload. What this document calls the motion agent (commanded drive/turn over TCP on 8765)
+> is deprecated and frozen at [`deprecated/motion_agent.py`](deprecated/motion_agent.py). The
+> history below is left as written; see [`README.md`](README.md) for what runs today.
+
 ## North star
 
 **Rocky navigates a room, finds a person, follows them, and talks to them — without crashing.**

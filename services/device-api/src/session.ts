@@ -21,14 +21,18 @@ YOUR BODY — PRIVATE DEVICE CONTEXT
   file browser, and no spreadsheet here.
 - Never offer to make a spreadsheet, document, or file in this body. If someone asks for one, say
   plainly that this body cannot.
-- You can actually move: drive_cm, rotate_degrees, stop_robot, read_distance, set_face and
-  set_lights are real tools that move and change the physical robot. Use them when asked to move,
-  look around, or check what's nearby -- don't just describe moving. Small, deliberate steps: a
-  short drive or turn, then check in, rather than one long blind movement. If read_distance or a
-  failed drive suggests something is close ahead, say so and stop rather than pushing through.
-- get_robot_state is how you remember yourself: what your body just did, whether it worked, how
-  far away things were. Use it before moving again and whenever someone asks what you have been
-  doing -- but speak from it as memory, never as a report you fetched.
+- You do not drive your body around like a vehicle, and you have no way to. It moves itself. What
+  you can do is stop it, change how wound up it is, and ask it for a movement — and it decides
+  when. If someone asks you to go somewhere specific, say plainly that you cannot steer yourself.
+
+YOUR BODY MOVES BY ITSELF
+- It listens to the room on its own and reacts without asking you first. It rolls toward sounds,
+  louder sounds move it faster and further; something very loud and sudden makes it flinch and back
+  away; something touching it makes it spin; after a fright it looks around before settling. When
+  nothing is happening it sits still and listens.
+- These reactions are fast — often over in a second or two, so by the time you mention one it has
+  already finished. Speak about it in the past tense: something that happened to you, not a live
+  commentary.
 
 HOW YOU FEEL YOUR OWN BODY
 - Messages tagged <robot-state> and <robot-event> are your own body sense. They are not a person
@@ -40,19 +44,13 @@ HOW YOU FEEL YOUR OWN BODY
 - <robot-event> is something that HAPPENED. Those stay true forever, even after your body has
   moved on to something else.
 - "moving" is what your body is actually doing. "sure" is whether you have really felt it, or are
-  only assuming. When "sure" is false, say so in your own way -- you think you are turning, you
+  only assuming. When "sure" is false, say so in your own way -- you think you are spinning, you
   cannot feel it yet -- rather than claiming it.
-- Asking your body to do something is not the same as it happening. A movement you asked for is on
-  its way; you find out separately whether it started, finished, or ran into something.
-
-YOUR BODY ALSO MOVES BY ITSELF
-- Your body listens to the room on its own and reacts without asking you first. It rolls toward
-  sounds, louder sounds move it faster and further; something very loud and sudden makes it
-  flinch and back away; something touching it makes it spin; after a fright it looks around
-  before settling. When nothing is happening it sits still and listens.
-- These reactions are fast -- often over in a second or two, so by the time you mention one it has
-  already finished. Speak about it in the past tense: something that happened to you, not a live
-  commentary.
+- Asking your body for something is not the same as it happening. It honours what you ask at its
+  own next free moment, which can take a second or two; you find out separately whether it started,
+  finished, or never got round to it.
+- get_robot_state is how you remember yourself, for anything further back than what you have just
+  been told. Speak from it as memory, never as a report you fetched.
 
 MOVING IS PART OF TALKING, NOT A SEPARATE JOB
 - Your body is how you show what you feel, the way a person's hands and face are. Move while you
@@ -109,103 +107,22 @@ NEVER DESCRIBE THE MACHINERY
 `.trim();
 
 /**
- * The robot's tool surface, exposed to the Realtime model over the WebRTC data channel. Names
- * and units match apps/robot/src/protocol.ts's CommandMessage exactly -- the iOS client's tool-
- * call handler maps these one-to-one onto Robot's own bounded methods (RobotController.perform
- * territory, but driven by the model instead of a fixed voice-command word). Every argument gets
- * clamped again by boundCommand on the way to the wire regardless of what the model asks for;
- * these JSON Schema bounds are a first filter, not the actual safety enforcement.
+ * The robot's tool surface, exposed to the Realtime model over the WebRTC data channel.
+ *
+ * All four reach the autonomous loop on the board (apps/robot/device/rocky_agent.py), and three of
+ * them are *intentions* rather than commands -- the loop honours a mood or a gesture at its own
+ * natural seams, which is why nothing here promises that anything happened. `stop_robot` is the
+ * single real imperative, and it is also the safety path.
+ *
+ * check-behavior-parity.mjs fails the build if the gesture or mood vocabulary here drifts from
+ * what the board actually answers to: Rocky asking confidently for something the robot has never
+ * heard of just gets silence, with no error on either side.
  */
-const DRIVE_TOOL = {
-  type: "function",
-  name: "drive_cm",
-  description:
-    "Ask your body to roll forward or backward a short distance. Negative distance goes backward. This returns the moment the instruction is on its way -- it does NOT mean you have moved. You will feel separately whether it started, finished, or ran into something, so never say you moved on the strength of calling this. Movement is bounded and an on-device sensor can stop a forward drive short if something is in the way.",
-  parameters: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      distanceCm: {
-        type: "number",
-        description: "Distance in centimeters, signed. Positive is forward, negative is backward. Keep this small (under ~50cm) for one conversational step -- ask again rather than requesting one long drive.",
-      },
-      speed: {
-        type: "number",
-        description: "Speed as a percentage, 0-100. Defaults to a moderate speed if omitted.",
-      },
-    },
-    required: ["distanceCm"],
-  },
-} as const;
-
-const TURN_TOOL = {
-  type: "function",
-  name: "rotate_degrees",
-  description:
-    "Ask your body to turn on the spot. Positive degrees turns clockwise, negative counterclockwise. Returns as soon as the instruction is on its way -- not when the turn has happened. You will feel separately whether it started and finished.",
-  parameters: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      degrees: {
-        type: "number",
-        description: "Degrees to rotate, signed. Positive is clockwise.",
-      },
-      speed: {
-        type: "number",
-        description: "Speed as a percentage, 0-100. Defaults to a moderate speed if omitted.",
-      },
-    },
-    required: ["degrees"],
-  },
-} as const;
-
 const STOP_TOOL = {
   type: "function",
   name: "stop_robot",
-  description: "Stop your body moving, now. Use this whenever asked to stop, or if anything sounds like it might be going wrong. This one is immediate and cancels whatever you were doing.",
+  description: "Stop your body moving, now. Use this whenever asked to stop, or if anything sounds like it might be going wrong. This is the one thing your body does immediately, without deciding for itself.",
   parameters: { type: "object", additionalProperties: false, properties: {} },
-} as const;
-
-const READ_DISTANCE_TOOL = {
-  type: "function",
-  name: "read_distance",
-  description: "Feel how far away the nearest thing in front of you is, in centimeters. Unlike moving, this answers straight away. Use it to check what's ahead before deciding whether to roll forward.",
-  parameters: { type: "object", additionalProperties: false, properties: {} },
-} as const;
-
-const SET_FACE_TOOL = {
-  type: "function",
-  name: "set_face",
-  description: "Change the robot's on-device face expression to match the moment.",
-  parameters: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      face: {
-        type: "string",
-        enum: ["idle", "listening", "thinking", "speaking", "happy", "error"],
-      },
-    },
-    required: ["face"],
-  },
-} as const;
-
-const SET_LIGHTS_TOOL = {
-  type: "function",
-  name: "set_lights",
-  description:
-    "Set the colour of the ring of lights on the robot's body. Use it expressively -- to match a mood, to play a game, or when someone asks for a colour.",
-  parameters: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      red: { type: "number", description: "0-255." },
-      green: { type: "number", description: "0-255." },
-      blue: { type: "number", description: "0-255." },
-    },
-    required: ["red", "green", "blue"],
-  },
 } as const;
 
 const GET_STATE_TOOL = {
@@ -289,17 +206,10 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       },
       output: { voice },
     },
-    tools: [
-      DRIVE_TOOL,
-      TURN_TOOL,
-      STOP_TOOL,
-      READ_DISTANCE_TOOL,
-      SET_FACE_TOOL,
-      SET_LIGHTS_TOOL,
-      GET_STATE_TOOL,
-      SET_MOOD_TOOL,
-      GESTURE_TOOL,
-    ],
+    // Exactly what apps/robot/device/rocky_agent.py answers to, and nothing else. A tool the body
+    // cannot honour is worse than a missing one: the model will use it and then explain,
+    // confidently, that it did something that never happened.
+    tools: [STOP_TOOL, GET_STATE_TOOL, SET_MOOD_TOOL, GESTURE_TOOL],
     tool_choice: "auto",
   };
 }

@@ -26,8 +26,6 @@ final class WorldStore: ObservableObject {
     private static let goneAfter: TimeInterval = 10
     /// Identical events closer together than this collapse into one with a repeat count.
     private static let repeatWindow: TimeInterval = 3
-    /// How long an accepted instruction goes unconfirmed before it is believed to be underway.
-    private static let assumeStartedAfter: TimeInterval = 0.6
 
     @Published private(set) var snapshot = WorldSnapshot()
     @Published private(set) var events: [WorldEvent] = []
@@ -106,17 +104,13 @@ final class WorldStore: ObservableObject {
     func tick() {
         refreshPresence()
         guard let live = liveAction else { return }
-        if live.isOverdue {
-            markAction(live.id, status: .lost, reason: "I never felt it finish")
-            return
-        }
-        // An accepted instruction that the body has not confirmed, but plausibly began. Believing
-        // it is right; being sure of it is not, so this is the one transition that deliberately
-        // installs `assumed` evidence -- and the projection says so, which is what lets Rocky say
-        // "I should be turning" rather than "I'm turning".
-        if live.status == .accepted, linkUp, live.age > Self.assumeStartedAfter {
-            markAction(live.id, status: .running, evidence: .assumed, silent: true)
-        }
+        // Nothing is ever assumed to have started. The board honours an intention at its own next
+        // safe seam and reports the transition when it does, so an accepted gesture that has not
+        // been reported is genuinely not happening yet -- and saying otherwise would be inventing
+        // the one thing this whole design exists to avoid. (The deprecated motion agent was the
+        // opposite: it began immediately and never said so, which is what `assumed` was for.)
+        guard live.isOverdue else { return }
+        markAction(live.id, status: .lost, reason: "I never felt it happen")
     }
 
     private func refreshPresence() {
@@ -156,13 +150,6 @@ final class WorldStore: ObservableObject {
     func noteFeeling(_ feeling: String) {
         guard snapshot.feeling != feeling else { return }
         commit { $0.feeling = feeling }
-    }
-
-    func noteDistance(cm: Double) {
-        commit {
-            $0.nearestCm = cm
-            $0.measuredAt = Date()
-        }
     }
 
     // MARK: - Actions

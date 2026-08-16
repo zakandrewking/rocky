@@ -23,9 +23,9 @@ final class RealtimeSessionConfigTests: XCTestCase {
         return root["session"] as! [String: Any]
     }
 
-    func testDropsMovementToolsWhenThereIsNoRobot() {
+    func testDropsBodyToolsWhenThereIsNoRobot() {
         let input = config(
-            tools: [["type": "function", "name": "drive_cm"], ["type": "function", "name": "set_face"]],
+            tools: [["type": "function", "name": "robot_gesture"], ["type": "function", "name": "stop_robot"]],
             instructions: "You are Rocky."
         )
 
@@ -35,14 +35,14 @@ final class RealtimeSessionConfigTests: XCTestCase {
         XCTAssertEqual(stripped["tool_choice"] as! String, "none")
     }
 
-    func testCorrectsTheBodyContextSoRockyDoesNotPromiseToDrive() {
-        let input = config(tools: [], instructions: "You are Rocky. You can actually move.")
+    func testCorrectsTheBodyContextSoRockyDoesNotPromiseABodySheHasNot() {
+        let input = config(tools: [], instructions: "You are Rocky. It moves itself.")
 
         let instructions = session(of: OpenAIRealtimeMinter.withoutRobotBody(input))["instructions"] as! String
 
         // Kept, not replaced: the persona itself still comes from session.ts. Only the body
         // claim is overridden, and it has to land last to win.
-        XCTAssertTrue(instructions.hasPrefix("You are Rocky. You can actually move."))
+        XCTAssertTrue(instructions.hasPrefix("You are Rocky. It moves itself."))
         XCTAssertTrue(instructions.contains("NOT CONNECTED RIGHT NOW"))
     }
 
@@ -69,14 +69,11 @@ final class RealtimeSessionConfigTests: XCTestCase {
         // Conduct is shared across characters; a build missing it would be a real safety gap.
         XCTAssertTrue(instructions.contains("Never tell a child to smell"))
 
+        // Exactly what apps/robot/device/rocky_agent.py answers to. The steering tools went with
+        // the deprecated motion agent; a config still advertising them would have Rocky offering
+        // to drive a body that drives itself.
         let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
-        XCTAssertEqual(
-            names,
-            [
-                "drive_cm", "rotate_degrees", "stop_robot", "read_distance", "set_face",
-                "set_lights", "get_robot_state", "set_robot_mood", "robot_gesture",
-            ]
-        )
+        XCTAssertEqual(names, ["stop_robot", "get_robot_state", "set_robot_mood", "robot_gesture"])
 
         // Whether the model speaks or only writes is the character's choice, and the app reads it
         // back from here to decide whether to run a synthesiser at all.

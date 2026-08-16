@@ -46,9 +46,6 @@ final class BehaviorMonitor: ObservableObject {
 
     @Published private(set) var host: String?
     @Published private(set) var connected = false
-    /// Set when the board is running the *motion* agent instead, so the one sweep finds either
-    /// kind of robot. Only one payload runs at a time, so these are alternatives, never both.
-    @Published private(set) var motionHost: String?
     /// True once the sweep has finished, however it ended -- so nothing has to guess whether
     /// "no robot" means "none there" or "still looking".
     @Published private(set) var searchFinished = false
@@ -65,16 +62,14 @@ final class BehaviorMonitor: ObservableObject {
 
     private let beaconPort: NWEndpoint.Port
     private let eventPort: NWEndpoint.Port
-    private let motionPort: NWEndpoint.Port
     private var listener: NWListener?
     private var connection: NWConnection?
     private var scanTask: Task<Void, Never>?
     private var buffer = ""
 
-    init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768, motionPort: UInt16 = 8765) {
+    init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768) {
         self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
         self.eventPort = NWEndpoint.Port(rawValue: eventPort) ?? 8768
-        self.motionPort = NWEndpoint.Port(rawValue: motionPort) ?? 8765
     }
 
     // MARK: - Finding the robot
@@ -138,18 +133,13 @@ final class BehaviorMonitor: ObservableObject {
         connect(to: found, port: beacon.tcpPort)
     }
 
-    /// Sweeps this phone's own /24 once, looking for either kind of robot.
-    ///
-    /// One sweep, not two. Only one payload runs on the board at a time, so the motion agent and
-    /// the behaviour loop are alternatives -- searching for them independently meant two /24
-    /// sweeps per launch that contradicted each other in the log, one of them always reporting
-    /// failure for a robot that was sitting right there working.
+    /// Sweeps this phone's own /24 once, looking for the robot.
     private func scanForRobot() async {
         guard let prefix = NetworkUtilities.localSubnetPrefix() else {
             searchFinished = true
             return
         }
-        RockyLog.write("robot: sweeping \(prefix)0/24 for a body (behaviour :\(eventPort.rawValue) or motion :\(motionPort.rawValue))")
+        RockyLog.write("robot: sweeping \(prefix)0/24 for a body on :\(eventPort.rawValue)")
 
         var candidates = Array(1...254)
         if let saved = UserDefaults.standard.string(forKey: "behaviorHost"),
@@ -159,37 +149,27 @@ final class BehaviorMonitor: ObservableObject {
             candidates.insert(last, at: 0)
         }
 
-        let behaviourPort = eventPort
-        let motion = motionPort
+        let port = eventPort
         for batchStart in stride(from: 0, to: candidates.count, by: 32) {
             if Task.isCancelled || connection != nil { return }
             let batch = candidates[batchStart..<min(batchStart + 32, candidates.count)]
-            let hit = await withTaskGroup(of: (String, Bool)?.self) { group in
+            let hit = await withTaskGroup(of: String?.self) { group in
                 for octet in batch {
                     let address = "\(prefix)\(octet)"
-                    group.addTask {
-                        if await Self.probe(host: address, port: behaviourPort) != nil { return (address, true) }
-                        if await Self.probe(host: address, port: motion) != nil { return (address, false) }
-                        return nil
-                    }
+                    group.addTask { await Self.probe(host: address, port: port) }
                 }
-                var winner: (String, Bool)?
+                var winner: String?
                 for await result in group where result != nil {
                     if winner == nil { winner = result; group.cancelAll() }
                 }
                 return winner
             }
-            if let (address, isBehaviour) = hit {
+            if let address = hit {
                 UserDefaults.standard.set(address, forKey: "behaviorHost")
                 host = address
                 searchFinished = true
-                if isBehaviour {
-                    RockyLog.write("robot: found at \(address), running its own behaviour")
-                    connect(to: address, port: Int(behaviourPort.rawValue))
-                } else {
-                    RockyLog.write("robot: found at \(address), running the motion agent")
-                    motionHost = address
-                }
+                RockyLog.write("robot: found at \(address)")
+                connect(to: address, port: Int(port.rawValue))
                 return
             }
         }

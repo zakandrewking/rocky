@@ -54,7 +54,6 @@ final class RealtimeVoiceSession: ObservableObject {
     @Published private(set) var hasSpokenOnce = false
 
     private let client = RealtimeWebRTCClient()
-    private var robot: RobotController?
     private var greeted = false
 
     // MARK: - The world
@@ -66,7 +65,6 @@ final class RealtimeVoiceSession: ObservableObject {
     let world = WorldStore()
     private lazy var projector = WorldProjector(store: world, channel: self)
     private let salience = SalienceJudge()
-    private lazy var motionSource = MotionWorldSource(store: world)
     private lazy var behaviorSource = BehaviorWorldSource(store: world)
     private var behavior: BehaviorMonitor?
     private var worldTicker: Task<Void, Never>?
@@ -147,13 +145,13 @@ final class RealtimeVoiceSession: ObservableObject {
         log("orb tapped, starting up")
     }
 
-    /// `robot` is nil when none was found on the network. That is a supported, ordinary state --
-    /// the app is then exactly what apps/desktop is, a voice-only Rocky -- so the movement tools
-    /// are dropped from the session rather than left to fail (see OpenAIRealtimeMinter).
-    func connect(robot: RobotController?, behavior: BehaviorMonitor? = nil) async {
+    /// `behavior` is nil, or present but not connected, when no robot was found on the network.
+    /// That is a supported, ordinary state -- the app is then exactly what apps/desktop is, a
+    /// voice-only Rocky -- so the body tools are dropped from the session rather than left to fail
+    /// (see OpenAIRealtimeMinter).
+    func connect(behavior: BehaviorMonitor?) async {
         self.behavior = behavior
         guard state == .disconnected || isFailed else { return }
-        self.robot = robot
         state = .connecting
         // A reconnect gets a brand-new WebRTC track, which starts enabled. Without resetting this,
         // the gate believes it is already closed, every close is a no-op, and Rocky talks straight
@@ -163,18 +161,17 @@ final class RealtimeVoiceSession: ObservableObject {
         gatedForOwnVoice = false
         userStoppedSpeakingAt = nil
 
-        wireWorld(robot: robot, behavior: behavior)
+        wireWorld(behavior: behavior)
 
         let connectStart = Date()
         if let startedAt { log("connect beginning \(Self.ms(since: startedAt)) after the tap") }
         do {
             try await AudioSessionManager.configureForVoice()
             startLocalAudio()
-            let body: OpenAIRealtimeMinter.Body =
-                robot != nil ? .driving : (behavior?.connected == true ? .watching : .none)
-            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(body: body)
+            let hasBody = behavior?.connected == true
+            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasBody: hasBody)
             log(
-                "minted secret in \(Self.ms(since: connectStart)) (body: \(body), voice: \(hume == nil ? "openai" : "hume"))"
+                "minted secret in \(Self.ms(since: connectStart)) (body: \(hasBody ? "yes" : "none"), voice: \(hume == nil ? "openai" : "hume"))"
             )
             let negotiateStart = Date()
 
@@ -211,11 +208,8 @@ final class RealtimeVoiceSession: ObservableObject {
 
     // MARK: - Wiring the world
 
-    /// Points the world model at whichever body was found, and points the salience judge at the
-    /// data channel. Only one payload runs on the board at a time, so at most one of these two
-    /// sources will ever see traffic -- but both are wired, because which one it is is discovered
-    /// at runtime, not chosen here.
-    private func wireWorld(robot: RobotController?, behavior: BehaviorMonitor?) {
+    /// Points the world model at the body, and the salience judge at the data channel.
+    private func wireWorld(behavior: BehaviorMonitor?) {
         world.onChange = { [weak self] change in
             self?.worldChanged(change)
         }
@@ -224,17 +218,6 @@ final class RealtimeVoiceSession: ObservableObject {
         }
         behavior?.onBoardMessage = { [weak self] message in
             self?.behaviorSource.handle(message)
-        }
-        if let robot {
-            Task {
-                await robot.observe { [weak self] report in
-                    Task { @MainActor in self?.motionSource.handle(report) }
-                }
-                // A connected motion agent is a body that is present. Nothing else says so: this
-                // agent sends no unprompted traffic, so without this the world would open with
-                // "my body is gone" while the robot sat there answering commands.
-                if await robot.isConnected { self.world.heard() }
-            }
         }
         worldTicker?.cancel()
         worldTicker = Task { [weak self] in
@@ -491,7 +474,6 @@ final class RealtimeVoiceSession: ObservableObject {
         speaking = false
         hasSpokenOnce = false
         state = .disconnected
-        robot = nil
         greeted = false
         activeResponseId = nil
         awaitingResponse = false
@@ -998,23 +980,22 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func execute(name: String, argumentsJSON: String) async throws -> String {
         let data = Data(argumentsJSON.utf8)
+        guard let behavior, behavior.connected else {
+            return Self.encodeResult(["ok": false, "problem": "my body isn't with me right now"])
+        }
 
-        // Handled first, and without a RobotController: these reach the board's own behaviour
-        // loop, which is running precisely when there is no motion server to hold.
         switch name {
         case "set_robot_mood":
             let args = try JSONDecoder().decode(MoodArgs.self, from: data)
-            guard let behavior else { return Self.encodeResult(["ok": false, "problem": "no body listening"]) }
             // Deliberately not an action. How wound up she is has no beginning, middle or end to
-            // track -- and registering it as one would supersede whatever movement was actually
-            // in flight, so settling down mid-spin would silently abandon the spin.
+            // track -- and registering it as one would supersede whatever movement was actually in
+            // flight, so settling down mid-spin would silently abandon the spin.
             behavior.setMood(args.mood, id: "mood")
             world.noteFeeling(args.mood)
             return Self.encodeResult(["ok": true])
 
         case "robot_gesture":
             let args = try JSONDecoder().decode(GestureArgs.self, from: data)
-            guard let behavior else { return Self.encodeResult(["ok": false, "problem": "no body listening"]) }
             let times = max(1, min(10, Int(args.times ?? 1)))
             let intent: ActionIntent = args.gesture == "wiggle" ? .wiggle : .spin
             // The board honours gestures at its own seams, so this is genuinely open-ended: the
@@ -1027,11 +1008,7 @@ final class RealtimeVoiceSession: ObservableObject {
             world.markAction(action.id, status: .accepted)
             return Self.accepted(action)
 
-        case "get_robot_state":
-            return Self.encodeState(world)
-
-        case "stop_robot" where robot == nil:
-            guard let behavior else { return Self.encodeResult(["ok": false, "problem": "no body listening"]) }
+        case "stop_robot":
             let action = world.beginAction(.stop, expectedDuration: 0.3)
             behavior.stopMoving()
             world.markAction(action.id, status: .accepted)
@@ -1039,62 +1016,8 @@ final class RealtimeVoiceSession: ObservableObject {
             world.markAction(action.id, status: .succeeded, evidence: .assumed)
             return Self.accepted(action)
 
-        default:
-            break
-        }
-
-        guard let robot else { throw RobotError.disconnected }
-
-        switch name {
-        case "drive_cm":
-            let args = try JSONDecoder().decode(DriveArgs.self, from: data)
-            let speed = args.speed ?? RobotLimits.defaultSpeed
-            let action = world.beginAction(
-                args.distanceCm < 0 ? .driveBackward : .driveForward,
-                expectedDuration: RobotLimits.estimatedDriveSeconds(distanceCm: args.distanceCm, speed: speed)
-            )
-            motionSource.expect(action.intent)
-            world.markAction(action.id, status: .accepted)
-            await robot.drive(actionId: action.id, distanceCm: args.distanceCm, speed: speed)
-            return Self.accepted(action)
-
-        case "rotate_degrees":
-            let args = try JSONDecoder().decode(TurnArgs.self, from: data)
-            let speed = args.speed ?? RobotLimits.defaultSpeed
-            let action = world.beginAction(
-                abs(args.degrees) >= 300 ? .spin : .turn,
-                expectedDuration: RobotLimits.estimatedTurnSeconds(degrees: args.degrees, speed: speed)
-            )
-            motionSource.expect(action.intent)
-            world.markAction(action.id, status: .accepted)
-            await robot.turn(actionId: action.id, degrees: args.degrees, speed: speed)
-            return Self.accepted(action)
-
-        case "stop_robot":
-            let action = world.beginAction(.stop, expectedDuration: 0.3)
-            world.markAction(action.id, status: .accepted)
-            world.noteDoing(.still, cause: .youAsked)
-            await robot.stop(actionId: action.id)
-            return Self.accepted(action)
-
-        case "read_distance":
-            // A query, not a movement: the answer *is* the point, and it arrives in milliseconds,
-            // so there is nothing here for the action lifecycle to describe.
-            let cm = try await robot.readDistanceCm()
-            return Self.encodeResult(["ok": true, "nearestCm": cm])
-
-        case "set_face":
-            let args = try JSONDecoder().decode(FaceArgs.self, from: data)
-            guard let face = FaceState(rawValue: args.face) else {
-                return Self.encodeResult(["ok": false, "problem": "no such face"])
-            }
-            try await robot.setFace(face)
-            return Self.encodeResult(["ok": true])
-
-        case "set_lights":
-            let args = try JSONDecoder().decode(LightArgs.self, from: data)
-            try await robot.setLights(red: args.red, green: args.green, blue: args.blue)
-            return Self.encodeResult(["ok": true])
+        case "get_robot_state":
+            return Self.encodeState(world)
 
         default:
             return Self.encodeResult(["ok": false, "problem": "I don't have that"])
@@ -1103,15 +1026,15 @@ final class RealtimeVoiceSession: ObservableObject {
 
     /// What a movement tool returns, and deliberately all it returns.
     ///
-    /// `accepted` means the instruction is on its way. It is not a claim that anything moved, and
-    /// the tool description says so in as many words -- because the previous `{"success": true}`
-    /// was read, entirely reasonably, as "I did it", and Rocky would announce a spin that had not
-    /// begun and might never happen.
+    /// `accepted` means the wish is on its way to a body that decides for itself when to honour
+    /// it. It is not a claim that anything moved, and the tool description says so in as many
+    /// words -- because the previous `{"success": true}` was read, entirely reasonably, as "I did
+    /// it", and Rocky would announce a spin that had not begun and might never happen.
     private static func accepted(_ action: RobotAction) -> String {
         encodeResult([
             "action_id": action.id,
             "status": "accepted",
-            "means": "on its way to your body — not yet happening. You will feel it when it does.",
+            "means": "on its way to your body — not yet happening. It decides when. You will feel it when it does.",
         ])
     }
 
@@ -1128,10 +1051,6 @@ final class RealtimeVoiceSession: ObservableObject {
             "blocked": snapshot.blocked,
         ]
         if let feeling = snapshot.feeling { fields["feeling"] = feeling }
-        if let cm = snapshot.nearestCm, let measured = snapshot.measuredAt {
-            fields["nearest_cm"] = Int(cm.rounded())
-            fields["measured"] = WorldWords.ago(Date().timeIntervalSince(measured))
-        }
         if let action = snapshot.action {
             fields["right_now"] = WorldProjector.describe(action)
         }
@@ -1157,22 +1076,6 @@ final class RealtimeVoiceSession: ObservableObject {
         return json
     }
 
-    private struct DriveArgs: Decodable {
-        let distanceCm: Double
-        let speed: Double?
-    }
-
-    private struct TurnArgs: Decodable {
-        let degrees: Double
-        let speed: Double?
-    }
-
-    private struct LightArgs: Decodable {
-        let red: Int
-        let green: Int
-        let blue: Int
-    }
-
     private struct MoodArgs: Decodable {
         let mood: String
     }
@@ -1180,10 +1083,6 @@ final class RealtimeVoiceSession: ObservableObject {
     private struct GestureArgs: Decodable {
         let gesture: String
         let times: Double?
-    }
-
-    private struct FaceArgs: Decodable {
-        let face: String
     }
 
     /// Encodes a small, flat JSON object for a function_call_output. Values are deliberately

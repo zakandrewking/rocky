@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Fails if apps/robot/device/rocky_behavior.py's tuned constants have drifted from
+// Fails if apps/robot/device/rocky_agent.py's tuned constants have drifted from
 // apps/robot/steps/step16_loudness_drive_sticky.py, which is the tuning record.
 //
 // Those numbers took eleven versions and a live calibration run to arrive at, and several of them
@@ -12,7 +12,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const REFERENCE = new URL("../steps/step16_loudness_drive_sticky.py", import.meta.url);
-const LIVE = new URL("../device/rocky_behavior.py", import.meta.url);
+const LIVE = new URL("../device/rocky_agent.py", import.meta.url);
 
 /** Every constant that came out of calibration or live tuning. */
 const TUNED = [
@@ -64,7 +64,7 @@ for (const name of TUNED) {
   const expected = readConstant(reference, name);
   const actual = readConstant(live, name);
   if (expected === null) drifted.push(`${name}: missing from step16 (the reference)`);
-  else if (actual === null) drifted.push(`${name}: missing from rocky_behavior.py`);
+  else if (actual === null) drifted.push(`${name}: missing from rocky_agent.py`);
   else if (expected !== actual) drifted.push(`${name}: step16 has ${expected}, live has ${actual}`);
 }
 

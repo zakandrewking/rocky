@@ -103,9 +103,9 @@ final class WorldProjectorTests: XCTestCase {
         projector.flush("first")
         let countAfterFirst = channel.inserted.count
 
-        store.noteDistance(cm: 41)
-        store.noteDistance(cm: 39)
-        store.noteDistance(cm: 42)
+        // A repeat of the same semantic picture, arriving three times.
+        store.noteDoing(.rollingForward, cause: .onItsOwn)
+        store.noteDoing(.rollingForward, cause: .onItsOwn)
         projector.flush("again")
 
         XCTAssertEqual(channel.inserted.count, countAfterFirst, "nothing Rocky could say has changed")
@@ -161,16 +161,16 @@ final class WorldProjectorTests: XCTestCase {
         XCTAssertEqual(fields["doing"] as? String, "spinning")
         XCTAssertEqual(fields["moving"] as? Bool, true)
         XCTAssertEqual(fields["why"] as? String, "you asked")
-        // Absent, not false: an omitted field means "not known", and a `nearest_cm: 0` would be a
-        // measurement Rocky never took.
-        XCTAssertNil(fields["nearest_cm"])
+        // Absent, not false: an omitted field means "not known", so a `blocked: false` would be a
+        // claim rather than a silence.
         XCTAssertNil(fields["blocked"])
+        XCTAssertNil(fields["feeling"])
     }
 
     /// The load-bearing field. `sure` is what separates "I'm turning" from "I think I'm turning",
     /// and it must be false whenever the body has confirmed nothing.
     func testAnAssumedActionSaysOutLoudThatItIsAssumed() throws {
-        var action = RobotAction(id: "act_1", intent: .turn, expectedDuration: 2)
+        var action = RobotAction(id: "act_1", intent: .spin, expectedDuration: 2)
         action.status = .running
         action.evidence = .assumed
         var snapshot = WorldSnapshot()
@@ -184,11 +184,11 @@ final class WorldProjectorTests: XCTestCase {
 
         XCTAssertEqual(described["sure"] as? Bool, false)
         XCTAssertEqual(described["how_it_is_going"] as? String, "running")
-        XCTAssertEqual(described["trying_to"] as? String, "turn")
+        XCTAssertEqual(described["trying_to"] as? String, "spin")
     }
 
     func testIntentAndObservationAreBothPresentWhenTheyDisagree() throws {
-        var action = RobotAction(id: "act_1", intent: .driveForward, expectedDuration: 3)
+        var action = RobotAction(id: "act_1", intent: .spin, expectedDuration: 3)
         action.status = .running
         action.evidence = .assumed
         var snapshot = WorldSnapshot()
@@ -205,7 +205,7 @@ final class WorldProjectorTests: XCTestCase {
         XCTAssertEqual(fields["blocked"] as? Bool, true)
         XCTAssertEqual(
             (fields["doing_because_you_asked"] as? [String: Any])?["trying_to"] as? String,
-            "go forward"
+            "spin"
         )
     }
 

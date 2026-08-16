@@ -34,7 +34,7 @@ is unmissable, and deliberately does not duplicate the rest, so the two cannot d
 | --- | --- |
 | `apps/desktop` | **DEPRECATED, do not edit** — the old macOS Electron voice app. Kept as a reference implementation; see AGENTS.md |
 | `apps/cyberpi` | native-firmware track: on-device realtime audio for the mBot2/CyberPi; start at `STEPS.md` |
-| `apps/robot` | networked-body track: thin CyberOS motion agent for the mBot2; start at `PLAN.md` |
+| `apps/robot` | the robot body: one CyberOS payload (`device/rocky_agent.py`, autonomous) plus its OTA loader; start at `README.md` |
 | `apps/ios` | Rocky's brain on an iPhone — mic/speaker/camera/face for the robot body; start at `README.md` |
 | `services/device-api` | backend for the robot; keeps the OpenAI key off the device |
 | `services/voice-clone` | experimental loopback-only local TTS worker |

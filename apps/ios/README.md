@@ -8,10 +8,12 @@ original "laptop is the brain" design, and [`apps/cyberpi`](../cyberpi/README.md
 
 Rocky talks over real OpenAI Realtime voice (`gpt-realtime-2.1` — GPT-Live checked and confirmed
 not API-accessible yet, see `TODOS.md`), connected directly to OpenAI over WebRTC
-(`stasel/WebRTC`, no relay server), the same architecture `apps/desktop` uses. `drive_cm`,
-`rotate_degrees`, `stop_robot`, `read_distance`, and `set_face` are real tool calls the model
-picks arguments for — there's no fixed vocabulary anymore. `AVAudioSession` runs in `.voiceChat`
-mode (hardware echo cancellation) so barge-in works the way it does on desktop.
+(`stasel/WebRTC`, no relay server), the same architecture `apps/desktop` uses. `stop_robot`,
+`get_robot_state`, `set_robot_mood` and `robot_gesture` are real tool calls the model picks
+arguments for — everything the one robot payload
+([`apps/robot/device/rocky_agent.py`](../robot/device/rocky_agent.py)) can answer, and nothing it
+can't. `AVAudioSession` runs in `.voiceChat` mode (hardware echo cancellation) so barge-in works
+the way it does on desktop.
 
 **No laptop server at runtime.** The app mints its own ephemeral OpenAI secret directly
 (`OpenAIRealtimeMinter.swift`, hitting `POST /v1/realtime/client_secrets` straight from the
@@ -37,12 +39,10 @@ apps/ios/
 │   │   ├── RealtimeVoiceSession.swift — @MainActor session state + tool-call dispatch
 │   │   ├── OpenAIRealtimeMinter.swift — mints an ephemeral OpenAI secret directly (no laptop)
 │   │   ├── AudioSessionManager.swift     — AVAudioSession, voiceChat/AEC mode
-│   │   ├── RobotProtocol.swift   — Swift port of apps/robot/src/protocol.ts (same wire spec)
-│   │   ├── RobotTransport.swift  — TCP client (Network.framework) to rocky_agent.py
-│   │   ├── RobotDiscovery.swift  — finds the robot: beacon + active LAN scan
-│   │   ├── NetworkUtilities.swift — shared phone-subnet detection for RobotDiscovery
-│   │   ├── Robot.swift           — the only thing app code should call (bounded commands)
-│   │   ├── RobotController.swift — movement that reports back instead of blocking
+│   │   ├── BehaviorMonitor.swift — finds the robot (beacon + LAN sweep), watches what it does,
+│   │   │                              and passes Rocky's intentions back
+│   │   ├── NetworkUtilities.swift — shared phone-subnet detection for the discovery sweep
+│   │   ├── RockyError.swift      — the errors this app raises for itself
 │   │   ├── CyberPiPusher.swift   — Swift port of apps/robot/scripts/push.mjs (OTA to bootstrap.py)
 │   │   └── World/                — Rocky's sense of her own body (docs/embodiment.md)
 │   │       ├── WorldStore.swift      — the authoritative state; the conversation is not the database
@@ -71,7 +71,7 @@ generate` directly) reads `OPENAI_API_KEY` out of the repo root `.env` and bakes
 built app's Info.plist (`RockyOpenAIKey`) via XcodeGen's environment-variable expansion, and
 regenerates `RealtimeSessionConfig.json` from `services/device-api/src/session.ts` so the robot's
 persona and tool list stay defined in exactly one place. Nothing is typed on the phone; nothing
-is committed. The robot's own IP is auto-discovered too (`RobotDiscovery.swift`) — there is no
+is committed. The robot's own IP is auto-discovered too (`BehaviorMonitor.swift`) — there is no
 manual IP field or connect/disconnect control at all; the robot connection is invisible
 infrastructure the same way it is on desktop.
 
@@ -85,8 +85,9 @@ the scrolling log.
 
 ### Rocky knows what her body is doing
 
-`drive_cm` and `rotate_degrees` do not wait for the robot. They register an intent, return
-`{"action_id": …, "status": "accepted"}`, and whether anything actually moved arrives afterwards —
+Her body moves itself; she does not steer it. `robot_gesture` and `stop_robot` do not wait for it.
+They register an intent, return `{"action_id": …, "status": "accepted"}`, and whether anything
+actually moved arrives afterwards —
 as semantic state (`<robot-state>`: what she is doing, whether she is really moving, whether she is
 sure) and durable events (`<robot-event>`: she bumped into something, that finished, that failed).
 The authoritative record lives in `World/WorldStore.swift`, not in the conversation, and exactly
@@ -94,8 +95,9 @@ one `<robot-state>` is ever live: projecting a new one deletes the old item, so 
 snapshot for a response to read.
 
 The point of all that is that Rocky can be honest about what she does *not* know — "I've told my
-body to turn, but it hasn't gone yet", "I should be spinning, I can't feel it yet", "I tried, but
-something's in the way" — instead of announcing a movement because a function returned true.
+body to spin, but it hasn't gone yet", "that finished a few seconds ago", "I've lost track of my
+body" — instead of announcing a movement because a function returned true. The board honours a
+gesture at its own next safe seam, which can be a second or two away, so that gap is real.
 [`docs/embodiment.md`](docs/embodiment.md) is the full design, including the scenario matrix.
 
 To see what she knew: tap the state chip, then **body: what rocky knows…**. The timeline is
@@ -107,13 +109,13 @@ go to `Documents/world.jsonl`, which `scripts/pull-log.sh` pulls alongside `sess
 ### The robot is optional
 
 Finding and connecting the robot is background plumbing, not something to watch: it starts at
-launch, never touches the orb, and puts exactly one line in the visible log either way (`robot
-found at …` / `no robot found — voice only`). Everything else goes to `RockyLog`.
+launch, never touches the orb, and puts exactly one line in the visible log either way. Everything
+else goes to `RockyLog`.
 
 With no robot, the app is simply what `apps/desktop` is — a full voice Rocky with no body. That
-isn't a degraded mode with failing tools: `OpenAIRealtimeMinter.withoutRobotBody` strips the
-movement tools out of the minted session and overrides the body context, so Rocky knows not to
-offer to drive somewhere she can't (covered by `RealtimeSessionConfigTests`).
+isn't a degraded mode with failing tools: `OpenAIRealtimeMinter.withoutRobotBody` strips the body
+tools out of the minted session and overrides the body context, so Rocky knows not to offer
+something she can't do (covered by `RealtimeSessionConfigTests` and `BodyCapabilityTests`).
 
 `Rocky.xcodeproj` and `Generated/` are gitignored — generated output, not source. Regenerate any
 time `project.yml` or the file layout changes:

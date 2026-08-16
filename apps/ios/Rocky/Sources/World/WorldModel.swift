@@ -10,10 +10,10 @@ import Foundation
 ///    becomes an event and is never superseded). That single rule removes every "which one does
 ///    this go in" judgement call.
 /// 2. **Status and evidence are separate axes.** `running` says what we believe; `evidence` says
-///    why we believe it. The motion agent only acks on completion, so for its whole duration a
-///    drive is genuinely `running` + `assumed` -- and Rocky needs to be able to say "I think I'm
-///    going" rather than "I'm going". Inventing a confirmation we never received is exactly how a
-///    voice ends up asserting embodied facts it does not have.
+///    why we believe it. The board honours an intention at its own next safe seam, so between
+///    "she asked" and "it started" there is a real gap in which nothing is happening yet and
+///    nothing may ever happen -- and Rocky has to be able to say so. Inventing a confirmation we
+///    never received is exactly how a voice ends up asserting embodied facts it does not have.
 
 /// The world's own clock: a monotonic counter bumped on every mutation, so any two observations
 /// can be ordered and any stale one can be recognised. Not the board's clock -- `utime.ticks_ms()`
@@ -24,9 +24,10 @@ typealias WorldSeq = UInt64
 
 /// How much of an action's status is actually *known*, as opposed to inferred.
 ///
-/// The distinction is the whole reason Rocky can be honest. `assumed` means "we wrote the bytes,
-/// the link is alive, and the expected duration has not elapsed" -- a reasonable belief, and not
-/// the same thing as the body having said so.
+/// The distinction is the whole reason Rocky can be honest. `confirmed` means the board said so.
+/// `assumed` is a reasonable belief with nothing behind it -- the stop path, where the motors are
+/// commanded off and there is no separate confirmation to wait for. Nothing is ever assumed to
+/// have *started*: the board reports that itself.
 enum ActionEvidence: String, Sendable, Codable {
     case confirmed, assumed, none
 }
@@ -73,20 +74,19 @@ enum ActionStatus: String, Sendable, Codable {
 /// What an action is *for*, in words that mean something out loud. `spin` rather than
 /// "rotate 720 degrees at 70% of 150 RPM" -- the second is telemetry, and telemetry is what the
 /// model should never have to reverse-engineer its own body from.
+///
+/// Three of them, because three is what the body answers to. Driving and turning left with the
+/// deprecated motion agent (apps/robot/deprecated/motion_agent.py); this body chooses where it
+/// goes itself.
 enum ActionIntent: String, Sendable, Codable {
-    case driveForward, driveBackward, turn, spin, wiggle, stop, settle, look
+    case spin, wiggle, stop
 
     /// The plain word for this, used in projections and in the debug view.
     var word: String {
         switch self {
-        case .driveForward: return "go forward"
-        case .driveBackward: return "back up"
-        case .turn: return "turn"
         case .spin: return "spin"
         case .wiggle: return "wiggle"
         case .stop: return "stop"
-        case .settle: return "settle"
-        case .look: return "look"
         }
     }
 }
@@ -229,8 +229,6 @@ struct WorldSnapshot: Sendable, Equatable {
     var blockedDetail: String?
     var feeling: String?
     var action: RobotAction?
-    var nearestCm: Double?
-    var measuredAt: Date?
 
     /// Observed reality, not intent. Derived from `doing` alone so nothing an action *claims* can
     /// make this say the robot is moving.

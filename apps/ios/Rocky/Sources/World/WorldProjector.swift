@@ -182,10 +182,6 @@ final class WorldProjector {
         }
         if let feeling = snapshot.feeling { fields["feeling"] = feeling }
         if let action = snapshot.action { fields["doing_because_you_asked"] = describe(action) }
-        if let cm = snapshot.nearestCm, let measured = snapshot.measuredAt {
-            fields["nearest_cm"] = Int(cm.rounded())
-            fields["measured"] = WorldWords.ago(Date().timeIntervalSince(measured))
-        }
         return "<robot-state seq=\"\(snapshot.seq)\">\n\(json(fields))\n</robot-state>"
     }
 

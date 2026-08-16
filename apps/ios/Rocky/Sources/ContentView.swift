@@ -9,14 +9,10 @@ import UniformTypeIdentifiers
 /// and connected automatically (RobotDiscovery), the same way desktop's own plumbing is invisible.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
-    /// The one robot integration. It sweeps once for either kind of body -- the behaviour loop or
-    /// the motion agent -- because only one payload runs on the board at a time and they are
-    /// alternatives. Two independent searches meant two sweeps that contradicted each other, one
-    /// of them always reporting failure for a robot that was working.
+    /// The one robot integration: finds the board, watches what it does, and passes Rocky's
+    /// intentions back. There is one payload (apps/robot/device/rocky_agent.py) and so one
+    /// connection -- the older commanded-motion agent and its separate discovery are deprecated.
     @StateObject private var behavior = BehaviorMonitor()
-    @State private var controller: RobotController?
-    @State private var host = UserDefaults.standard.string(forKey: "robotHost") ?? ""
-    @State private var connectionState = ConnectionState.disconnected
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
     @State private var showBodyPanel = false
@@ -28,10 +24,6 @@ struct ContentView: View {
     /// When the conversation was last stopped by hand, so the very next tap doesn't race its
     /// teardown.
     @State private var lastStopAt: Date?
-
-    enum ConnectionState: Equatable {
-        case disconnected, connecting, connected, failed(String)
-    }
 
     var body: some View {
         ZStack {
@@ -57,21 +49,14 @@ struct ContentView: View {
         .onAppear {
             behavior.start()
         }
-        .onChange(of: behavior.motionHost) { _, found in
-            // The sweep found the motion agent rather than the behaviour loop, so this robot can
-            // actually be steered.
-            guard let found, connectionState != .connected, connectionState != .connecting else { return }
-            host = found
-            Task { await connectRobotIfNeeded() }
-        }
-        .onChange(of: behavior.connected) { _, isWatching in
-            guard isWatching else { return }
-            reportRobotSearchOnce("robot found — it moves on its own, Rocky can watch it")
+        .onChange(of: behavior.connected) { _, found in
+            guard found else { return }
+            reportRobotSearchOnce("robot found — it moves on its own, Rocky can feel it")
         }
         .onChange(of: behavior.searchFinished) { _, finished in
             // Recorded when the sweep ends rather than rediscovered on the next tap, so tapping
             // the stone never waits to re-learn something already known.
-            guard finished, !behavior.connected, behavior.motionHost == nil else { return }
+            guard finished, !behavior.connected else { return }
             reportRobotSearchOnce("no robot found — voice only")
         }
     }
@@ -148,21 +133,8 @@ struct ContentView: View {
         }
     }
 
-    /// One coherent description of the body, because there are two ways to have one and they are
-    /// not a failure of each other. Only one payload runs on the board at a time: if it is the
-    /// behaviour loop, the robot is present and moving and there is simply no motion server to
-    /// command -- reporting that as "failed" next to a robot visibly driving around is the app
-    /// misdescribing reality, not a robot problem.
     private var bodyDescription: String {
-        if behavior.connected {
-            return connectionState == .connected ? "b:\(behavior.mode)+drive" : "b:\(behavior.mode)"
-        }
-        switch connectionState {
-        case .connected: return "r:\(host)"
-        case .connecting: return "r:…"
-        case .disconnected: return "r:-"
-        case .failed: return "r:none"
-        }
+        behavior.connected ? "b:\(behavior.mode)" : (behavior.searchFinished ? "b:none" : "b:…")
     }
 
     private var chipDetail: String {
@@ -213,12 +185,9 @@ struct ContentView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if behavior.connected {
-                Text("Your robot is moving on its own. Rocky can watch it, set its mood and ask it to stop — but not steer it.")
+                Text("Your robot moves on its own. Rocky feels what it does, can settle or liven it up, ask it for a spin, and tell it to stop — but not steer it.")
                     .foregroundStyle(RockyTheme.mint.opacity(0.7))
                     .fixedSize(horizontal: false, vertical: true)
-            } else if case .failed(let message) = connectionState {
-                // Informational, not an error state: voice works fine without a body.
-                Text("no robot: \(message)").foregroundStyle(RockyTheme.mint.opacity(0.6))
             }
             if case .failed(let message) = voiceSession.state {
                 Text("voice: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
@@ -245,7 +214,7 @@ struct ContentView: View {
             Button("push payload to cyberpi…") { showPayloadPicker = true }
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
-                .disabled(host.isEmpty)
+                .disabled(behavior.host == nil)
                 .fileImporter(isPresented: $showPayloadPicker, allowedContentTypes: [.item]) { result in
                     Task { await handlePayloadPicked(result) }
                 }
@@ -271,29 +240,6 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Behaviour (unchanged)
-
-    /// The only path into a robot connection -- called on launch (last-known host) and whenever
-    /// RobotDiscovery finds a new address. No user-facing trigger, no cancel, and deliberately
-    /// only ever one line in the log: finding the body is plumbing, not something to watch.
-    private func connectRobotIfNeeded() async {
-        guard !host.isEmpty, connectionState != .connected, connectionState != .connecting else { return }
-        UserDefaults.standard.set(host, forKey: "robotHost")
-        connectionState = .connecting
-        let newController = RobotController(host: host)
-        do {
-            try await newController.connect()
-            controller = newController
-            connectionState = .connected
-            reportRobotSearchOnce("robot found at \(host)")
-        } catch {
-            connectionState = .failed(error.localizedDescription)
-            // Not surfaced as a failure to the user: no robot just means voice-only Rocky. The
-            // detail panel still carries the reason for anyone who opens it.
-            RockyLog.write("robot connect failed: \(error.localizedDescription)")
-        }
-    }
-
     /// Exactly one robot line ever reaches the visible log, whichever way the search ends.
     private func reportRobotSearchOnce(_ message: String) {
         guard !robotSearchReported else { return }
@@ -308,7 +254,7 @@ struct ContentView: View {
         let start = Date()
         let deadline = start.addingTimeInterval(2.5)
         while Date() < deadline {
-            if connectionState == .connected || behavior.connected || robotSearchReported {
+            if behavior.connected || robotSearchReported {
                 RockyLog.write("voice: robot search settled in \(Int(Date().timeIntervalSince(start) * 1000))ms")
                 return
             }
@@ -352,9 +298,9 @@ struct ContentView: View {
         defer { starting = false }
         await awaitRobotSearch()
         appendLog("voice: connecting…")
-        // A nil controller is fine and expected when no robot answered -- Rocky is then exactly
-        // the desktop app: a full conversation, just without a body to drive.
-        await voiceSession.connect(robot: controller, behavior: behavior)
+        // No robot is fine and expected -- Rocky is then exactly the desktop app: a full
+        // conversation, just without a body.
+        await voiceSession.connect(behavior: behavior)
         if case .failed(let message) = voiceSession.state {
             appendLog("voice: connect failed: \(message)")
         } else {
@@ -369,6 +315,10 @@ struct ContentView: View {
         case .failure(let error):
             appendLog("payload pick failed: \(error.localizedDescription)")
         case .success(let url):
+            guard let host = behavior.host else {
+                appendLog("no robot found to push to")
+                return
+            }
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             do {

@@ -24,13 +24,13 @@ final class WorldStoreTests: XCTestCase {
 
     func testANewInstructionSupersedesTheLiveOneButAStopCancelsIt() {
         let store = makeStore()
-        let first = store.beginAction(.driveForward, expectedDuration: 3)
+        let first = store.beginAction(.spin, expectedDuration: 3)
         store.markAction(first.id, status: .running, evidence: .assumed)
 
-        _ = store.beginAction(.turn, expectedDuration: 1)
+        _ = store.beginAction(.wiggle, expectedDuration: 1)
         XCTAssertEqual(store.action(id: first.id)?.status, .superseded)
 
-        let second = store.beginAction(.driveForward, expectedDuration: 3)
+        let second = store.beginAction(.spin, expectedDuration: 3)
         store.markAction(second.id, status: .running, evidence: .assumed)
         _ = store.beginAction(.stop, expectedDuration: 0.3)
         XCTAssertEqual(store.action(id: second.id)?.status, .cancelled)
@@ -55,8 +55,8 @@ final class WorldStoreTests: XCTestCase {
     /// "something happened" she might narrate.
     func testSupersessionIsNotAnEvent() {
         let store = makeStore()
-        _ = store.beginAction(.driveForward, expectedDuration: 3)
-        _ = store.beginAction(.turn, expectedDuration: 1)
+        _ = store.beginAction(.spin, expectedDuration: 3)
+        _ = store.beginAction(.wiggle, expectedDuration: 1)
 
         XCTAssertTrue(store.events.isEmpty)
     }
@@ -65,19 +65,19 @@ final class WorldStoreTests: XCTestCase {
     /// doesn't know something she does. `tick()` is a one-liner over this, so this is where the
     /// decision is worth pinning down.
     func testWhenAnActionIsConsideredOverdue() {
-        var fresh = RobotAction(id: "a", intent: .driveForward, expectedDuration: 3)
+        var fresh = RobotAction(id: "a", intent: .spin, expectedDuration: 3)
         fresh.status = .running
         XCTAssertFalse(fresh.isOverdue)
 
         // Twice the estimate plus two seconds of slack: a 3s drive has until 8s.
         var late = RobotAction(
-            id: "b", intent: .driveForward, expectedDuration: 3, at: Date().addingTimeInterval(-9)
+            id: "b", intent: .spin, expectedDuration: 3, at: Date().addingTimeInterval(-9)
         )
         late.status = .running
         XCTAssertTrue(late.isOverdue)
 
         var finished = RobotAction(
-            id: "c", intent: .driveForward, expectedDuration: 3, at: Date().addingTimeInterval(-9)
+            id: "c", intent: .spin, expectedDuration: 3, at: Date().addingTimeInterval(-9)
         )
         finished.status = .succeeded
         XCTAssertFalse(finished.isOverdue, "something already settled can never go overdue")
@@ -88,7 +88,7 @@ final class WorldStoreTests: XCTestCase {
     func testLosingTheBodyLosesTheActionRatherThanFailingIt() {
         let store = makeStore()
         store.heard()
-        let action = store.beginAction(.driveForward, expectedDuration: 5)
+        let action = store.beginAction(.spin, expectedDuration: 5)
         store.markAction(action.id, status: .running, evidence: .assumed)
 
         store.linkLost("wifi dropped")
@@ -151,7 +151,7 @@ final class WorldStoreTests: XCTestCase {
     /// otherwise "I'm trying to move but I don't think I'm going anywhere" becomes unsayable.
     func testIntentCannotMakeTheSnapshotClaimMotion() {
         let store = makeStore()
-        let action = store.beginAction(.driveForward, expectedDuration: 3)
+        let action = store.beginAction(.spin, expectedDuration: 3)
         store.markAction(action.id, status: .running, evidence: .assumed)
         store.noteBlocked("something was in the way")
 

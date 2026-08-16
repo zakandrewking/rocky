@@ -1,5 +1,10 @@
 # apps/robot test order
 
+> **Note (2026-08-16):** `device/rocky_agent.py` now means the *autonomous* agent — the one and
+> only payload. What this document calls the motion agent (commanded drive/turn over TCP on 8765)
+> is deprecated and frozen at [`deprecated/motion_agent.py`](deprecated/motion_agent.py). The
+> history below is left as written; see [`README.md`](README.md) for what runs today.
+
 Same discipline as [`apps/cyberpi/STEPS.md`](../cyberpi/STEPS.md): small, standalone, one thing
 proven at a time. This project has no board attached in the environment these steps were written
 in, so 1-3 are the only ones actually run so far. Fill in the Result column as the rest happen.

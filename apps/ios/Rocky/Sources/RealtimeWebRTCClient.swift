@@ -57,7 +57,7 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
         guard
             let peerConnection = Self.factory.peerConnection(with: config, constraints: constraints, delegate: nil)
         else {
-            throw RobotError.commandFailed("could not create WebRTC peer connection")
+            throw RockyError.commandFailed("could not create WebRTC peer connection")
         }
         peerConnection.delegate = self
         self.peerConnection = peerConnection
@@ -70,7 +70,7 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
 
         let dataChannelConfig = RTCDataChannelConfiguration()
         guard let channel = peerConnection.dataChannel(forLabel: "oai-events", configuration: dataChannelConfig) else {
-            throw RobotError.commandFailed("could not create WebRTC data channel")
+            throw RockyError.commandFailed("could not create WebRTC data channel")
         }
         channel.delegate = self
         dataChannel = channel
@@ -140,7 +140,7 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
                 if let sdp {
                     continuation.resume(returning: sdp.sdp)
                 } else {
-                    continuation.resume(throwing: error ?? RobotError.commandFailed("no SDP offer produced"))
+                    continuation.resume(throwing: error ?? RockyError.commandFailed("no SDP offer produced"))
                 }
             }
         }
@@ -187,7 +187,7 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
             let body = String(decoding: data, as: UTF8.self)
-            throw RobotError.commandFailed("voice connection failed (\(status)): \(body.prefix(300))")
+            throw RockyError.commandFailed("voice connection failed (\(status)): \(body.prefix(300))")
         }
         return String(decoding: data, as: UTF8.self)
     }

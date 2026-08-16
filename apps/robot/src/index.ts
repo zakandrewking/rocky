@@ -1,3 +1,8 @@
+// ⚠️ DEPRECATED with apps/robot/deprecated/motion_agent.py, the commanded-motion payload this
+// protocol speaks to. Nothing live uses it: the one payload that runs
+// (apps/robot/device/rocky_agent.py) has its own newline-JSON event stream, and the iOS app talks
+// to that directly. Kept as the protocol's reference implementation and, in its tests, the record
+// of the wire format -- but do not build anything new on it.
 export { Robot, RobotCommandError, RobotTimeoutError, type RobotOptions } from "./robot.ts";
 export {
   boundCommand,

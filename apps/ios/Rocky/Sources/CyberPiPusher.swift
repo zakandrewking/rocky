@@ -9,7 +9,7 @@ enum CyberPiPusher {
     static func push(fileAt url: URL, to host: String, port: UInt16 = 8766, timeout: TimeInterval = 5) async throws -> String {
         let code = try Data(contentsOf: url)
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            throw RobotError.invalidAddress("port \(port) is out of range")
+            throw RockyError.invalidAddress("port \(port) is out of range")
         }
 
         let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
@@ -53,7 +53,7 @@ enum CyberPiPusher {
             let timeoutWorkItem = DispatchWorkItem {
                 guard !settled else { return }
                 settled = true
-                continuation.resume(throwing: RobotError.timedOut("waiting for the board's reply"))
+                continuation.resume(throwing: RockyError.timedOut("waiting for the board's reply"))
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: timeoutWorkItem)
 

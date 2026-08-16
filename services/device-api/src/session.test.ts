@@ -77,34 +77,36 @@ describe("createDeviceSessionConfig", () => {
     );
   });
 
-  it("ships the robot's movement tools", () => {
+  it("offers only what the board can actually answer", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const names = (config.tools as Array<{ name: string }>).map((tool) => tool.name);
-    expect(names).toEqual([
-      "drive_cm",
-      "rotate_degrees",
-      "stop_robot",
-      "read_distance",
-      "set_face",
-      "set_lights",
-      "get_robot_state",
-      "set_robot_mood",
-      "robot_gesture",
-    ]);
+
+    // These four reach apps/robot/device/rocky_agent.py, the one payload that runs. The steering
+    // tools are gone with the deprecated motion agent -- a tool the body cannot honour is worse
+    // than a missing one, because the model will use it and then explain that it worked.
+    expect(names).toEqual(["stop_robot", "get_robot_state", "set_robot_mood", "robot_gesture"]);
   });
 
-  it("tells the character that asking to move is not the same as having moved", () => {
+  it("does not offer to drive a body that drives itself", () => {
+    const config = createDeviceSessionConfig() as SessionConfig;
+    const names = (config.tools as Array<{ name: string }>).map((tool) => tool.name);
+
+    for (const gone of ["drive_cm", "rotate_degrees", "read_distance", "set_face", "set_lights"]) {
+      expect(names).not.toContain(gone);
+    }
+    expect(config.instructions).toContain("It moves itself");
+  });
+
+  it("tells the character that asking for a movement is not the same as it happening", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const tools = config.tools as Array<{ name: string; description: string }>;
-    const describe_ = (name: string) => tools.find((tool) => tool.name === name)?.description ?? "";
+    const gesture = tools.find((tool) => tool.name === "robot_gesture")?.description ?? "";
 
     // The whole failure this design exists to prevent: a tool call returning successfully is not
     // evidence that a robot moved, and a description that does not say so invites exactly that
     // claim. See apps/ios/docs/embodiment.md.
-    for (const name of ["drive_cm", "rotate_degrees"]) {
-      expect(describe_(name).toLowerCase()).toContain("on its way");
-    }
-    expect(describe_("drive_cm")).toContain("does NOT mean you have moved");
+    expect(gesture).toContain("on its way");
+    expect(gesture).toContain("its own next free moment");
   });
 
   it("defines both vocabularies, so the machinery is never spoken", () => {

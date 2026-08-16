@@ -1,5 +1,10 @@
 # mBot2 Shield API surface (`mbuild`), and the OTA claim, checked
 
+> **Note (2026-08-16):** `device/rocky_agent.py` now means the *autonomous* agent — the one and
+> only payload. What this document calls the motion agent (commanded drive/turn over TCP on 8765)
+> is deprecated and frozen at [`deprecated/motion_agent.py`](../deprecated/motion_agent.py). The
+> history below is left as written; see [`README.md`](../README.md) for what runs today.
+
 Desk research for `apps/robot`, done the way [`CLAUDE.md`](../../../CLAUDE.md) asks: check for
 published source before probing hardware. Same evidence-tier discipline as
 [`apps/cyberpi/docs/cyberos-api-surface.md`](../../cyberpi/docs/cyberos-api-surface.md) — a

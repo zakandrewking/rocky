@@ -3,18 +3,21 @@ import XCTest
 @testable import Rocky
 
 /// The scenario matrix from apps/ios/docs/embodiment.md, driven through the real store, the real
-/// adapters and the real projector.
+/// adapter and the real projector.
 ///
 /// These are the cases the whole design exists for -- "are you doing it", "did you do it", "why
 /// did you stop" -- and each one asserts on the *text Rocky is actually shown*, not on internal
 /// state. That is deliberate: every unit test elsewhere could pass while the one thing that
 /// matters, the picture in front of the model, was still wrong or missing.
+///
+/// Everything a tool call would do is done here by calling the store directly, because that is
+/// exactly what RealtimeVoiceSession's tool handler does; everything the *board* would say goes
+/// through BehaviorWorldSource, which is the only place the board's vocabulary is understood.
 @MainActor
 final class EmbodimentScenarioTests: XCTestCase {
     private var store: WorldStore!
     private var channel: RecordingVoiceChannel!
     private var projector: WorldProjector!
-    private var motion: MotionWorldSource!
     private var behaviour: BehaviorWorldSource!
 
     override func setUp() {
@@ -23,7 +26,6 @@ final class EmbodimentScenarioTests: XCTestCase {
         channel = RecordingVoiceChannel()
         projector = WorldProjector(store: store, channel: channel)
         store.onChange = { [weak projector] change in projector?.handle(change) }
-        motion = MotionWorldSource(store: store)
         behaviour = BehaviorWorldSource(store: store)
         store.heard()
     }
@@ -32,7 +34,6 @@ final class EmbodimentScenarioTests: XCTestCase {
         store = nil
         channel = nil
         projector = nil
-        motion = nil
         behaviour = nil
         super.tearDown()
     }
@@ -50,12 +51,21 @@ final class EmbodimentScenarioTests: XCTestCase {
         try XCTUnwrap(state["doing_because_you_asked"] as? [String: Any])
     }
 
-    // MARK: - Asked to spin, but nothing has happened yet
+    /// What the `robot_gesture` tool does, exactly as the session's handler does it.
+    @discardableResult
+    private func askForSpin(times: Int = 1) -> RobotAction {
+        let action = store.beginAction(.spin, expectedDuration: Double(times) * 2.5 + 6, total: times)
+        behaviour.expect(gesture: action.id)
+        store.markAction(action.id, status: .accepted)
+        return action
+    }
 
-    /// "Are you doing it?" — no. She asked, and that is all she knows.
+    // MARK: - Asked for something, but nothing has happened yet
+
+    /// "Are you doing it?" — no. She asked, the board has not got to it, and that gap is real:
+    /// this body honours an intention at its own next safe seam, which can be seconds away.
     func testAcceptedButNotStarted() throws {
-        let spin = store.beginAction(.spin, expectedDuration: 3)
-        store.markAction(spin.id, status: .accepted)
+        askForSpin()
         projector.flush("test")
 
         let described = try action(in: try liveState())
@@ -66,12 +76,32 @@ final class EmbodimentScenarioTests: XCTestCase {
         XCTAssertEqual(try liveState()["moving"] as? Bool, false)
     }
 
+    /// The board acknowledging an intention means *heard*, not *doing*. Claiming otherwise here
+    /// would be the exact small lie this design exists to prevent.
+    func testAnAcknowledgedIntentionIsStillNotHappening() throws {
+        let spin = askForSpin()
+        behaviour.handle(.acknowledged(of: "gesture", id: spin.id))
+        projector.flush("test")
+
+        XCTAssertEqual(store.action(id: spin.id)?.status, .accepted)
+        XCTAssertEqual(store.action(id: spin.id)?.evidence, .confirmed, "confirmed it was heard")
+        XCTAssertEqual(try liveState()["moving"] as? Bool, false)
+    }
+
+    /// Nothing is ever assumed to have started. Ticking on with no word from the board must not
+    /// quietly promote an intention into a movement.
+    func testWaitingDoesNotTurnAnIntentionIntoAMovement() {
+        let spin = askForSpin()
+        for _ in 0..<5 { store.tick() }
+
+        XCTAssertEqual(store.action(id: spin.id)?.status, .accepted)
+        XCTAssertFalse(store.snapshot.moving)
+    }
+
     /// "Are you doing it?" — yes, and the body said so.
     func testRunningAndConfirmed() throws {
-        let spin = store.beginAction(.spin, expectedDuration: 3)
-        store.markAction(spin.id, status: .accepted)
-        motion.expect(.spin)
-        motion.handle(.started(actionId: spin.id))
+        askForSpin()
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
         projector.flush("test")
 
         let state = try liveState()
@@ -81,26 +111,13 @@ final class EmbodimentScenarioTests: XCTestCase {
         XCTAssertEqual(try action(in: state)["sure"] as? Bool, true)
     }
 
-    /// The middle ground, and the reason `evidence` exists: an older board sends no `started`, so
-    /// after a beat this is believed rather than known -- and says so.
-    func testRunningButOnlyAssumed() throws {
-        let drive = store.beginAction(.driveForward, expectedDuration: 3)
-        store.markAction(drive.id, status: .running, evidence: .assumed)
-        motion.expect(.driveForward)
-        projector.flush("test")
-
-        XCTAssertEqual(try action(in: try liveState())["sure"] as? Bool, false)
-        XCTAssertEqual(try liveState()["moving"] as? Bool, true)
-    }
-
     // MARK: - How it ended
 
     /// "Did you do it?" — the action is gone from the live picture, and the durable fact remains.
     func testSucceeded() throws {
-        let spin = store.beginAction(.spin, expectedDuration: 2)
-        motion.expect(.spin)
-        motion.handle(.started(actionId: spin.id))
-        motion.handle(.succeeded(actionId: spin.id))
+        askForSpin()
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
+        behaviour.handle(.transition(mode: "listening", detail: ""))
         projector.flush("test")
 
         XCTAssertNil(try liveState()["doing_because_you_asked"], "it is history now, not a condition")
@@ -110,59 +127,79 @@ final class EmbodimentScenarioTests: XCTestCase {
         XCTAssertTrue(channel.inserted.contains { $0.id == "rw_event_\(event.id)" })
     }
 
-    /// "Why did you stop?" — because the body refused it before it ever began.
-    func testFailedBeforeStarting() throws {
-        let drive = store.beginAction(.driveForward, expectedDuration: 3)
-        store.markAction(drive.id, status: .accepted)
-        motion.handle(.failed(actionId: drive.id, reason: "my body was already doing something"))
+    /// "Why didn't you?" — because the board never found a free moment before the wish expired.
+    func testAnIntentionTheBoardNeverGotToFails() throws {
+        let spin = askForSpin()
+        behaviour.handle(.transition(mode: "listening", detail: "gesture expired: spin"))
         projector.flush("test")
 
-        XCTAssertEqual(store.action(id: drive.id)?.status, .failed)
+        XCTAssertEqual(store.action(id: spin.id)?.status, .failed)
         let event = try XCTUnwrap(store.events.last)
         XCTAssertEqual(event.kind, .failed)
-        XCTAssertEqual(event.detail, "my body was already doing something")
-        XCTAssertEqual(event.during, drive.id)
+        XCTAssertEqual(event.during, spin.id)
     }
 
-    /// "I'm trying to go forward, but something's in my way." All three facts, disagreeing, in one
-    /// snapshot -- intent still running, body not moving, way not clear.
-    func testPhysicallyBlocked() throws {
-        let drive = store.beginAction(.driveForward, expectedDuration: 4)
-        motion.expect(.driveForward)
-        motion.handle(.started(actionId: drive.id))
-        motion.handle(.blocked(actionId: drive.id, reason: "something was in the way"))
-        projector.flush("test")
+    /// Repeats are counted from the board's own transitions, so "one of two" is something she
+    /// actually knows rather than something timed.
+    func testARepeatedGestureIsFollowedThroughToTheEnd() throws {
+        let spin = askForSpin(times: 2)
+        behaviour.handle(.acknowledged(of: "gesture", id: spin.id))
 
-        let state = try liveState()
-        XCTAssertEqual(state["moving"] as? Bool, false)
-        XCTAssertEqual(state["blocked"] as? Bool, true)
-        XCTAssertEqual(state["in_the_way"] as? String, "something was in the way")
-        XCTAssertEqual(store.events.last?.kind, .blocked)
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
+        XCTAssertEqual(store.action(id: spin.id)?.done, 1)
+        behaviour.handle(.transition(mode: "listening", detail: ""))
+        XCTAssertEqual(store.action(id: spin.id)?.status, .running, "one of two done, so not finished")
+
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
+        behaviour.handle(.transition(mode: "listening", detail: ""))
+        XCTAssertEqual(store.action(id: spin.id)?.status, .succeeded)
+        XCTAssertEqual(store.action(id: spin.id)?.evidence, .confirmed)
     }
 
     /// A new instruction while one is live. The snapshot carries only the new one -- there is no
     /// version of this in which Rocky is shown two things she is currently doing.
     func testSupersededByAnotherRequest() throws {
-        let spin = store.beginAction(.spin, expectedDuration: 4)
-        store.markAction(spin.id, status: .running, evidence: .assumed)
-        let turn = store.beginAction(.turn, expectedDuration: 1)
+        let spin = askForSpin()
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
+        let wiggle = store.beginAction(.wiggle, expectedDuration: 4)
         projector.flush("test")
 
         XCTAssertEqual(store.action(id: spin.id)?.status, .superseded)
-        XCTAssertEqual(try action(in: try liveState())["id"] as? String, turn.id)
+        XCTAssertEqual(try action(in: try liveState())["id"] as? String, wiggle.id)
     }
 
-    // MARK: - Contact
+    /// A stop cancels rather than supersedes -- "you told me to stop" and "never mind, doing this
+    /// instead" are different sentences.
+    func testStopCancelsWhateverWasHappening() {
+        let spin = askForSpin()
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
+        _ = store.beginAction(.stop, expectedDuration: 0.3)
 
-    /// "I sent it, but I've lost track of my body." Not a failure -- nobody said it failed.
-    func testLosingContactMidAction() throws {
-        let drive = store.beginAction(.driveForward, expectedDuration: 5)
-        motion.expect(.driveForward)
-        motion.handle(.started(actionId: drive.id))
-        motion.handle(.gone("wifi dropped"))
+        XCTAssertEqual(store.action(id: spin.id)?.status, .cancelled)
+    }
+
+    // MARK: - The world happening to her
+
+    /// "I tried, but something's in the way." The body stopped itself; nothing she asked for did
+    /// this, and the attribution has to survive.
+    func testPhysicallyBlocked() throws {
+        behaviour.handle(.transition(mode: "driving", detail: ""))
+        behaviour.handle(.transition(mode: "turning", detail: "obstacle"))
         projector.flush("test")
 
-        XCTAssertEqual(store.action(id: drive.id)?.status, .lost)
+        XCTAssertEqual(try liveState()["why"] as? String, "couldn't help it")
+        XCTAssertEqual(store.events.last?.kind, .blocked)
+        XCTAssertEqual(store.events.last?.detail, "something was in the way")
+    }
+
+    /// "I asked, but I've lost track of my body." Not a failure -- nobody said it failed.
+    func testLosingContactMidAction() throws {
+        let spin = askForSpin()
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
+        behaviour.handle(.disconnected)
+        projector.flush("test")
+
+        XCTAssertEqual(store.action(id: spin.id)?.status, .lost)
         let state = try liveState()
         XCTAssertEqual(state["body"] as? String, "gone")
         XCTAssertEqual(state["doing"] as? String, "not sure")
@@ -194,7 +231,7 @@ final class EmbodimentScenarioTests: XCTestCase {
 
     /// Being poked three times in a second is one thing that happened three times, not three
     /// separate reasons to interrupt someone.
-    func testABurstOfIdenticalEventsCollapses() throws {
+    func testABurstOfIdenticalEventsCollapses() {
         behaviour.handle(.transition(mode: "dizzy", detail: "bump"))
         behaviour.handle(.transition(mode: "dizzy", detail: "bump"))
         behaviour.handle(.transition(mode: "dizzy", detail: "bump"))
@@ -222,52 +259,19 @@ final class EmbodimentScenarioTests: XCTestCase {
         XCTAssertEqual(store.events.last?.detail, "a sudden loud noise")
     }
 
-    /// A turn she asked for and a turn the robot made to avoid a wall look identical on the wire.
-    /// Telling them apart is what stops Rocky taking credit for a reflex.
+    /// A spin she asked for, a spin because something bumped it, and driving of its own accord all
+    /// look similar on the wire. Telling them apart is what stops Rocky taking credit for a
+    /// reflex, or apologising for something she chose.
     func testTheSameMotionIsAttributedDifferently() {
+        askForSpin()
         behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
         XCTAssertEqual(store.snapshot.cause, .youAsked)
 
-        behaviour.handle(.transition(mode: "turning", detail: "obstacle"))
+        behaviour.handle(.transition(mode: "dizzy", detail: "bump"))
         XCTAssertEqual(store.snapshot.cause, .reflex)
-        XCTAssertEqual(store.events.last?.kind, .blocked)
 
         behaviour.handle(.transition(mode: "driving", detail: ""))
         XCTAssertEqual(store.snapshot.cause, .onItsOwn)
-    }
-
-    /// A gesture's whole life, correlated by the id the board echoes back rather than by timing.
-    func testAGestureIsFollowedFromIntentionToDone() throws {
-        let spin = store.beginAction(.spin, expectedDuration: 8, total: 2)
-        behaviour.expect(gesture: spin.id)
-        store.markAction(spin.id, status: .accepted)
-
-        behaviour.handle(.acknowledged(of: "gesture", id: spin.id))
-        XCTAssertEqual(store.action(id: spin.id)?.evidence, .confirmed, "heard, not yet happening")
-        XCTAssertEqual(store.action(id: spin.id)?.status, .accepted)
-
-        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
-        XCTAssertEqual(store.action(id: spin.id)?.status, .running)
-        XCTAssertEqual(store.action(id: spin.id)?.done, 1)
-
-        behaviour.handle(.transition(mode: "listening", detail: ""))
-        XCTAssertEqual(store.action(id: spin.id)?.status, .running, "one of two done, so not finished")
-
-        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
-        behaviour.handle(.transition(mode: "listening", detail: ""))
-        XCTAssertEqual(store.action(id: spin.id)?.status, .succeeded)
-        XCTAssertEqual(store.action(id: spin.id)?.evidence, .confirmed)
-    }
-
-    func testAGestureTheBoardNeverFoundTimeForFails() {
-        let spin = store.beginAction(.spin, expectedDuration: 8)
-        behaviour.expect(gesture: spin.id)
-        store.markAction(spin.id, status: .accepted)
-
-        behaviour.handle(.transition(mode: "listening", detail: "gesture expired: spin"))
-
-        XCTAssertEqual(store.action(id: spin.id)?.status, .failed)
-        XCTAssertEqual(store.events.last?.kind, .failed)
     }
 
     private static func fields(in rendered: String) throws -> [String: Any] {

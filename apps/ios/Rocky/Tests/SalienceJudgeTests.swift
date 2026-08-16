@@ -37,7 +37,7 @@ final class SalienceJudgeTests: XCTestCase {
 
     func testLosingTheBodyMidActionIsUrgent() {
         let judge = SalienceJudge()
-        var action = RobotAction(id: "act_1", intent: .driveForward, expectedDuration: 3)
+        var action = RobotAction(id: "act_1", intent: .spin, expectedDuration: 3)
         action.status = .running
         let verdict = judge.rule(on: event(.bodyGone), action: action, moment: speaking("So anyway"))
         XCTAssertEqual(verdict, .urgent)
