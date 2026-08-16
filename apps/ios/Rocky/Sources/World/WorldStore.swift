@@ -71,7 +71,7 @@ final class WorldStore: ObservableObject {
         lastHeardFrom = Date()
         if !linkUp {
             linkUp = true
-            log.write(.link, "body back", seq: seq + 1)
+            log.write(.link, hasBeenLost ? "body back" : "body found", seq: seq + 1)
             commit { $0.body = .here }
             if hasBeenLost { record(.bodyBack, detail: "my body is back") }
         } else {

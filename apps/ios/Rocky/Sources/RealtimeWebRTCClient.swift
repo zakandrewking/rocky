@@ -186,10 +186,38 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let body = String(decoding: data, as: UTF8.self)
-            throw RockyError.commandFailed("voice connection failed (\(status)): \(body.prefix(300))")
+            throw RockyError.commandFailed(Self.describe(failure: data, status: status))
         }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Turns OpenAI's error envelope into one line a person can act on.
+    ///
+    /// This surfaces in the app's state chip, which is small and monospaced, and in the session
+    /// log. Three hundred characters of raw JSON there is unreadable at exactly the moment someone
+    /// needs to read it -- the first time this fired, "voice failed" took a log pull to explain
+    /// when the answer was one sentence long.
+    private static func describe(failure data: Data, status: Int) -> String {
+        struct Envelope: Decodable {
+            struct Failure: Decodable {
+                let message: String?
+                let code: String?
+            }
+            let error: Failure?
+        }
+        let failure = try? JSONDecoder().decode(Envelope.self, from: data)
+        if failure?.error?.code == "credit_balance_exhausted" || status == 429 {
+            // Worth its own sentence: nothing about the app or the robot is wrong, and no amount
+            // of retrying or reinstalling will help.
+            return "OpenAI is out of credits — add some at platform.openai.com, then tap again."
+        }
+        if let message = failure?.error?.message, !message.isEmpty {
+            return "voice connection failed (\(status)): \(message)"
+        }
+        let body = String(decoding: data, as: UTF8.self)
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        return "voice connection failed (\(status)): \(body.prefix(160))"
     }
 }
 
