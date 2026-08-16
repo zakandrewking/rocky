@@ -206,8 +206,13 @@ struct ConversationItemTruncateEvent: Encodable, Sendable {
 /// necessarily talk about it" needs.
 ///
 /// The `id` is client-assigned. The API allows this ("may be provided by the client or generated
-/// by the server") and the whole supersession scheme depends on it: a state snapshot can only be
-/// deleted when it is replaced if we knew its id before we sent it.
+/// by the server"), and naming our own items is what lets the debug log say exactly which item a
+/// response could see -- without waiting on a server echo to find out.
+///
+/// Nothing is ever deleted from the conversation. Removing a superseded state snapshot was tried
+/// and dropped: prompt caching is exact-prefix, so deleting an item the conversation has moved
+/// past invalidates the cache from its old position and re-charges full price for every audio
+/// token since. Supersession travels by seq number instead, which costs nothing.
 struct ConversationItemCreateEvent: Encodable, Sendable {
     let type = "conversation.item.create"
     let item: Item
@@ -226,17 +231,6 @@ struct ConversationItemCreateEvent: Encodable, Sendable {
 
     init(id: String, text: String) {
         item = Item(id: id, content: [Item.Content(text: text)])
-    }
-}
-
-/// Removes an item from the conversation. What makes superseded robot state *gone* rather than
-/// merely older: there is then no stale snapshot in history for a response to read.
-struct ConversationItemDeleteEvent: Encodable, Sendable {
-    let type = "conversation.item.delete"
-    let item_id: String
-
-    init(id: String) {
-        item_id = id
     }
 }
 

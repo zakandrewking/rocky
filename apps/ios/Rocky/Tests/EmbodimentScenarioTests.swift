@@ -37,9 +37,9 @@ final class EmbodimentScenarioTests: XCTestCase {
         super.tearDown()
     }
 
-    /// The newest `<robot-state>` -- the only one that counts. An older one can still be sitting
-    /// in history when deleting it would have cost a cache miss, which is exactly why every
-    /// assertion below reads *this* one rather than "the last thing inserted".
+    /// The newest `<robot-state>` -- the only one that counts. Older ones stay in the conversation
+    /// (nothing is ever deleted), so every assertion below deliberately reads *this* one rather
+    /// than trusting that only one exists.
     private func liveState() throws -> [String: Any] {
         let id = try XCTUnwrap(projector.liveStateItemId, "nothing has been projected")
         let text = try XCTUnwrap(channel.inserted.last { $0.id == id }?.text)
@@ -175,9 +175,9 @@ final class EmbodimentScenarioTests: XCTestCase {
     /// history, the newest snapshot is the current one and every survivor is strictly older -- so
     /// "highest seq wins" is a max, never a merge, and there is nothing to piece together.
     ///
-    /// Not "exactly one" any more, and that is deliberate: a snapshot the conversation has moved
-    /// past can only be deleted by rewriting the cached prefix behind everything said since. See
-    /// WorldProjector -- the invariant that actually holds is this one.
+    /// Not "exactly one", and that is deliberate: deleting a superseded snapshot would rewrite the
+    /// cached prefix behind everything said since. See WorldProjector -- this is the invariant
+    /// that actually holds, and it is the one the system prompt states.
     func testTheNewestPictureAlwaysWinsHoweverMuchChurnThereWas() throws {
         for mode in ["driving", "settling", "turning", "settling", "listening", "dizzy", "settling", "listening", "driving"] {
             behaviour.handle(.transition(mode: mode, detail: ""))
@@ -187,7 +187,7 @@ final class EmbodimentScenarioTests: XCTestCase {
         XCTAssertEqual(try liveState()["doing"] as? String, "rolling forward")
         let live = try XCTUnwrap(projector.liveStateItemId)
         let seq = { (id: String) in Int(id.replacingOccurrences(of: "rw_state_", with: "")) ?? 0 }
-        for survivor in channel.liveStateItems where survivor != live {
+        for survivor in channel.stateItems where survivor != live {
             XCTAssertLessThan(seq(survivor), seq(live), "anything still readable must be older")
         }
     }

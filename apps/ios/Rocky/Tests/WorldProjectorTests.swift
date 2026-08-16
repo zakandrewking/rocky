@@ -9,23 +9,13 @@ import XCTest
 final class RecordingVoiceChannel: VoiceChannel {
     var canReachVoice = true
     private(set) var inserted: [(id: String, text: String)] = []
-    private(set) var removed: [String] = []
 
-    /// The item ids the conversation actually holds right now.
-    var liveItemIds: [String] {
-        inserted.map(\.id).filter { !removed.contains($0) }
-    }
-
-    var liveStateItems: [String] {
-        liveItemIds.filter { $0.hasPrefix("rw_state_") }
+    var stateItems: [String] {
+        inserted.map(\.id).filter { $0.hasPrefix("rw_state_") }
     }
 
     func insertWorldItem(id: String, text: String) {
         inserted.append((id, text))
-    }
-
-    func removeWorldItem(id: String) {
-        removed.append(id)
     }
 }
 
@@ -41,9 +31,10 @@ final class WorldProjectorTests: XCTestCase {
 
     // MARK: - Supersession
 
-    /// The property everything else rests on. Superseded state is not merely older -- it is gone
-    /// from the conversation, so there is no stale snapshot available for a response to read.
-    func testOnlyOneStateSnapshotIsEverLive() {
+    /// Every projection is a plain append -- nothing is ever removed from the conversation. The
+    /// invariant that replaces "exactly one live snapshot" is this one: the newest carries the
+    /// highest seq and every survivor is strictly older, so "highest wins" is a max, never a merge.
+    func testTheNewestSnapshotOutranksTheOnesBeforeIt() throws {
         let (store, channel, projector) = make()
         store.heard()
         store.noteDoing(.spinning, cause: .youAsked)
@@ -53,62 +44,53 @@ final class WorldProjectorTests: XCTestCase {
         store.noteBlocked("something was in the way")
         projector.flush("test")
 
-        XCTAssertEqual(channel.liveStateItems.count, 1)
-        XCTAssertEqual(channel.liveStateItems.first, projector.liveStateItemId)
-        XCTAssertEqual(channel.removed.count, 2, "each new snapshot deletes the one it replaces")
-        XCTAssertTrue(projector.staleStateItemIds.isEmpty)
+        XCTAssertEqual(channel.stateItems.count, 3)
+        XCTAssertEqual(channel.stateItems.last, projector.liveStateItemId)
+
+        let live = try XCTUnwrap(projector.liveStateItemId)
+        for older in channel.stateItems where older != live {
+            XCTAssertLessThan(Self.seq(of: older), Self.seq(of: live))
+        }
+        XCTAssertEqual(
+            projector.supersededStateItemIds.count, 2,
+            "still in the conversation, and known to be outdated"
+        )
     }
 
-    /// Once conversation has piled on top of a snapshot, deleting it would rewrite the cached
-    /// prefix behind everything said since -- minutes of audio tokens, at full price, to remove
-    /// eighty. It stays, and the seq number carries supersession instead.
-    func testAnOldSnapshotIsLeftAloneOnceTheConversationHasMovedOn() {
+    /// Nothing is deleted, ever. Deleting a superseded snapshot would rewrite the cached prefix
+    /// behind everything said since -- minutes of audio tokens at full price to remove eighty --
+    /// so supersession travels by seq number, which costs nothing.
+    func testNothingIsEverRemovedFromTheConversation() {
+        let (store, channel, projector) = make()
+        store.heard()
+        for doing in [Doing.rollingForward, .still, .turning, .still, .spinning, .still] {
+            store.noteDoing(doing, cause: .onItsOwn)
+            projector.flush("test")
+        }
+        store.record(.bumped, detail: "something touched me")
+
+        // That there is no way to delete is enforced by the VoiceChannel protocol itself, which
+        // has no removal method at all -- so this checks the other half: every snapshot ever
+        // projected is still there, under its own id, none reused and none replaced in place.
+        XCTAssertEqual(channel.stateItems.count, 6)
+        XCTAssertEqual(Set(channel.inserted.map(\.id)).count, channel.inserted.count)
+    }
+
+    /// A robot driving for a minute produces no semantic change to project, so the newest snapshot
+    /// would still be the one saying "going for 2s". A fresh one is not, though -- and a snapshot
+    /// nobody is about to read is not worth the tokens.
+    func testAFreshUnchangedSnapshotIsNotRestated() {
         let (store, channel, projector) = make()
         store.heard()
         store.noteDoing(.rollingForward, cause: .onItsOwn)
         projector.flush("first")
-        let buried = projector.liveStateItemId
+        let countAfterFirst = channel.inserted.count
 
-        projector.noteConversationAdvanced()
-        store.noteDoing(.still, cause: .onItsOwn)
         projector.flush("second")
 
-        XCTAssertTrue(channel.removed.isEmpty, "deleting it would have cost a cache miss")
-        XCTAssertEqual(projector.staleStateItemIds, [buried])
-        XCTAssertNotEqual(projector.liveStateItemId, buried)
+        XCTAssertEqual(channel.inserted.count, countAfterFirst)
     }
 
-    /// Deleting the oldest stale snapshot invalidates everything after it anyway, so the rest come
-    /// along for free. One cache miss instead of six -- the same reasoning OpenAI applies to its
-    /// own context truncation.
-    func testStaleSnapshotsAreSweptTogetherOnceThereAreEnoughOfThem() {
-        let (store, channel, projector) = make()
-        store.heard()
-        let doings: [Doing] = [.rollingForward, .still, .turning, .still, .spinning, .still, .rollingBack, .still]
-        for doing in doings {
-            projector.noteConversationAdvanced()
-            store.noteDoing(doing, cause: .onItsOwn)
-            projector.flush("test")
-        }
-
-        XCTAssertFalse(channel.removed.isEmpty, "they build up, then go in one batch")
-        XCTAssertLessThan(projector.staleStateItemIds.count, 6)
-    }
-
-    /// Delete before insert, never after: the other order leaves a window where two snapshots are
-    /// both in history, and a response created inside it could read the older one.
-    func testTheOldSnapshotIsDeletedBeforeTheNewOneArrives() {
-        let (store, channel, projector) = make()
-        store.heard()
-        store.noteDoing(.spinning, cause: .youAsked)
-        projector.flush("first")
-        let first = projector.liveStateItemId
-        store.noteDoing(.still, cause: .onItsOwn)
-        projector.flush("second")
-
-        XCTAssertEqual(channel.removed.first, first)
-        XCTAssertEqual(channel.inserted.last?.id, projector.liveStateItemId)
-    }
 
     // MARK: - What crosses the boundary
 
@@ -129,14 +111,13 @@ final class WorldProjectorTests: XCTestCase {
         XCTAssertEqual(channel.inserted.count, countAfterFirst, "nothing Rocky could say has changed")
     }
 
-    func testEventsAreProjectedImmediatelyAndNeverDeleted() {
+    func testEventsAreProjectedImmediately() {
         // The projector has to stay named and alive: WorldStore holds it weakly, so binding it to
         // `_` would deallocate it and every change would quietly go nowhere.
         let (store, channel, projector) = make()
         store.record(.bumped, detail: "something touched me")
 
         XCTAssertTrue(channel.inserted.contains { $0.id.hasPrefix("rw_event_") })
-        XCTAssertTrue(channel.removed.isEmpty)
         withExtendedLifetime(projector) {}
     }
 
@@ -240,6 +221,10 @@ final class WorldProjectorTests: XCTestCase {
         let fields = try Self.fields(in: rendered)
         XCTAssertEqual(fields["what"] as? String, "bumped")
         XCTAssertEqual(fields["while_doing"] as? String, "act_83")
+    }
+
+    private static func seq(of itemId: String) -> Int {
+        Int(itemId.replacingOccurrences(of: "rw_state_", with: "")) ?? 0
     }
 
     private static func fields(in rendered: String) throws -> [String: Any] {

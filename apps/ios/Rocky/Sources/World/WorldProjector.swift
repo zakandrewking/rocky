@@ -7,7 +7,6 @@ import Foundation
 protocol VoiceChannel: AnyObject {
     var canReachVoice: Bool { get }
     func insertWorldItem(id: String, text: String)
-    func removeWorldItem(id: String)
 }
 
 /// Decides what Rocky gets to know, and puts it there.
@@ -18,13 +17,13 @@ protocol VoiceChannel: AnyObject {
 /// - **Full snapshots, never patches.** Every `<robot-state>` is complete. An absent field means
 ///   "not known", never "unchanged", so there is no accumulation for the model to perform and no
 ///   way for it to be reading half of one picture and half of another.
-/// - **The newest `<robot-state>` is the only one that counts**, and the previous item is deleted
-///   whenever deleting it is free. "Free" is not a nicety: prompt caching is exact-prefix, so
-///   deleting an item that still sits at the *end* of the conversation preserves the prefix and
-///   costs nothing, while deleting one that conversation has piled on top of invalidates the cache
-///   from its old position -- re-charging full price for every audio token since. See
-///   `noteConversationAdvanced` below; the seq number is what carries supersession when the
-///   deletion is deferred.
+/// - **The newest `<robot-state>` is the only one that counts**, carried by its `seq`. Nothing is
+///   ever deleted from the conversation. Deleting a superseded snapshot was tried and dropped:
+///   prompt caching is exact-prefix, so removing an item that conversation has piled on top of
+///   invalidates the cache from its old position and re-charges full price for every audio token
+///   since -- minutes of them, to remove eighty. Since every snapshot is whole, "highest seq wins"
+///   is a *max* and not a merge, so leaving the old ones in place costs the model no work: they
+///   are outranked, and the system prompt says so.
 /// - **Semantic transitions only.** Two snapshots that agree on `semanticIdentity` say the same
 ///   thing about the world, however much telemetry moved underneath them. `speed=.47 → .48` never
 ///   crosses this line at all.
@@ -34,31 +33,23 @@ final class WorldProjector {
     /// makes machine transients invisible: the 180ms motor ring-down between two real states
     /// never gets a projection of its own, because it is gone before the window closes.
     private static let coalesceWindow: Duration = .milliseconds(700)
-    /// While the body is doing something, re-state it at least this often, so a long unbroken
-    /// motion cannot drift out of the conversation and become something Rocky half-remembers.
-    private static let checkpointAfter: TimeInterval = 12
+    /// A snapshot older than this has stale numbers in it -- "going for 2s" about something that
+    /// has now been going for a minute -- so the next time a response is about to begin, it gets
+    /// restated even though nothing semantic changed.
+    private static let goesStaleAfter: TimeInterval = 20
 
     private weak var channel: VoiceChannel?
     private let store: WorldStore
     private var log: WorldLog { WorldLog.shared }
 
-    /// Once enough stale snapshots have accumulated, their standing weight in every future
-    /// request outgrows the one-off cost of busting the cache to be rid of them. Six is a guess,
-    /// and a measurable one -- every response now logs its cached/uncached split.
-    private static let sweepStaleAt = 6
-
     private var lastProjectedIdentity: String?
     private var lastProjectedAt: Date?
     private(set) var liveStateItemId: String?
     private(set) var lastProjectedSeq: WorldSeq = 0
+    /// Snapshots still sitting in the conversation but outranked by a newer seq. Kept for the
+    /// debug view: "when this response began there were three outdated pictures above the current
+    /// one" is worth being able to see.
     private(set) var supersededStateItemIds: [String] = []
-    /// Superseded items still physically in the conversation, because deleting them would have
-    /// cost a cache miss. Ordered oldest first.
-    private(set) var staleStateItemIds: [String] = []
-    /// Whether anything has been appended to the conversation since the live snapshot went in.
-    /// While this is false, replacing that snapshot is a pure tail operation and the cached prefix
-    /// survives intact.
-    private var conversationAdvanced = false
     private var pendingProjection: Task<Void, Never>?
 
     init(store: WorldStore, channel: VoiceChannel?) {
@@ -80,17 +71,6 @@ final class WorldProjector {
         lastProjectedAt = nil
         liveStateItemId = nil
         supersededStateItemIds = []
-        staleStateItemIds = []
-        conversationAdvanced = false
-    }
-
-    /// Something other than our own live snapshot was added to the conversation.
-    ///
-    /// Called generously and on purpose. Over-reporting only defers a deletion that could have
-    /// been free; under-reporting deletes from the middle of history believing it to be the end,
-    /// which is the expensive mistake.
-    func noteConversationAdvanced() {
-        conversationAdvanced = true
     }
 
     // MARK: - Taking changes
@@ -111,20 +91,24 @@ final class WorldProjector {
     }
 
     /// Puts the current picture in front of voice right now, bypassing coalescing. Used at the
-    /// moments where the next thing that happens is a response: the person started speaking, or
-    /// we are about to ask for a reply ourselves.
+    /// moments where the next thing that happens is a response: the person started speaking, or we
+    /// are about to ask for a reply ourselves.
+    ///
+    /// Restates an *unchanged* world too, if the live snapshot has gone stale. Nothing else covers
+    /// that case: a robot that has been driving forward for a minute produces no semantic change
+    /// to project, so the newest picture would still be the one saying "going for 2s". Tied to a
+    /// response rather than to a timer, because a snapshot nobody is about to read is not worth
+    /// the tokens.
     func flush(_ reason: String) {
         pendingProjection?.cancel()
         pendingProjection = nil
-        projectState(reason: reason, force: false)
+        projectState(reason: reason, force: isStale)
     }
 
-    /// Re-states an unchanged but non-idle world if it has been a while. Driven from the same
-    /// timer as the store, because the case this exists for is the one where nothing is arriving.
-    func checkpoint() {
-        guard store.snapshot.moving || store.liveAction != nil else { return }
-        guard let last = lastProjectedAt, Date().timeIntervalSince(last) >= Self.checkpointAfter else { return }
-        projectState(reason: "checkpoint", force: true)
+    private var isStale: Bool {
+        guard store.snapshot.moving || store.liveAction != nil else { return false }
+        guard let last = lastProjectedAt else { return false }
+        return Date().timeIntervalSince(last) >= Self.goesStaleAfter
     }
 
     // MARK: - State
@@ -148,29 +132,16 @@ final class WorldProjector {
 
         let itemId = "rw_state_\(snapshot.seq)"
         if let previous = liveStateItemId {
-            if conversationAdvanced {
-                // Deleting here would rewrite history behind everything said since, and the cached
-                // prefix from that point on -- minutes of audio tokens, at full price, to remove
-                // eighty tokens. It stays; the seq number is what makes it obsolete, and the
-                // system prompt says so in as many words.
-                staleStateItemIds.append(previous)
-                log.write(.projection, "left \(previous) in place (deleting it would bust the cache)", seq: snapshot.seq, item: previous)
-            } else {
-                // Still the last thing in the conversation, so this is a pure tail operation and
-                // the prefix survives. Delete first, then insert: the other order leaves a window
-                // in which two snapshots are both live, and a response created inside it could
-                // read the older one.
-                channel.removeWorldItem(id: previous)
-            }
+            // Outranked, not removed. The new snapshot carries a higher seq and is whole, so the
+            // old one is inert -- and every projection is a plain append, which is the shape
+            // prompt caching rewards.
             supersededStateItemIds.append(previous)
             if supersededStateItemIds.count > 12 { supersededStateItemIds.removeFirst() }
             log.markSuperseded(item: previous)
         }
-        sweepStaleIfCrowded(channel)
         channel.insertWorldItem(id: itemId, text: Self.render(snapshot))
 
         liveStateItemId = itemId
-        conversationAdvanced = false
         lastProjectedIdentity = identity
         lastProjectedSeq = snapshot.seq
         lastProjectedAt = Date()
@@ -183,23 +154,10 @@ final class WorldProjector {
         )
     }
 
-    /// One cache miss instead of six. Deleting the oldest stale item invalidates everything after
-    /// it anyway, so the others come along for free -- which is why these are swept together
-    /// rather than one at a time. Same reasoning OpenAI applies to its own context truncation:
-    /// bust the cache harder, less often.
-    private func sweepStaleIfCrowded(_ channel: VoiceChannel) {
-        guard staleStateItemIds.count >= Self.sweepStaleAt else { return }
-        for id in staleStateItemIds { channel.removeWorldItem(id: id) }
-        log.write(.projection, "swept \(staleStateItemIds.count) stale snapshots in one go", seq: lastProjectedSeq)
-        staleStateItemIds = []
-    }
-
     private func project(_ event: WorldEvent) {
         guard let channel, channel.canReachVoice else { return }
         let itemId = "rw_event_\(event.id)"
         channel.insertWorldItem(id: itemId, text: Self.render(event))
-        // An event item sits after the live snapshot, so that snapshot is no longer the tail.
-        conversationAdvanced = true
         log.write(.projection, "event \(event.id) \(event.kind.rawValue)", seq: event.seq, event: event.id, item: itemId)
     }
 

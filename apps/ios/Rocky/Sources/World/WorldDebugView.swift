@@ -164,10 +164,10 @@ struct WorldDebugView: View {
                     .foregroundStyle(
                         entry.superseded ? RockyTheme.teal.opacity(0.45) : RockyTheme.mintBright.opacity(0.85)
                     )
-                    // Superseded state is not merely old: it has been *deleted* from the
-                    // conversation, so Rocky genuinely cannot read it any more. Struck through
-                    // rather than dimmed alone, because "she no longer believes this" is the one
-                    // thing about a state row worth seeing without reading it.
+                    // Superseded state is still in the conversation -- nothing is ever deleted --
+                    // so this mark is the only sign that Rocky is meant to be ignoring it. Struck
+                    // through rather than dimmed alone, because "she should no longer believe
+                    // this" is the one thing about a state row worth seeing without reading it.
                     .strikethrough(entry.superseded, color: RockyTheme.teal.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -244,7 +244,7 @@ struct WorldDebugView: View {
                         line("last thing", ledger.mostRecentEvent ?? "nothing")
                         line("state it could see", ledger.liveStateItem ?? "none")
                         if !ledger.supersededStateItems.isEmpty {
-                            line("no longer readable", ledger.supersededStateItems.joined(separator: " "))
+                            line("outdated, still there", ledger.supersededStateItems.joined(separator: " "))
                         }
                         if let interruptedBy = ledger.interruptedBy {
                             HStack(spacing: 5) {

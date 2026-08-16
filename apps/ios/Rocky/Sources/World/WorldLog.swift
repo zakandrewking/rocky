@@ -33,8 +33,10 @@ struct WorldLogEntry: Sendable, Identifiable {
     var responseId: String?
     var itemId: String?
     var detail: [String: String] = [:]
-    /// Set later, when a projection is deleted from the conversation. The whole point of the
-    /// debug view is that "voice no longer believes this" is visible at a glance.
+    /// Set later, when a newer snapshot outranks this one. It is still physically in the
+    /// conversation -- nothing is ever deleted -- but Rocky is meant to be ignoring it, and the
+    /// whole point of the debug view is that "she should no longer believe this" is visible at a
+    /// glance.
     var superseded = false
 }
 
@@ -54,9 +56,9 @@ struct ResponseLedger: Sendable, Identifiable {
     var outcome: String?
     /// The event that cut this response off, when one did.
     var interruptedBy: String?
-    /// What the response cost, and how much of it the cache covered. Here rather than in a
-    /// separate metrics view because the thing worth spotting is a *correlation*: a response whose
-    /// cached share collapsed, sitting right below the projection that rewrote history.
+    /// What the response cost, and how much of it the cache covered. Worth watching because this
+    /// design appends to conversation history freely: the cached share should stay high (every
+    /// projection is a plain append), and a drop means something is rewriting the prefix.
     var inputTokens: Int?
     var cachedTokens: Int?
 }
@@ -118,8 +120,8 @@ final class WorldLog: ObservableObject {
         return entry.id
     }
 
-    /// Flags a projection the conversation no longer contains. Called by the projector at the
-    /// moment it deletes the item, not inferred afterwards from ordering.
+    /// Flags a projection a newer one has outranked. Called by the projector at the moment it
+    /// replaces the item, not inferred afterwards from ordering.
     func markSuperseded(item: String) {
         for index in entries.indices where entries[index].itemId == item && !entries[index].superseded {
             entries[index].superseded = true

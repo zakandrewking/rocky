@@ -248,7 +248,6 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func tickWorld() {
         world.tick()
-        projector.checkpoint()
     }
 
     /// The one place a change in the world becomes a decision about speech. Projection happens
@@ -785,17 +784,12 @@ final class RealtimeVoiceSession: ObservableObject {
         case "input_audio_buffer.speech_stopped":
             userStoppedSpeakingAt = Date()
             log("user stopped speaking")
-            // The user's turn is now an item in the conversation, so the live snapshot is no
-            // longer the last thing in it -- replacing it from here on costs a cache miss.
-            projector.noteConversationAdvanced()
             projector.flush("user stopped speaking")
 
         case "response.created":
             activeResponseId = event.response?.id
             awaitingResponse = false
             cancelWatchdog?.cancel()
-            // A response always appends at least one item.
-            projector.noteConversationAdvanced()
             responseStartedAt = Date()
             retriedThisResponse = false
             humeSawLastChunk = false
@@ -913,15 +907,9 @@ final class RealtimeVoiceSession: ObservableObject {
             // Everything not explicitly handled, minus the high-frequency streaming events. Worth
             // the noise: the turn that failed here did so by way of an event this app never
             // mentioned, which made a 20-second silence look like nothing happening at all.
-            // Any item that is not our own live snapshot means the snapshot is no longer the tail.
-            if event.type.hasPrefix("conversation.item."), event.type.hasSuffix("created"),
-                event.item?.id != projector.liveStateItemId {
-                projector.noteConversationAdvanced()
-            }
-            // The conversation.item.* echoes are excluded from the prose log: every state
-            // projection produces a created and a deleted, so at a few per second they would bury
-            // the turn timings this log exists for -- and world.jsonl already records each
-            // projection with its item id.
+            // The conversation.item.* echoes are excluded from the prose log: every projection
+            // produces one, so at a few per second they would bury the turn timings this log
+            // exists for -- and world.jsonl already records each projection with its item id.
             if !event.type.hasSuffix(".delta") && !event.type.hasSuffix(".added")
                 && !event.type.hasPrefix("conversation.item.") {
                 log("event: \(event.type)")
@@ -1006,7 +994,6 @@ final class RealtimeVoiceSession: ObservableObject {
             output = Self.encodeResult(["ok": false, "problem": error.localizedDescription])
         }
         client.send(FunctionCallOutputEvent(callId: callId, output: output))
-        projector.noteConversationAdvanced()
     }
 
     private func execute(name: String, argumentsJSON: String) async throws -> String {
@@ -1235,9 +1222,5 @@ extension RealtimeVoiceSession: VoiceChannel {
 
     func insertWorldItem(id: String, text: String) {
         client.send(ConversationItemCreateEvent(id: id, text: text))
-    }
-
-    func removeWorldItem(id: String) {
-        client.send(ConversationItemDeleteEvent(id: id))
     }
 }

@@ -262,18 +262,20 @@ to OpenAI.
   in the Body panel's action rows), and whether the out-of-band salience judgment comes back fast
   enough to be worth having — a verdict that arrives after the sentence ends is worth nothing, and
   if it consistently does, the honest move is to drop that tier and widen the deterministic rules.
-- [x] **Deleting superseded state is now cache-aware.** Prompt caching is exact-prefix, so
-  `conversation.item.delete` costs the whole tail from the deleted item's position — free when it
-  is still the last item in the conversation (the common case during motion), ruinous when three
-  minutes of audio have piled on top of it. Deletion happens only when free; otherwise the old
-  snapshot stays and `seq` supersedes it, with a batched sweep at six. The system prompt was
-  changed to state the rule that actually holds ("highest seq wins") rather than the stronger one
-  it no longer guarantees. Every response now logs
-  `usage.input_token_details.cached_tokens` to `world.jsonl` and its ledger card, so this is
-  measured rather than argued about.
-- [ ] Tune the stale-snapshot sweep threshold (6) against real cached-share numbers — the whole
-  point of logging them. Also worth checking whether Realtime's own context truncation busts the
-  cache more often than any of this does, in which case none of it matters much.
+- [x] **The conversation is append-only; nothing is ever deleted from it.** Deleting superseded
+  state snapshots was built, then taken out: prompt caching is exact-prefix, so removing an item
+  the conversation has moved past invalidates the cache from its old position and re-charges full
+  price for every audio token since — minutes of them, to remove eighty. The cache-aware version
+  (delete only when free, defer otherwise, sweep in batches) worked but was three interacting
+  mechanisms buying tidiness nobody looks at. Supersession travels by `seq` instead, which costs
+  nothing: every snapshot is whole, so "highest seq wins" is a max and not a merge, and there is
+  nothing for the model to accumulate either way. `VoiceChannel` has no removal method at all, so
+  it is a property of the type rather than a discipline. Staleness is handled by *restating*
+  before a response when the live snapshot has aged past 20s, not by removing anything.
+- [ ] **Context summarisation**, once a long session's transcript actually gets uncomfortable.
+  This is the right answer to growth, and the reason not to pay a cache miss for tidiness now.
+  Worth measuring first: every response logs its cached share, so check whether Realtime's own
+  context truncation is busting the prefix long before our appends matter.
 - [ ] Tune the interruption cooldown (8s) and the projection coalescing window (700ms) against a
   real session rather than a guess. Both are first guesses in the same sense as every constant in
   `rocky_behavior.py`, and both are the kind of thing that only reads wrong out loud.
