@@ -897,7 +897,11 @@ final class RealtimeVoiceSession: ObservableObject {
             // Everything not explicitly handled, minus the high-frequency streaming events. Worth
             // the noise: the turn that failed here did so by way of an event this app never
             // mentioned, which made a 20-second silence look like nothing happening at all.
-            if !event.type.hasSuffix(".delta") && !event.type.hasSuffix(".added") {
+            // The conversation.item.* echoes are excluded too: every state projection produces a
+            // created and a deleted, so at a few per second they would bury the turn timings this
+            // log exists for -- and world.jsonl already records each projection with its item id.
+            if !event.type.hasSuffix(".delta") && !event.type.hasSuffix(".added")
+                && !event.type.hasPrefix("conversation.item.") {
                 log("event: \(event.type)")
             }
         }
