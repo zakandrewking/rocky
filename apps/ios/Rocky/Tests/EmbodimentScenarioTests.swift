@@ -112,6 +112,40 @@ final class EmbodimentScenarioTests: XCTestCase {
         XCTAssertNil(state["about_to"], "it is happening, so there is nothing to be about to do")
     }
 
+    func testDirectionalGestureStartsWithCorrelatedPhysicalEvidence() throws {
+        let action = store.beginAction(.fastForward, expectedDuration: 8)
+        behaviour.expect(gesture: action.id)
+        store.markAction(action.id, status: .accepted)
+
+        behaviour.handle(
+            .transition(mode: "gesturing", detail: "gesture: fast_forward id:\(action.id) step:1/1")
+        )
+        projector.flush("test")
+
+        XCTAssertEqual(store.action(id: action.id)?.status, .running)
+        XCTAssertEqual(store.action(id: action.id)?.evidence, .confirmed)
+        XCTAssertEqual(iAm(try liveState()), "zooming forward")
+    }
+
+    func testBlockedForwardGestureEndsAsBlocked() {
+        let action = store.beginAction(.forward, expectedDuration: 8)
+        behaviour.expect(gesture: action.id)
+        store.markAction(action.id, status: .accepted)
+        behaviour.handle(
+            .transition(mode: "gesturing", detail: "gesture: forward id:\(action.id) step:1/1")
+        )
+
+        behaviour.handle(
+            .transition(
+                mode: "settling",
+                detail: "gesture blocked: gesture: forward id:\(action.id) step:1/1"
+            )
+        )
+
+        XCTAssertEqual(store.action(id: action.id)?.status, .blocked)
+        XCTAssertEqual(store.action(id: action.id)?.reason, "something was in my way")
+    }
+
     // MARK: - How it ended
 
     /// "Did you do it?" — the action is gone from the live picture, and the durable fact remains.

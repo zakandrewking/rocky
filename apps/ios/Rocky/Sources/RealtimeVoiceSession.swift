@@ -163,6 +163,11 @@ final class RealtimeVoiceSession: ObservableObject {
     private var queuedPerformance: PerformancePlayback?
     private var activePerformance: PerformancePlayback?
     private var suspendedPerformance: PerformancePlayback?
+    /// Speech and effects tell us when playback really ends. Movement now gets the same treatment:
+    /// wait for the correlated board transition instead of pretending a socket write moved wheels.
+    private var performanceWaitingForActionId: String?
+    private var performanceMovementFallback: Task<Void, Never>?
+    private var performancePauseTask: Task<Void, Never>?
 
     /// How long to wait for Hume's first audio before assuming the request was lost.
     private static let firstAudioTimeout: Duration = .milliseconds(2500)
@@ -282,6 +287,13 @@ final class RealtimeVoiceSession: ObservableObject {
     /// for everything; interrupting almost never does.
     private func worldChanged(_ change: WorldChange) {
         projector.handle(change)
+        if case .state(let snapshot) = change,
+            let waiting = performanceWaitingForActionId,
+            snapshot.action?.id == waiting,
+            snapshot.action?.status == .running
+        {
+            finishPerformanceMovementOnset(actionId: waiting, confirmed: true)
+        }
         guard case .event(let event) = change else { return }
         consider(event)
     }
@@ -543,6 +555,7 @@ final class RealtimeVoiceSession: ObservableObject {
         queuedPerformance = nil
         activePerformance = nil
         suspendedPerformance = nil
+        cancelPerformanceTiming()
         stopLocalAudio()
         hume?.cancel()
         humePlayer = nil
@@ -1135,8 +1148,12 @@ final class RealtimeVoiceSession: ObservableObject {
 
         case "robot_gesture":
             let args = try JSONDecoder().decode(GestureArgs.self, from: data)
-            let times = max(1, min(10, Int(args.times ?? 1)))
-            let intent: ActionIntent = args.gesture == "wiggle" ? .wiggle : .spin
+            guard let intent = ActionIntent(rawValue: args.gesture), intent.isGesture else {
+                return Self.encodeResult(["ok": false, "problem": "I don't know that movement"])
+            }
+            let times = max(
+                1, min(RobotPerformance.maxRepeats(for: args.gesture), Int(args.times ?? 1))
+            )
             // The board honours gestures at its own seams, so this is genuinely open-ended: the
             // expected duration is a bound for calling it lost, not a promise about when.
             let action = world.beginAction(
@@ -1149,7 +1166,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
         case "robot_routine":
             let args = try JSONDecoder().decode(RoutineArgs.self, from: data)
-            let moves = Array(args.moves.filter { $0 == "spin" || $0 == "wiggle" }.prefix(8))
+            let moves = Array(args.moves.filter(RobotPerformance.supportedMoves.contains).prefix(8))
             guard moves.count >= 2 else {
                 return Self.encodeResult(["ok": false, "problem": "I need at least two valid moves"])
             }
@@ -1295,8 +1312,11 @@ final class RealtimeVoiceSession: ObservableObject {
 
             switch step {
             case .move(let move):
+                performance.currentStepIndex = stepIndex
                 activePerformance = performance
-                dispatchPerformanceMove(move, performanceId: performance.id, step: stepNumber)
+                if dispatchPerformanceMove(move, performanceId: performance.id, step: stepNumber) {
+                    return
+                }
             case .sound(let sound):
                 performance.currentStepIndex = stepIndex
                 activePerformance = performance
@@ -1317,17 +1337,31 @@ final class RealtimeVoiceSession: ObservableObject {
                 armFirstAudioWatchdog()
                 armTurnWatchdog()
                 return
+            case .pause(let durationMs):
+                performance.currentStepIndex = stepIndex
+                activePerformance = performance
+                log("performance step \(stepNumber) paused \(durationMs)ms")
+                performancePauseTask?.cancel()
+                let performanceId = performance.id
+                performancePauseTask = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(durationMs))
+                    guard !Task.isCancelled else { return }
+                    self?.finishPerformancePause(performanceId: performanceId, stepIndex: stepIndex)
+                }
+                return
             }
         }
 
         activePerformance = nil
         suspendedPerformance = nil
+        cancelPerformanceTiming()
         log("performance finished")
         finishResponse(reason: "performance ended")
     }
 
     private func suspendActivePerformance(notifyVoice: Bool, reason: String) {
         guard var performance = activePerformance else { return }
+        cancelPerformanceTiming()
         performance.nextIndex = RobotPerformance.resumeIndex(
             nextIndex: performance.nextIndex,
             currentStepIndex: performance.currentStepIndex
@@ -1351,17 +1385,54 @@ final class RealtimeVoiceSession: ObservableObject {
         )
     }
 
-    private func dispatchPerformanceMove(_ move: String, performanceId: String, step: Int) {
+    /// Returns true when playback is waiting for the board to physically begin the movement.
+    private func dispatchPerformanceMove(_ move: String, performanceId: String, step: Int) -> Bool {
         guard let behavior, behavior.connected else {
             log("performance movement skipped because the body is away")
-            return
+            return false
         }
-        let intent: ActionIntent = move == "wiggle" ? .wiggle : .spin
+        guard let intent = ActionIntent(rawValue: move), intent.isGesture else {
+            log("performance movement skipped because \(move) is unknown")
+            return false
+        }
         let action = world.beginAction(intent, expectedDuration: 8.5)
         behaviorSource.expect(gesture: action.id)
         behavior.requestGesture(move, id: action.id)
         world.markAction(action.id, status: .accepted)
         log("performance step \(step) moved \(move) (\(performanceId))")
+        performanceWaitingForActionId = action.id
+        performanceMovementFallback?.cancel()
+        performanceMovementFallback = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            self?.finishPerformanceMovementOnset(actionId: action.id, confirmed: false)
+        }
+        return true
+    }
+
+    private func finishPerformanceMovementOnset(actionId: String, confirmed: Bool) {
+        guard performanceWaitingForActionId == actionId, activePerformance != nil else { return }
+        performanceWaitingForActionId = nil
+        performanceMovementFallback?.cancel()
+        performanceMovementFallback = nil
+        log("performance movement \(confirmed ? "started on robot" : "start wait timed out") (\(actionId))")
+        advancePerformance()
+    }
+
+    private func finishPerformancePause(performanceId: String, stepIndex: Int) {
+        guard activePerformance?.id == performanceId,
+            activePerformance?.currentStepIndex == stepIndex
+        else { return }
+        performancePauseTask = nil
+        advancePerformance()
+    }
+
+    private func cancelPerformanceTiming() {
+        performanceWaitingForActionId = nil
+        performanceMovementFallback?.cancel()
+        performanceMovementFallback = nil
+        performancePauseTask?.cancel()
+        performancePauseTask = nil
     }
 
     /// Encodes a small, flat JSON object for a function_call_output. Values are deliberately

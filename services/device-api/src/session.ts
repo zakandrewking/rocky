@@ -89,10 +89,19 @@ MOVING IS PART OF TALKING, NOT A SEPARATE JOB
   smaller flicker of the same.
 - A precise playful motion idea may inspire an equally precise private choice. Preserve its count
   in silent tool arguments, never in a spoken acceptance or announcement.
+- When a child playfully calls out “go forward,” “go fast,” “back up,” “turn left,” “turn right,”
+  or “turn around,” usually let that idea inspire the matching bounded gesture when it is safe.
+  Stay in the game or conversation instead of sounding obedient, reciting capabilities, or asking
+  for another direction.
 - For a shared performance with several moves, choose the complete sequence up front,
   use robot_performance once. Put the actual words and silent movement beats in its ordered steps;
-  the phone speaks and performs them in that order. Emit no ordinary assistant text alongside that
-  function call: the words inside its say steps are the response.
+  the phone speaks and performs them in that order. When a friend asks for a story and your body is
+  present, normally make it an embodied robot_performance: you enjoy turning stories into little
+  radio plays, and children expect the action to happen, not merely be described. Use directional
+  movement when the scene calls for travel, pursuit, dodging, or looking around. Put an explicit
+  pause after every move so it has time to become visible and land at the intended dramatic beat.
+  Emit no ordinary assistant text alongside that function call: the words inside its say steps are
+  the response.
 - robot_routine is only for movement without synchronized speech. Never use it for a story, song,
   game, joke, or explanation whose body language should land between particular spoken moments.
 - <performance-paused> is private playback state, never a friend speaking. It means an earlier
@@ -191,13 +200,13 @@ const GESTURE_TOOL = {
   type: "function",
   name: "robot_gesture",
   description:
-    "Your silent, self-chosen body language: one spin or wiggle, optionally repeated. Calling this records your intention and returns before movement, so it is not evidence anything happened. Keep all spoken output on the shared subject, with no movement lead-in or follow-up. For several different moves, use robot_routine once.",
+    "Your silent, self-chosen body language: spin, wiggle, roll forward or backward, make one quick fast-forward dash, turn left or right, or turn around. Every travel move is short and bounded, not continuous steering. Calling this records your intention and returns before movement, so it is not evidence anything happened. Keep all spoken output on the shared subject, with no movement lead-in or follow-up. For several different moves, use robot_routine once.",
   parameters: {
     type: "object",
     additionalProperties: false,
     properties: {
-      gesture: { type: "string", enum: ["spin", "wiggle"] },
-      times: { type: "number", description: "How many times to repeat it, 1 to 10. Defaults to 1." },
+      gesture: { type: "string", enum: ["spin", "wiggle", "forward", "fast_forward", "backward", "turn_left", "turn_right", "turn_around"] },
+      times: { type: "number", description: "How many times to repeat it. Defaults to 1; travel moves are safety-bounded to 3 and other gestures to 10." },
     },
     required: ["gesture"],
   },
@@ -216,7 +225,7 @@ const ROUTINE_TOOL = {
         type: "array",
         minItems: 2,
         maxItems: 8,
-        items: { type: "string", enum: ["spin", "wiggle"] },
+        items: { type: "string", enum: ["spin", "wiggle", "forward", "fast_forward", "backward", "turn_left", "turn_right", "turn_around"] },
         description: "The complete movement sequence, in order.",
       },
     },
@@ -228,24 +237,24 @@ const PERFORMANCE_TOOL = {
   type: "function",
   name: "robot_performance",
   description:
-    "Create one complete spoken performance with movement and 8-bit-ish sound effects interspersed at exact points. This function call is the whole response: emit no assistant text before or after it. The phone speaks each say step, triggers each move step, and plays each sound step in order after the preceding words have actually been heard. Use 2 to 8 move steps, at most 6 sound steps, put a nonempty say step between moves, and include the real story, song, game, joke, or explanation in the say steps—not stage directions or movement narration. Sound choices include laser_blast and spaceship_flyby; use effects sparingly where the imagined action earns them.",
+    "Create one complete spoken performance with movement, deliberate timing, and 8-bit-ish sound effects interspersed at exact points. This function call is the whole response: emit no assistant text before or after it. The phone speaks each say step and finishes each sound before advancing; a move waits until the robot reports that its wheels actually started (with a bounded fallback). Put a pause immediately after every move: about 300–800 ms lets the next line overlap the visible action, while 1000–3000 ms lets a movement land before the story continues. Use 2 to 8 move steps, at most 6 sound steps, put nonempty story text between movement beats, and include the real story, song, game, joke, or explanation in the say steps—not stage directions or movement narration. Sound choices include laser_blast and spaceship_flyby; use effects sparingly where the imagined action earns them.",
   parameters: {
     type: "object",
     additionalProperties: false,
     properties: {
       steps: {
         type: "array",
-        minItems: 5,
-        maxItems: 17,
+        minItems: 7,
+        maxItems: 31,
         description:
-          "The complete performance in playback order. Say steps carry text; move steps carry spin or wiggle; sound steps carry a supported effect. Every unused field must be none or empty.",
+          "The complete performance in playback order. Say steps carry text; move steps carry a supported bounded movement; sound steps carry an effect; pause steps carry duration_ms. Every unused string must be none or empty and duration_ms must be 0 except on pause steps.",
         items: {
           type: "object",
           additionalProperties: false,
           properties: {
-            kind: { type: "string", enum: ["say", "move", "sound"] },
+            kind: { type: "string", enum: ["say", "move", "sound", "pause"] },
             text: { type: "string", maxLength: 900 },
-            move: { type: "string", enum: ["none", "spin", "wiggle"] },
+            move: { type: "string", enum: ["none", "spin", "wiggle", "forward", "fast_forward", "backward", "turn_left", "turn_right", "turn_around"] },
             sound: {
               type: "string",
               enum: [
@@ -260,8 +269,14 @@ const PERFORMANCE_TOOL = {
                 "spaceship_flyby",
               ],
             },
+            duration_ms: {
+              type: "integer",
+              minimum: 0,
+              maximum: 4000,
+              description: "Pause length, 100–4000 ms for pause steps and 0 for every other kind.",
+            },
           },
-          required: ["kind", "text", "move", "sound"],
+          required: ["kind", "text", "move", "sound", "duration_ms"],
         },
       },
     },

@@ -2,12 +2,24 @@ import Foundation
 
 /// A complete spoken performance returned in one tool call. Text and movement remain separate on
 /// the wire so stage directions can never leak into Rocky's voice, while their ordering gives the
-/// phone exact playback cues instead of making either the model or the board guess from duration.
+/// phone exact playback cues. Explicit pauses express dramatic timing; actual audio completion and
+/// board movement onset remain measured locally rather than guessed by the model.
 enum RobotPerformance {
+    static let supportedMoves: Set<String> = [
+        "spin", "wiggle", "forward", "fast_forward", "backward",
+        "turn_left", "turn_right", "turn_around",
+    ]
+    private static let translationMoves: Set<String> = ["forward", "fast_forward", "backward"]
+
+    static func maxRepeats(for move: String) -> Int {
+        translationMoves.contains(move) ? 3 : 10
+    }
+
     enum Step: Equatable {
         case say(String)
         case move(String)
         case sound(String)
+        case pause(Int)
     }
 
     private struct Arguments: Decodable {
@@ -19,6 +31,12 @@ enum RobotPerformance {
         let text: String
         let move: String
         let sound: String
+        let durationMs: Int
+
+        enum CodingKeys: String, CodingKey {
+            case kind, text, move, sound
+            case durationMs = "duration_ms"
+        }
     }
 
     enum ValidationError: LocalizedError {
@@ -33,50 +51,70 @@ enum RobotPerformance {
 
     static func decode(_ json: String) throws -> [Step] {
         let arguments = try JSONDecoder().decode(Arguments.self, from: Data(json.utf8))
-        guard (5...17).contains(arguments.steps.count) else {
-            throw ValidationError.invalid("a performance needs 5 to 17 ordered steps")
+        guard (7...31).contains(arguments.steps.count) else {
+            throw ValidationError.invalid("a performance needs 7 to 31 ordered steps")
         }
 
         var result: [Step] = []
         var moveCount = 0
         var soundCount = 0
-        var previousWasMove = false
+        var totalPauseMs = 0
+        var needsSpokenTextBeforeNextMove = false
         var spokenCharacters = 0
 
         for wire in arguments.steps {
             let text = wire.text.trimmingCharacters(in: .whitespacesAndNewlines)
             switch wire.kind {
             case "say":
-                guard !text.isEmpty, wire.move == "none", wire.sound == "none" else {
-                    throw ValidationError.invalid("say steps need text, move=none, and sound=none")
+                guard !text.isEmpty, wire.move == "none", wire.sound == "none", wire.durationMs == 0 else {
+                    throw ValidationError.invalid("say steps need text and no move, sound, or duration")
                 }
                 spokenCharacters += text.count
                 result.append(.say(text))
-                previousWasMove = false
+                needsSpokenTextBeforeNextMove = false
             case "move":
-                guard text.isEmpty, wire.sound == "none",
-                    wire.move == "spin" || wire.move == "wiggle"
+                guard text.isEmpty, wire.sound == "none", wire.durationMs == 0,
+                    supportedMoves.contains(wire.move)
                 else {
-                    throw ValidationError.invalid("move steps need empty text and a spin or wiggle")
+                    throw ValidationError.invalid("move steps need empty text and one supported movement")
                 }
-                guard !previousWasMove else {
+                guard !needsSpokenTextBeforeNextMove else {
                     throw ValidationError.invalid("put spoken story text between movement beats")
                 }
                 moveCount += 1
                 result.append(.move(wire.move))
-                previousWasMove = true
+                needsSpokenTextBeforeNextMove = true
             case "sound":
-                guard text.isEmpty, wire.move == "none", StorySoundEffect(rawValue: wire.sound) != nil
+                guard text.isEmpty, wire.move == "none", wire.durationMs == 0,
+                    StorySoundEffect(rawValue: wire.sound) != nil
                 else {
-                    throw ValidationError.invalid("sound steps need one supported effect and no text or move")
+                    throw ValidationError.invalid("sound steps need one supported effect and no text, move, or duration")
                 }
                 soundCount += 1
                 guard soundCount <= 6 else {
                     throw ValidationError.invalid("a performance can use at most 6 sound effects")
                 }
                 result.append(.sound(wire.sound))
+            case "pause":
+                guard text.isEmpty, wire.move == "none", wire.sound == "none",
+                    (100...4_000).contains(wire.durationMs)
+                else {
+                    throw ValidationError.invalid("pause steps need a duration from 100 to 4000 ms and no text, move, or sound")
+                }
+                totalPauseMs += wire.durationMs
+                guard totalPauseMs <= 12_000 else {
+                    throw ValidationError.invalid("a performance can pause for at most 12 seconds total")
+                }
+                result.append(.pause(wire.durationMs))
             default:
-                throw ValidationError.invalid("performance step kind must be say, move, or sound")
+                throw ValidationError.invalid("performance step kind must be say, move, sound, or pause")
+            }
+        }
+
+        for (index, step) in result.enumerated() {
+            guard case .move = step else { continue }
+            guard index + 1 < result.count, case .pause = result[index + 1] else {
+                throw ValidationError.invalid("each move needs an explicit pause immediately after it")
             }
         }
 

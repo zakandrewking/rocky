@@ -124,31 +124,60 @@ describe("createDeviceSessionConfig", () => {
     expect(routine?.description).toContain("when no spoken content needs to be synchronized");
     expect(routine?.parameters).toMatchObject({
       properties: {
-        moves: { minItems: 2, maxItems: 8, items: { enum: ["spin", "wiggle"] } },
+        moves: {
+          minItems: 2,
+          maxItems: 8,
+          items: {
+            enum: expect.arrayContaining([
+              "spin",
+              "wiggle",
+              "forward",
+              "fast_forward",
+              "backward",
+              "turn_left",
+              "turn_right",
+              "turn_around",
+            ]),
+          },
+        },
       },
     });
 
     const performance = tools.find((tool) => tool.name === "robot_performance");
     const resume = tools.find((tool) => tool.name === "resume_robot_performance");
-    expect(performance?.description).toContain("after the preceding words have actually been heard");
+    expect(performance?.description).toContain("wheels actually started");
+    expect(performance?.description).toContain("Put a pause immediately after every move");
     expect(performance?.description).toContain("emit no assistant text before or after it");
     expect(performance?.parameters).toMatchObject({
       properties: {
         steps: {
-          minItems: 5,
-          maxItems: 17,
+          minItems: 7,
+          maxItems: 31,
           items: {
             properties: {
-              kind: { enum: ["say", "move", "sound"] },
-              move: { enum: ["none", "spin", "wiggle"] },
+              kind: { enum: ["say", "move", "sound", "pause"] },
+              move: {
+                enum: expect.arrayContaining([
+                  "none",
+                  "forward",
+                  "fast_forward",
+                  "backward",
+                  "turn_left",
+                  "turn_right",
+                  "turn_around",
+                ]),
+              },
               sound: {
                 enum: expect.arrayContaining(["laser_blast", "spaceship_flyby"]),
               },
+              duration_ms: { minimum: 0, maximum: 4000 },
             },
           },
         },
       },
     });
+    expect(config.instructions).toContain("normally make it an embodied robot_performance");
+    expect(config.instructions).toContain("usually let that idea inspire the matching bounded gesture");
     expect(config.instructions).toContain("<performance-paused>");
     expect(resume?.description).toContain("resume the unheard steps");
   });
