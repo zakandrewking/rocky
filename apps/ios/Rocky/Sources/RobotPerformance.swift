@@ -31,6 +31,18 @@ enum RobotPerformance {
             case kind, text, move, sound
             case durationMs = "duration_ms"
         }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            kind = try values.decode(String.self, forKey: .kind)
+            // Realtime function arguments occasionally omit a field even though the schema marks
+            // every one required. Defaults make unused fields harmless; kind-specific validation
+            // below still rejects any ambiguous or meaningful omission.
+            text = try values.decodeIfPresent(String.self, forKey: .text) ?? ""
+            move = try values.decodeIfPresent(String.self, forKey: .move) ?? "none"
+            sound = try values.decodeIfPresent(String.self, forKey: .sound) ?? "none"
+            durationMs = try values.decodeIfPresent(Int.self, forKey: .durationMs) ?? 0
+        }
     }
 
     enum ValidationError: LocalizedError {
@@ -79,16 +91,24 @@ enum RobotPerformance {
                 result.append(.move(wire.move))
                 needsSpokenTextBeforeNextMove = true
             case "sound":
-                guard text.isEmpty, wire.move == "none", wire.durationMs == 0,
-                    StorySoundEffect(rawValue: wire.sound) != nil
-                else {
+                let sound: String?
+                if wire.move == "none", StorySoundEffect(rawValue: wire.sound) != nil {
+                    sound = wire.sound
+                } else if wire.sound == "none", StorySoundEffect(rawValue: wire.move) != nil {
+                    // Repair the unambiguous slip seen in a live dance story: the model emitted
+                    // {kind:"sound", move:"chime"} and omitted sound despite the strict schema.
+                    sound = wire.move
+                } else {
+                    sound = nil
+                }
+                guard text.isEmpty, wire.durationMs == 0, let sound else {
                     throw ValidationError.invalid("sound steps need one supported effect and no text, move, or duration")
                 }
                 soundCount += 1
                 guard soundCount <= 6 else {
                     throw ValidationError.invalid("a performance can use at most 6 sound effects")
                 }
-                result.append(.sound(wire.sound))
+                result.append(.sound(sound))
             case "pause":
                 guard text.isEmpty, wire.move == "none", wire.sound == "none",
                     (100...4_000).contains(wire.durationMs)

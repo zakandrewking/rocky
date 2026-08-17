@@ -244,6 +244,11 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   the board acknowledged every gesture in a story, then its next Still tick erased each one before
   the wheels started. Still now blocks sound/touch/proximity movement while allowing correlated
   Rocky gestures and routines to run; each chosen move returns to sensor-quiet Still afterward.
+- [x] Repair malformed Realtime story-effect arguments locally. Two live dance stories put their
+  final `chime` in the `move` field and omitted `sound` despite the strict function schema, causing
+  iOS to reject the entire performance and Rocky to invent a “missing-data wormhole.” The decoder
+  now normalizes that unambiguous slip, the schema descriptions reinforce the field distinction,
+  and tool execution errors are written explicitly to the session log.
 - [x] Remove operator/instruction framing exposed by the next live session. Rocky said “You guide,
   Rocky follows,” invited “just say the word,” and announced waking/movement before tool calls.
   Movement is now explicitly Rocky's autonomous alien body language; projected causes say “I chose

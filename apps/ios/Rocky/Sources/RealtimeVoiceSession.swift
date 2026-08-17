@@ -1122,6 +1122,7 @@ final class RealtimeVoiceSession: ObservableObject {
         do {
             output = try await execute(name: name, argumentsJSON: argumentsJSON, callId: callId)
         } catch {
+            log("tool call \(name) failed: \(error.localizedDescription)")
             output = Self.encodeResult(["ok": false, "problem": error.localizedDescription])
         }
         client.send(FunctionCallOutputEvent(callId: callId, output: output))

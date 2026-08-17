@@ -254,7 +254,11 @@ const PERFORMANCE_TOOL = {
           properties: {
             kind: { type: "string", enum: ["say", "move", "sound", "pause"] },
             text: { type: "string", maxLength: 900 },
-            move: { type: "string", enum: ["none", "spin", "wiggle", "forward", "fast_forward", "backward", "turn_left", "turn_right", "turn_around"] },
+            move: {
+              type: "string",
+              enum: ["none", "spin", "wiggle", "forward", "fast_forward", "backward", "turn_left", "turn_right", "turn_around"],
+              description: "Movement only on move steps; otherwise none. Never put a sound effect here.",
+            },
             sound: {
               type: "string",
               enum: [
@@ -268,6 +272,7 @@ const PERFORMANCE_TOOL = {
                 "laser_blast",
                 "spaceship_flyby",
               ],
+              description: "Effect only on sound steps; otherwise none. Put chime and every other effect here, never in move.",
             },
             duration_ms: {
               type: "integer",

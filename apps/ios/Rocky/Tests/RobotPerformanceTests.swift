@@ -112,4 +112,22 @@ final class RobotPerformanceTests: XCTestCase {
         XCTAssertNotNil(StorySoundEffect(rawValue: "spaceship_flyby"))
     }
 
+    func testRepairsAnEffectMisplacedInMoveByRealtimeArguments() throws {
+        let steps = try RobotPerformance.decode(
+            """
+            {"steps":[
+              {"kind":"say","text":"The dance begins.","move":"none","sound":"none","duration_ms":0},
+              {"kind":"move","text":"","move":"wiggle","sound":"none","duration_ms":0},
+              {"kind":"pause","text":"","move":"none","sound":"none","duration_ms":600},
+              {"kind":"say","text":"A bright path opens.","move":"none","sound":"none","duration_ms":0},
+              {"kind":"move","text":"","move":"forward","sound":"none","duration_ms":0},
+              {"kind":"pause","text":"","move":"none","sound":"none","duration_ms":700},
+              {"kind":"sound","text":"","move":"chime","duration_ms":0}
+            ]}
+            """
+        )
+
+        XCTAssertEqual(steps.last, .sound("chime"))
+    }
+
 }
