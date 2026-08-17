@@ -217,8 +217,9 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   tool follow-ups explicitly return to the person's request; and the prompt treats ordinary body
   language/state as silent context instead of conversational material.
 - [x] D: proactive narration of startle/bump, rate-limited and suppressed while already speaking.
-- [ ] **Test the slice on hardware** — none of the above has run on a real board yet. See the
-  test plan in the commit that added it.
+- [x] **Test the slice on hardware.** Live iOS sessions have confirmed hello/snapshots, autonomous
+  transitions, mood changes, gestures, and the `still` boot interlock on the real board. The mixed
+  routine added later still needs its own live story run.
 - [ ] Measure tick rate before/after the observation layer. This loop's sampling *is* its pipeline
   (one `get_loudness()` per tick, no smoothing, startle is an edge trigger), so anything that slows
   the tick degrades startle detection without changing a single constant.
@@ -293,11 +294,11 @@ to OpenAI.
 - [x] OTA bootstrap ignores zero-byte connections. A read-only port probe during the 2026-08-16
   recovery exposed that `check_for_push()` previously wrote an empty `/flash/rocky_payload.py`;
   empty input now leaves the last known-good payload untouched.
-- [ ] **Run it on real hardware.** None of this has met a board yet. Two things to watch first:
-  whether `started`/`pong` actually arrive from `rocky_agent.py` (upgrade `assumed` to `confirmed`
-  in the Body panel's action rows), and whether the out-of-band salience judgment comes back fast
-  enough to be worth having — a verdict that arrives after the sentence ends is worth nothing, and
-  if it consistently does, the honest move is to drop that tier and widen the deterministic rules.
+- [ ] **Finish the real-hardware scenario matrix.** Startup discovery, hello/snapshots, body-state
+  projection, mood changes, and single gestures are confirmed on the board. Still to verify: one
+  mixed story routine with correlated steps, `pong`, and whether the out-of-band salience judgment
+  returns before the sentence ends; if it consistently does not, drop that tier and widen the
+  deterministic rules.
 - [x] **The conversation is append-only; nothing is ever deleted from it.** Deleting superseded
   state snapshots was built, then taken out: prompt caching is exact-prefix, so removing an item
   the conversation has moved past invalidates the cache from its old position and re-charges full
