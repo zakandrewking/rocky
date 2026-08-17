@@ -184,28 +184,6 @@ class StillInterlockTests(unittest.TestCase):
             payload["_tick_gesturing"](1001)
             self.assertEqual(mbot2.drive_calls[-1], expected)
 
-    def test_forward_story_gesture_stops_for_an_obstacle(self):
-        payload, _cyberpi, mbot2, _ultrasonic, _line_sensor = load_payload()
-        state = payload["_state"]
-        state.update(booted=True, floor=0, mood="exploring")
-        state["gesture_queue"] = [("turn_left", 8000, "story", 2, 2)]
-        payload["_perform_gesture"](("fast_forward", 5000, "story", 1, 1), 1000)
-
-        payload["_tick_gesturing"](1001)
-
-        self.assertEqual(mbot2.drive_calls[-1], (0, 0))
-        self.assertEqual(state["mode"], "settling")
-        self.assertEqual(state["gesture_queue"], [])
-        self.assertIn("gesture blocked", state["events"][-1][2])
-
-    def test_blind_reverse_repetition_is_safety_bounded(self):
-        payload, *_ = load_payload()
-        payload["_apply_intent"](
-            {"type": "gesture", "gesture": "backward", "times": 10, "id": "story"}, 1000
-        )
-
-        self.assertEqual(len(payload["_state"]["gesture_queue"]), 3)
-
     def test_a_new_routine_replaces_only_steps_that_have_not_started(self):
         payload, *_ = load_payload()
         payload["_apply_intent"](

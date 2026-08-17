@@ -145,10 +145,6 @@ final class BehaviorWorldSource {
             guard let id = gestureActionId, isCurrentGesture(detail) else { return }
             gestureActionId = nil
             store.markAction(id, status: .failed, reason: "I never got a free moment for it")
-        case "settling" where detail.contains("gesture blocked"):
-            guard let id = gestureActionId, isCurrentGesture(detail) else { return }
-            gestureActionId = nil
-            store.markAction(id, status: .blocked, evidence: .confirmed, reason: "something was in my way")
         case "turning", "recovering", "gesturing":
             guard isCurrentGesture(detail), let id = gestureActionId else { return }
             gestureRepeatsSeen += 1
@@ -171,9 +167,7 @@ final class BehaviorWorldSource {
     /// the story log: a spin already underway was credited to the newer pending wiggle. Accept a
     /// missing id only for compatibility with a board that has not received the new payload yet.
     private func isCurrentGesture(_ detail: String) -> Bool {
-        guard isGesture(detail) || detail.contains("expired") || detail.contains("gesture blocked") else {
-            return false
-        }
+        guard isGesture(detail) || detail.contains("expired") else { return false }
         guard let reported = gestureId(in: detail) else { return true }
         return reported == gestureActionId
     }

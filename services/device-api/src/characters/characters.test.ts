@@ -52,7 +52,7 @@ describe("every character", () => {
 describe("buildInstructions", () => {
   it("puts conduct after personality so it wins", () => {
     const instructions = buildInstructions(FATHOM);
-    expect(instructions.indexOf("You are Fathom")).toBeLessThan(instructions.indexOf("SPEECH AND SAFETY"));
+    expect(instructions.indexOf("You are Fathom")).toBeLessThan(instructions.indexOf("SPEECH AND CONDUCT"));
   });
 
   it("appends extra sections last", () => {

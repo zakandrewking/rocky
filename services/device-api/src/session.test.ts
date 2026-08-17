@@ -102,7 +102,7 @@ describe("createDeviceSessionConfig", () => {
 
     expect(config.instructions).toContain("You boot asleep and physically still");
     expect(config.instructions).toContain("your curiosity wakes automatically");
-    expect(mood?.description).toContain("hard safety lock");
+    expect(mood?.description).toContain("hard physical stop");
     expect(mood?.description).toContain("do not call this merely to wake");
     expect(mood?.parameters).toMatchObject({
       properties: { mood: { enum: ["calm", "exploring", "excitable", "still"] } },
@@ -177,7 +177,8 @@ describe("createDeviceSessionConfig", () => {
       },
     });
     expect(config.instructions).toContain("normally make it an embodied robot_performance");
-    expect(config.instructions).toContain("usually let that idea inspire the matching bounded gesture");
+    expect(config.instructions).toContain("usually let that idea inspire the matching short gesture");
+    expect(config.instructions).not.toMatch(/\bsafe(?:ty)?\b|\bunsafe\b/i);
     expect(config.instructions).toContain("<performance-paused>");
     expect(resume?.description).toContain("resume the unheard steps");
   });

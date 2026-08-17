@@ -227,9 +227,12 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
 - [x] Tighten live story timing and expand physical storytelling. Movement cues now wait for the
   correlated board transition that says the wheels actually started (with a two-second anti-hang
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now
-  default to embodied performances when the robot is present and can use bounded forward, fast
-  forward, backward, left, right, turn-around, spin, and wiggle beats. Translation is time-boxed;
-  forward checks the ultrasonic sensor and blind reverse repetition is capped at three.
+  default to embodied performances when the robot is present and can use forward, fast forward,
+  backward, left, right, turn-around, spin, and wiggle beats.
+- [x] Keep precautions out of Rocky's conversational identity. The constructed model prompt no
+  longer contains `safe`, `safety`, or `unsafe`, stop is a silent two-word behavior rather than a
+  theme, and directional story moves have no extra obstacle veto or special reverse-repeat cap.
+  The explicitly requested boot/pause `still` behavior remains unchanged.
 - [x] Make voice pause a physical pause: iOS sends `still` before silencing voice, engaging the
   board's hard motor/sensor interlock. Resume retains the deterministic `still → exploring` wake.
 - [x] Remove operator/instruction framing exposed by the next live session. Rocky said “You guide,

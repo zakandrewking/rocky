@@ -112,9 +112,4 @@ final class RobotPerformanceTests: XCTestCase {
         XCTAssertNotNil(StorySoundEffect(rawValue: "spaceship_flyby"))
     }
 
-    func testTravelRepetitionIsMoreTightlySafetyBounded() {
-        XCTAssertEqual(RobotPerformance.maxRepeats(for: "backward"), 3)
-        XCTAssertEqual(RobotPerformance.maxRepeats(for: "fast_forward"), 3)
-        XCTAssertEqual(RobotPerformance.maxRepeats(for: "wiggle"), 10)
-    }
 }

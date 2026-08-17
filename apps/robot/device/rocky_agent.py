@@ -323,8 +323,6 @@ _state = {
     "gesture_left_rpm": 0,
     "gesture_right_rpm": 0,
     "gesture_ms": 0,
-    "gesture_check_front": False,
-    "gesture_detail": "",
     "baseline": 0.0,
     "flee_ms": FLEE_MS_MIN,
     "recover_index": 0,
@@ -385,12 +383,9 @@ MOODS = {
 EXCITABLE_COOLDOWN_MS = 45000
 GESTURES = ("spin", "wiggle", "forward", "fast_forward", "backward", "turn_left", "turn_right", "turn_around")
 MAX_GESTURE_REPEATS = 10  # "spin ten times" should work; beyond that it stops being playful
-MAX_TRANSLATION_REPEATS = 3  # forward/backward cover ground; especially bound blind reverse
 MAX_ROUTINE_STEPS = 8  # long enough for a story beat sequence, bounded enough to remain stoppable
 GESTURE_SPIN_MS = TURN_MS * 2  # TURN_MS is the tuned ~180 degrees, so a full turn is two of them
-# Story travel is deliberately short and time-boxed. These are expressive beats, not navigation:
-# forward gets the ultrasonic safety check, reverse is slower because Rocky has no rear sensor,
-# and "fast" means one quick dash rather than an open-ended throttle setting.
+# Story travel uses compact physical beats so it can stay synchronized with spoken scenes.
 GESTURE_MOVE_RPM = 70
 GESTURE_FAST_RPM = 125
 GESTURE_FORWARD_MS = 700
@@ -493,8 +488,6 @@ def _apply_intent(message, now):
             times = message.get("times", 1)
             try:
                 times = max(1, min(MAX_GESTURE_REPEATS, int(times)))
-                if gesture in ("forward", "fast_forward", "backward"):
-                    times = min(MAX_TRANSLATION_REPEATS, times)
             except Exception:
                 times = 1
             action_id = str(message.get("id", ""))
@@ -585,22 +578,20 @@ def _perform_gesture(task, now):
         return
 
     profiles = {
-        "forward": (GESTURE_MOVE_RPM, -GESTURE_MOVE_RPM, GESTURE_FORWARD_MS, True),
-        "fast_forward": (GESTURE_FAST_RPM, -GESTURE_FAST_RPM, GESTURE_FAST_MS, True),
-        "backward": (-GESTURE_MOVE_RPM, GESTURE_MOVE_RPM, GESTURE_BACKWARD_MS, False),
+        "forward": (GESTURE_MOVE_RPM, -GESTURE_MOVE_RPM, GESTURE_FORWARD_MS),
+        "fast_forward": (GESTURE_FAST_RPM, -GESTURE_FAST_RPM, GESTURE_FAST_MS),
+        "backward": (-GESTURE_MOVE_RPM, GESTURE_MOVE_RPM, GESTURE_BACKWARD_MS),
         # The recovery schedule established positive same-sign as right and negative as left.
-        "turn_left": (-TURN_RPM, -TURN_RPM, GESTURE_QUARTER_TURN_MS, False),
-        "turn_right": (TURN_RPM, TURN_RPM, GESTURE_QUARTER_TURN_MS, False),
-        "turn_around": (TURN_RPM, TURN_RPM, TURN_MS, False),
+        "turn_left": (-TURN_RPM, -TURN_RPM, GESTURE_QUARTER_TURN_MS),
+        "turn_right": (TURN_RPM, TURN_RPM, GESTURE_QUARTER_TURN_MS),
+        "turn_around": (TURN_RPM, TURN_RPM, TURN_MS),
     }
     profile = profiles.get(gesture)
     if profile is not None:
-        left, right, duration, check_front = profile
+        left, right, duration = profile
         _state["gesture_left_rpm"] = left
         _state["gesture_right_rpm"] = right
         _state["gesture_ms"] = duration
-        _state["gesture_check_front"] = check_front
-        _state["gesture_detail"] = detail
         _enter("gesturing", now, detail)
         _show_face("O   O", (255, 150, 0))
 
@@ -1027,17 +1018,7 @@ def _tick_settling(now):
 
 
 def _tick_gesturing(now):
-    """Runs one short directional story beat, with a front obstacle check where one exists."""
-    if _state["gesture_check_front"] and HAS_ULTRASONIC:
-        distance = _distance_cm()
-        if 0 <= distance < OBSTACLE_STOP_CM:
-            mbot2.drive_speed(0, 0)
-            _state["gesture_queue"] = []
-            _state["return_to"] = "listening"
-            _enter("settling", now, "gesture blocked: " + _state["gesture_detail"])
-            _send_telemetry(',"obstacle_cm":{}'.format(distance))
-            return
-
+    """Runs one directional story beat."""
     if utime.ticks_diff(now, _state["mode_start"]) >= _state["gesture_ms"]:
         mbot2.drive_speed(0, 0)
         _state["return_to"] = "listening"

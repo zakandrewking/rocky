@@ -127,25 +127,6 @@ final class EmbodimentScenarioTests: XCTestCase {
         XCTAssertEqual(iAm(try liveState()), "zooming forward")
     }
 
-    func testBlockedForwardGestureEndsAsBlocked() {
-        let action = store.beginAction(.forward, expectedDuration: 8)
-        behaviour.expect(gesture: action.id)
-        store.markAction(action.id, status: .accepted)
-        behaviour.handle(
-            .transition(mode: "gesturing", detail: "gesture: forward id:\(action.id) step:1/1")
-        )
-
-        behaviour.handle(
-            .transition(
-                mode: "settling",
-                detail: "gesture blocked: gesture: forward id:\(action.id) step:1/1"
-            )
-        )
-
-        XCTAssertEqual(store.action(id: action.id)?.status, .blocked)
-        XCTAssertEqual(store.action(id: action.id)?.reason, "something was in my way")
-    }
-
     // MARK: - How it ended
 
     /// "Did you do it?" — the action is gone from the live picture, and the durable fact remains.

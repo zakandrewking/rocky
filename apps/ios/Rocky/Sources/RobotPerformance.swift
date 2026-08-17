@@ -9,12 +9,6 @@ enum RobotPerformance {
         "spin", "wiggle", "forward", "fast_forward", "backward",
         "turn_left", "turn_right", "turn_around",
     ]
-    private static let translationMoves: Set<String> = ["forward", "fast_forward", "backward"]
-
-    static func maxRepeats(for move: String) -> Int {
-        translationMoves.contains(move) ? 3 : 10
-    }
-
     enum Step: Equatable {
         case say(String)
         case move(String)

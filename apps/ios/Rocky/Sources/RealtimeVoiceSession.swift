@@ -1151,9 +1151,7 @@ final class RealtimeVoiceSession: ObservableObject {
             guard let intent = ActionIntent(rawValue: args.gesture), intent.isGesture else {
                 return Self.encodeResult(["ok": false, "problem": "I don't know that movement"])
             }
-            let times = max(
-                1, min(RobotPerformance.maxRepeats(for: args.gesture), Int(args.times ?? 1))
-            )
+            let times = max(1, min(10, Int(args.times ?? 1)))
             // The board honours gestures at its own seams, so this is genuinely open-ended: the
             // expected duration is a bound for calling it lost, not a promise about when.
             let action = world.beginAction(
