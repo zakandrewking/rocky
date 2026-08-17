@@ -16,9 +16,10 @@ continuously while the movements run instead of starting a new voice turn for ea
 `scripts/check-behavior-parity.mjs` fails the build if any tuned constant drifts from
 `steps/step16_loudness_drive_sticky.py`, which stays as the tuning record and the rollback.
 
-The live payload boots in `still`, a hard motor interlock that bypasses every movement-producing
-sensor and gesture path. Rocky must choose an awake disposition (`exploring`, `calm`, or
-`excitable`) before the body can move; choosing `still` again stops current motion immediately.
+The live payload boots in `still`, which stops current motion and bypasses every movement-producing
+sensor path. A correlated gesture or routine Rocky deliberately chooses can move without changing
+the mood; once it finishes, the body returns to sensor-quiet `still`. Choosing `still` again while
+anything is moving stops it immediately.
 
 **The commanded-motion agent is deprecated.** There used to be a second payload — a body that sat
 still until told to drive or turn, over its own protocol on port 8765. It is frozen at

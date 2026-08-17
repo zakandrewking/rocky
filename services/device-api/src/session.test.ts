@@ -102,7 +102,8 @@ describe("createDeviceSessionConfig", () => {
 
     expect(config.instructions).toContain("You boot asleep and physically still");
     expect(config.instructions).toContain("your curiosity wakes automatically");
-    expect(mood?.description).toContain("hard physical stop");
+    expect(config.instructions).toContain("stillness quiets your reflexes, never traps your own body language");
+    expect(mood?.description).toContain("without blocking your later self-chosen movement");
     expect(mood?.description).toContain("do not call this merely to wake");
     expect(mood?.parameters).toMatchObject({
       properties: { mood: { enum: ["calm", "exploring", "excitable", "still"] } },

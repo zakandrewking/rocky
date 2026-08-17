@@ -298,8 +298,8 @@ FACES = (
 )
 
 # The robot wakes physically still. DEFAULT_MOOD is the ordinary awake/fallback disposition;
-# BOOT_MOOD is deliberately separate so a reboot can never silently re-arm the motors, and the
-# excitement decay target is separate again so cooling down cannot accidentally mean going inert.
+# BOOT_MOOD is deliberately separate so a reboot cannot let sensors silently re-arm the motors,
+# and the excitement decay target is separate again so cooling down cannot mean going inert.
 DEFAULT_MOOD = "exploring"
 BOOT_MOOD = "still"
 EXCITABLE_DECAY_MOOD = "calm"
@@ -348,6 +348,10 @@ _state = {
     "bump_suppressed_until": 0,
     "mood": BOOT_MOOD,
     "mood_since": 0,
+    # True from the moment a correlated gesture starts until it returns to listening. Still mode
+    # permits this path while bypassing the autonomous sensor handlers; it is Rocky choosing to
+    # move, not the room making Rocky jump.
+    "intentional_motion": False,
     # (name, expires_at_ticks, caller_id, one_based_step, total_steps), oldest first. A real queue
     # is necessary for mixed story/dance routines: the old single slot let a follow-up wiggle
     # overwrite a spin that had not started yet, while both sides confidently claimed success.
@@ -361,8 +365,8 @@ _state = {
 # it -- a dropped socket must cost visibility, never driving.
 
 # Awake moods scale the tuned constants at their point of use; they never rewrite them. "still"
-# is stronger: tick() treats it as a hard motor interlock and does not run a sensor/state handler.
-# That keeps every value above the source of truth and every nudge reversible.
+# bypasses every autonomous sensor/state handler, but a correlated gesture may move through it.
+# Once that deliberate movement finishes, the robot returns to still without waking its sensors.
 #   startle: multiplies STARTLE_CUTOFF -- higher is harder to startle
 #   speed:   multiplies the committed rpm -- 0.0 means "listen but never drive"
 MOODS = {
@@ -401,24 +405,26 @@ def _mood():
     return MOODS.get(_state["mood"], MOODS[DEFAULT_MOOD])
 
 
-def _hold_still(now, detail="still interlock"):
-    """Hard movement interlock: stop now and bypass every sensor-driven state handler.
+def _hold_still(now, detail="still interlock", clear_intentions=True):
+    """Stop current movement while tick() bypasses every sensor-driven state handler.
 
     This is intentionally centralized rather than repeated in loudness, floor, and proximity
-    checks. It also catches an already-running drive, turn, jump, recovery, or gesture on the same
-    tick that Rocky goes still. Reasserting zero speed every tick makes the invariant physical,
-    not merely a state-machine convention.
+    checks. A direct mood change to still also cancels an already-running gesture and its queue;
+    the steady-state tick preserves newly-arrived intentions so Rocky can deliberately move while
+    environmental jolts remain inert.
     """
     had_queued_gesture = bool(_state["gesture_queue"])
     mbot2.drive_speed(0, 0)
-    _state["gesture_queue"] = []
+    if clear_intentions:
+        _state["gesture_queue"] = []
     _state["level"] = 0.0
     _state["rpm"] = 0
     _state["drive_started"] = None
     _state["return_to"] = "listening"
     _state["gesture_left_rpm"] = 0
     _state["gesture_right_rpm"] = 0
-    if _state["mode"] != "listening" or had_queued_gesture:
+    _state["intentional_motion"] = False
+    if _state["mode"] != "listening" or (clear_intentions and had_queued_gesture):
         _enter("listening", now, detail)
         _show_face("o _ o", (0, 150, 255))
     _send_telemetry(',"interlock":"still"')
@@ -469,6 +475,7 @@ def _apply_intent(message, now):
         _state["rpm"] = 0
         _state["drive_started"] = None
         _state["return_to"] = "listening"
+        _state["intentional_motion"] = False
         _enter("settling", now, "stopped by voice")  # via settling so the next read is clean
         return
 
@@ -563,6 +570,7 @@ def _take_gesture(now):
 def _perform_gesture(task, now):
     """Turns a small story/body-language vocabulary into bounded physical beats."""
     gesture, _expires, action_id, step, total = task
+    _state["intentional_motion"] = True
     detail = "gesture: {} id:{} step:{}/{}".format(gesture, action_id, step, total)
     if gesture == "spin":
         _state["turn_ms"] = GESTURE_SPIN_MS  # a whole turn, not the tuned half-turn
@@ -1013,6 +1021,7 @@ def _tick_settling(now):
     else:
         _state["level"] = 0.0
         _state["rpm"] = 0
+        _state["intentional_motion"] = False
         _enter("listening", now)
         _show_face("o _ o", (0, 150, 255))
 
@@ -1029,12 +1038,13 @@ def _tick_gesturing(now):
     _send_telemetry("")
 
 
-def _tick_turning(now):
-    level, loudness, external = _sensed_level(abs(_state["turn_rpm"]))
-    if level is not None and level > MIN_LEVEL:  # a surprise mid-turn takes priority
-        _start_driving(level, now)
-        _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
-        return
+def _tick_turning(now, read_sensors=True):
+    if read_sensors:
+        level, loudness, external = _sensed_level(abs(_state["turn_rpm"]))
+        if level is not None and level > MIN_LEVEL:  # a surprise mid-turn takes priority
+            _start_driving(level, now)
+            _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
+            return
 
     elapsed = utime.ticks_diff(now, _state["mode_start"])
     if elapsed < _state["turn_ms"]:
@@ -1076,15 +1086,16 @@ def _enter_recovering(now):
     _show_face(label, color)
 
 
-def _tick_recovering(now):
+def _tick_recovering(now, read_sensors=True):
     idx = _state["recover_index"]
     duration, rpm, _, _ = RECOVER_SCHEDULE[idx]
 
-    level, loudness, external = _sensed_level(abs(rpm))
-    if level is not None and level > MIN_LEVEL:  # a surprise mid-wobble takes priority
-        _start_driving(level, now)
-        _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
-        return
+    if read_sensors:
+        level, loudness, external = _sensed_level(abs(rpm))
+        if level is not None and level > MIN_LEVEL:  # a surprise mid-wobble takes priority
+            _start_driving(level, now)
+            _send_telemetry(',"loud":{},"external":{}'.format(loudness, _ext_repr(external)))
+            return
 
     if utime.ticks_diff(now, _state["recover_seg_start"]) >= duration:
         idx += 1
@@ -1129,6 +1140,17 @@ _TICKS = {
 }
 
 
+def _tick_intentional_motion(now):
+    """Advances Rocky's chosen movement without waking any Still-suppressed sensor reflex."""
+    mode = _state["mode"]
+    if mode == "turning":
+        _tick_turning(now, False)
+    elif mode == "recovering":
+        _tick_recovering(now, False)
+    else:
+        _TICKS[mode](now)
+
+
 def tick():
     if not _state["booted"]:
         _boot()
@@ -1139,7 +1161,18 @@ def tick():
         _pump_observers(now)
         _decay_mood(now)
         if _state["mood"] == "still":
-            _hold_still(now)
+            if _state["mode"] == "listening":
+                gesture = _take_gesture(now)
+                if gesture is not None:
+                    _perform_gesture(gesture, now)
+                else:
+                    _hold_still(now, clear_intentions=False)
+            elif _state["intentional_motion"]:
+                _tick_intentional_motion(now)
+            else:
+                # Stop an autonomous reaction first, but preserve a deliberate gesture that may
+                # have arrived in the same observer pump. It starts from listening next tick.
+                _hold_still(now, clear_intentions=False)
         else:
             _TICKS[_state["mode"]](now)
     except Exception:

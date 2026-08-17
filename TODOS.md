@@ -236,9 +236,14 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
 - [x] Keep precautions out of Rocky's conversational identity. The constructed model prompt no
   longer contains `safe`, `safety`, or `unsafe`, stop is a silent two-word behavior rather than a
   theme, and directional story moves have no extra obstacle veto or special reverse-repeat cap.
-  The explicitly requested boot/pause `still` behavior remains unchanged.
+  The explicitly requested boot/pause sensor-quiet `still` behavior remains.
 - [x] Make voice pause a physical pause: iOS sends `still` before silencing voice, engaging the
-  board's hard motor/sensor interlock. Resume retains the deterministic `still → exploring` wake.
+  board's immediate motor stop and sensor interlock. Resume retains the deterministic
+  `still → exploring` wake.
+- [x] Let Rocky's will override Still without waking the reflexes. The latest live log proved that
+  the board acknowledged every gesture in a story, then its next Still tick erased each one before
+  the wheels started. Still now blocks sound/touch/proximity movement while allowing correlated
+  Rocky gestures and routines to run; each chosen move returns to sensor-quiet Still afterward.
 - [x] Remove operator/instruction framing exposed by the next live session. Rocky said “You guide,
   Rocky follows,” invited “just say the word,” and announced waking/movement before tool calls.
   Movement is now explicitly Rocky's autonomous alien body language; projected causes say “I chose

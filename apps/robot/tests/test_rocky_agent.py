@@ -100,7 +100,7 @@ class StillInterlockTests(unittest.TestCase):
 
         self.assertEqual(state["mood"], "calm")
 
-    def test_still_tick_stops_motors_without_polling_movement_sensors(self):
+    def test_still_stops_sensor_motion_but_preserves_a_deliberate_gesture(self):
         payload, cyberpi, mbot2, ultrasonic, line_sensor = load_payload()
         state = payload["_state"]
         state.update(
@@ -109,7 +109,7 @@ class StillInterlockTests(unittest.TestCase):
             mode="startled",
             rpm=165,
             drive_started=500,
-            gesture_queue=[("spin", 5000, "act_test", 1, 2), ("wiggle", 8500, "act_test", 2, 2)],
+            gesture_queue=[("spin", 5000, "act_test", 1, 1)],
         )
 
         payload["tick"]()
@@ -118,10 +118,34 @@ class StillInterlockTests(unittest.TestCase):
         self.assertEqual(state["mode"], "listening")
         self.assertEqual(state["rpm"], 0)
         self.assertIsNone(state["drive_started"])
-        self.assertEqual(state["gesture_queue"], [])
+        self.assertEqual(len(state["gesture_queue"]), 1)
         self.assertEqual(cyberpi.loudness_reads, 0, "loudness cannot trigger a jump while still")
         self.assertEqual(ultrasonic.distance_reads, 0, "proximity cannot trigger a jump while still")
         self.assertEqual(line_sensor.reflect_reads, 0, "a jolt/floor change cannot trigger a spin while still")
+
+        payload["tick"]()  # start Rocky's queued spin from listening
+        payload["tick"]()  # advance it without reading any Still-suppressed sensors
+
+        self.assertEqual(state["mode"], "turning")
+        self.assertNotEqual(mbot2.drive_calls[-1], (0, 0))
+        self.assertEqual(cyberpi.loudness_reads, 0)
+        self.assertEqual(ultrasonic.distance_reads, 0)
+        self.assertEqual(line_sensor.reflect_reads, 0)
+
+        payload["utime"].now = 1000 + payload["GESTURE_SPIN_MS"]
+        payload["tick"]()  # movement duration ends; motors stop and settle
+        payload["utime"].now += payload["SETTLE_MS"]
+        payload["tick"]()  # settling returns to listening
+        payload["utime"].now += 1
+        payload["tick"]()  # Still resumes its zero-speed sensor interlock
+
+        self.assertEqual(state["mood"], "still")
+        self.assertEqual(state["mode"], "listening")
+        self.assertFalse(state["intentional_motion"])
+        self.assertEqual(mbot2.drive_calls[-1], (0, 0))
+        self.assertEqual(cyberpi.loudness_reads, 0)
+        self.assertEqual(ultrasonic.distance_reads, 0)
+        self.assertEqual(line_sensor.reflect_reads, 0)
 
     def test_going_still_interrupts_current_motion_immediately(self):
         payload, _cyberpi, mbot2, _ultrasonic, _line_sensor = load_payload()
@@ -134,19 +158,21 @@ class StillInterlockTests(unittest.TestCase):
         self.assertEqual(state["mood"], "still")
         self.assertEqual(state["mode"], "listening")
 
-    def test_only_an_awake_mood_releases_the_interlock(self):
-        payload, _cyberpi, mbot2, _ultrasonic, _line_sensor = load_payload()
+    def test_rocky_can_move_intentionally_without_leaving_still(self):
+        payload, cyberpi, mbot2, ultrasonic, line_sensor = load_payload()
         state = payload["_state"]
         state.update(booted=True, floor=0)
 
-        payload["_apply_intent"]({"type": "gesture", "gesture": "spin", "id": "asleep"}, 1000)
+        payload["_apply_intent"]({"type": "gesture", "gesture": "forward", "id": "chosen"}, 1000)
         payload["tick"]()
-        self.assertFalse(any(left or right for left, right in mbot2.drive_calls))
+        payload["tick"]()
 
-        payload["_apply_intent"]({"type": "mood", "mood": "exploring", "id": "wake"}, 1001)
-        payload["tick"]()
-        payload["tick"]()  # first awake tick notices the 5 cm obstacle; second performs the jolt
+        self.assertEqual(state["mood"], "still")
+        self.assertEqual(state["mode"], "gesturing")
         self.assertTrue(any(left or right for left, right in mbot2.drive_calls))
+        self.assertEqual(cyberpi.loudness_reads, 0)
+        self.assertEqual(ultrasonic.distance_reads, 0)
+        self.assertEqual(line_sensor.reflect_reads, 0)
 
     def test_mixed_routine_keeps_every_step_and_correlation_id(self):
         payload, *_ = load_payload()
