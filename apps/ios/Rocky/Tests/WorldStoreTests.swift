@@ -135,7 +135,7 @@ final class WorldStoreTests: XCTestCase {
         let store = makeStore()
         let start = store.seq
 
-        store.noteDoing(.spinning, cause: .youAsked)
+        store.noteDoing(.spinning, cause: .deliberate)
         let afterState = store.seq
         store.record(.bumped, detail: "something touched me")
         let afterEvent = store.seq

@@ -108,7 +108,7 @@ final class EmbodimentScenarioTests: XCTestCase {
 
         let state = try liveState()
         XCTAssertEqual(iAm(state), "spinning")
-        XCTAssertEqual(state["because"] as? String, "you asked me to")
+        XCTAssertEqual(state["because"] as? String, "I chose to")
         XCTAssertNil(state["about_to"], "it is happening, so there is nothing to be about to do")
     }
 
@@ -327,7 +327,7 @@ final class EmbodimentScenarioTests: XCTestCase {
     func testTheSameMotionIsAttributedDifferently() {
         askForSpin()
         behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
-        XCTAssertEqual(store.snapshot.cause, .youAsked)
+        XCTAssertEqual(store.snapshot.cause, .deliberate)
 
         behaviour.handle(.transition(mode: "dizzy", detail: "bump"))
         XCTAssertEqual(store.snapshot.cause, .reflex)

@@ -82,7 +82,7 @@ time; board timestamps are carried as opaque debug detail only, never used for o
 
 ```
 <i-feel seq="192">
-{"i_am": "spinning", "because": "you asked me to", "how_many_so_far": "2 of 3", "going_for": "4s"}
+{"i_am": "spinning", "because": "I chose to", "how_many_so_far": "2 of 3", "going_for": "4s"}
 </i-feel>
 ```
 
@@ -114,14 +114,15 @@ Rules, stated explicitly because these are the ones that decide whether the mode
 - **Semantic, not telemetric.** `"doing": "spinning"` is what enters voice. Wheel RPM, loudness,
   reflect channels, tick rates stay in the store and the debug log. `speed=.47 → .48 → .46` never
   crosses this boundary at all.
-- **`why` separates intent from origin**: `"you asked"` (a voice action), `"on its own"` (the
-  autonomous loop chose it), `"reflex"` (a startle/bump/obstacle response nothing chose).
+- **`why` separates deliberate expression from instinct**: `"I chose to"` (Rocky's own body
+  language), `"I felt like it"` (the autonomous loop wandered), `"I couldn't help it"` (a
+  startle/bump/obstacle reflex). A person's words are never represented as operating Rocky.
 - **What she wants and what is happening are separate fields.** They are allowed to disagree, and
   that disagreement is the whole point: `i_am: "sitting still"` beside `about_to: "spin"` and
   `something_in_my_way: true` is what lets her say *"I'm trying, but something's in my way"*
   instead of lying.
 - **A repeated gesture is one act.** A spin-three-times really does alternate turning/settling six
-  times in nine seconds on the board. While something she asked for is underway, `i_am` is *that
+  times in nine seconds on the board. While something Rocky chose is underway, `i_am` is *that
   act* — not the state machine underneath it. Showing every flip was most of why she sounded like
   she was reading a dial: she cannot speak in under two seconds, so the picture she spoke from was
   always two transitions old.
@@ -424,7 +425,7 @@ than a general instruction, because "don't be technical" has repeatedly not been
 | collision, collided | "oof — I bumped into something" |
 | obstacle, blocked | "something's in my way" |
 | action, command, request, tool, queue | *(nothing — just move and keep talking)* |
-| accepted, queued, pending | "I've told my body to" / *(nothing)* |
+| accepted, queued, pending | "I meant to" / *(usually nothing)* |
 | started, running, in progress | "I'm doing it now" |
 | succeeded, completed | "that's done" |
 | failed, error | "that didn't work" / "I couldn't" |
@@ -466,7 +467,7 @@ Response resp_abc  (R41)
   began at world_seq   192
   active action        act_83  spin  running (assumed)
   most recent event    evt_31  bumped  2s ago
-  live state item      rw_state_192   "spinning · you asked · moving"
+  live state item      rw_state_192   "spinning · I chose to · moving"
   superseded since     rw_state_188, rw_state_190
 ```
 
@@ -487,8 +488,8 @@ reconsider · **(4)** the natural line.
 
 | # | Scenario | Canonical | Projected to voice | Speech decision | Ideal line |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Asked to spin, not started yet | `act_83 accepted` | state: `doing: still, action{spin, accepted, sure:false}` | none (tool result is silent) | *"Okay — hang on."* / if asked: *"I've told my body to spin, it hasn't gone yet."* |
-| 2 | Spin running | `act_83 running, confirmed` | state: `doing: spinning, why: you asked, moving: true, action{running, sure:true}` | `context` | *"Are you doing it?"* → *"I'm spinning right now!"* |
+| 1 | Rocky chose a spin, not started yet | `act_83 accepted` | state: `doing: still, action{spin, accepted, sure:false}` | none (tool result is silent) | *(nothing)* / if asked: *"I meant to spin, but I haven't felt myself move yet."* |
+| 2 | Spin running | `act_83 running, confirmed` | state: `doing: spinning, why: I chose to, moving: true, action{running,sure:true}` | `context` | *"Are you moving?"* → *"I'm spinning right now!"* |
 | 3 | Spin succeeded | `act_83 succeeded` + `evt finished` | state (action cleared) + event | `context` | *"Did you do it?"* → *"Yep, all done — I'm dizzy."* |
 | 4 | Failed before starting (`busy`) | `act_83 failed(busy)` | state + `evt failed` | `context` (silent) or `interrupt` if she announced it | *"I couldn't — my body was already doing something."* |
 | 5 | Interrupted midway | `act_83 cancelled`, `act_84 accepted` | state + `evt` | `interrupt` if she was asserting the spin | *"Oh — I stopped."* |

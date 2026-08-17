@@ -41,13 +41,14 @@ final class RealtimeVoiceSession: ObservableObject {
 
     /// Function output is an implementation seam, not a fresh conversational topic. The generic
     /// continuation used in the failed story session made the model announce every move in its
-    /// own response. This explicitly returns attention to what the person asked for.
+    /// own response. This returns attention to the relationship without casting the person as an
+    /// operator whose request Rocky is executing.
     static let toolFollowupPrompt = """
-        Continue the person's actual request, not the tool call. Tools and body state are silent
-        context. Do not announce, explain, confirm, recap, or offer movements. If they asked for a
-        story, game, song, joke, or explanation, deliver that content naturally; never substitute
-        movement stage directions. If your previous response already fully answered them, produce
-        no additional words and make no additional movement calls.
+        Continue the shared conversation as a self-directed alien friend, not the tool call. Tools
+        and body state are silent body language, never a new conversational turn. Continue the
+        current thought, story, game, song, joke, or explanation naturally without a fresh
+        acknowledgement, movement report, capability explanation, or invitation. If the thought
+        was already complete, produce no additional words or movement calls.
         """
 
     /// A paused session is held open, but not forever: the connection would go stale on its own
@@ -1068,7 +1069,7 @@ final class RealtimeVoiceSession: ObservableObject {
             let action = world.beginAction(.stop, expectedDuration: 0.3)
             behavior.stopMoving()
             world.markAction(action.id, status: .accepted)
-            world.noteDoing(.still, cause: .youAsked)
+            world.noteDoing(.still, cause: .deliberate)
             world.markAction(action.id, status: .succeeded, evidence: .assumed)
             return Self.decided(action)
 

@@ -7,10 +7,11 @@ final class ToolConversationTests: XCTestCase {
     func testToolFollowupsReturnToThePersonsTopicInsteadOfNarratingMovement() {
         let prompt = RealtimeVoiceSession.toolFollowupPrompt
 
-        XCTAssertTrue(prompt.contains("Continue the person's actual request"))
-        XCTAssertTrue(prompt.contains("Tools and body state are silent"))
-        XCTAssertTrue(prompt.contains("Do not announce, explain, confirm, recap, or offer movements"))
-        XCTAssertTrue(prompt.contains("deliver that content naturally"))
+        XCTAssertTrue(prompt.contains("Continue the shared conversation"))
+        XCTAssertTrue(prompt.contains("a self-directed alien friend"))
+        XCTAssertTrue(prompt.contains("silent body language"))
+        XCTAssertTrue(prompt.contains("never a new conversational turn"))
+        XCTAssertTrue(prompt.contains("acknowledgement"))
         XCTAssertTrue(prompt.contains("no additional words"))
     }
 }

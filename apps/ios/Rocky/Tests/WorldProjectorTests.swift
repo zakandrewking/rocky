@@ -37,7 +37,7 @@ final class WorldProjectorTests: XCTestCase {
     func testTheNewestSnapshotOutranksTheOnesBeforeIt() throws {
         let (store, channel, projector) = make()
         store.heard()
-        store.noteDoing(.spinning, cause: .youAsked)
+        store.noteDoing(.spinning, cause: .deliberate)
         projector.flush("test")
         store.noteDoing(.still, cause: .onItsOwn)
         projector.flush("test")
@@ -136,7 +136,7 @@ final class WorldProjectorTests: XCTestCase {
     func testResetForgetsTheConversationButNotTheWorld() {
         let (store, _, projector) = make()
         store.heard()
-        store.noteDoing(.spinning, cause: .youAsked)
+        store.noteDoing(.spinning, cause: .deliberate)
         projector.flush("test")
 
         projector.reset()
@@ -152,14 +152,14 @@ final class WorldProjectorTests: XCTestCase {
         snapshot.seq = 192
         snapshot.body = .here
         snapshot.doing = .spinning
-        snapshot.cause = .youAsked
+        snapshot.cause = .deliberate
 
         let rendered = WorldProjector.render(snapshot)
         XCTAssertTrue(rendered.hasPrefix("<i-feel seq=\"192\">"))
         let fields = try Self.fields(in: rendered)
 
         XCTAssertEqual(fields["i_am"] as? String, "spinning")
-        XCTAssertEqual(fields["because"] as? String, "you asked me to")
+        XCTAssertEqual(fields["because"] as? String, "I chose to")
         // Absent, not false: an omitted field means "not known", so a `blocked: false` would be a
         // claim rather than a silence.
         XCTAssertNil(fields["something_in_my_way"])
@@ -200,7 +200,7 @@ final class WorldProjectorTests: XCTestCase {
         store.markAction(spin.id, status: .running, evidence: .confirmed)
 
         for mode in [Doing.turning, .still, .spinning, .turning, .still, .spinning] {
-            store.noteDoing(mode, cause: .youAsked)
+            store.noteDoing(mode, cause: .deliberate)
             projector.flush("test")
         }
 

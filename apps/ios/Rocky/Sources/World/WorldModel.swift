@@ -240,14 +240,14 @@ enum Doing: String, Sendable, Codable {
 /// Why the body is doing it. Separating this from *what* is what keeps Rocky from taking credit
 /// for a reflex, or apologising for something she chose.
 enum DoingCause: String, Sendable, Codable {
-    case youAsked, onItsOwn, reflex, unknown
+    case deliberate, onItsOwn, reflex, unknown
 
     /// First person, and a complete thought. "on its own" invites Rocky to talk about her body as
     /// a separate thing that has its own reasons; "I felt like it" is the same fact said as
     /// herself, which is the only way she ever gets to say it out loud.
     var phrase: String? {
         switch self {
-        case .youAsked: return "you asked me to"
+        case .deliberate: return "I chose to"
         case .onItsOwn: return "I felt like it"
         case .reflex: return "I couldn't help it"
         case .unknown: return nil

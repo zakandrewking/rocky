@@ -214,8 +214,16 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   a tiny stage-direction story — because the model could only send one gesture at a time and every
   tool result prompted an unsteered continuation. The first gesture could also start late enough
   to be credited to the second action. `robot_routine` now submits the whole choreography once;
-  tool follow-ups explicitly return to the person's request; and the prompt treats ordinary body
+  tool follow-ups explicitly return to the shared topic; and the prompt treats ordinary body
   language/state as silent context instead of conversational material.
+- [x] Remove operator/instruction framing exposed by the next live session. Rocky said “You guide,
+  Rocky follows,” invited “just say the word,” and announced waking/movement before tool calls.
+  Movement is now explicitly Rocky's autonomous alien body language; projected causes say “I chose
+  to,” tools describe private choices rather than obedience, and follow-ups return to the shared
+  relationship rather than a person's “request.” Safety stop remains immediate.
+- [x] Rebalance Rocky's verbal tics: “Understand.” is now an occasional beat instead of the default;
+  signature connection phrases and rotating contextual easter eggs are encouraged more often, with
+  spacing rules so one repeated habit is not simply replaced by another.
 - [x] D: proactive narration of startle/bump, rate-limited and suppressed while already speaking.
 - [x] **Test the slice on hardware.** Live iOS sessions have confirmed hello/snapshots, autonomous
   transitions, mood changes, gestures, and the `still` boot interlock on the real board. The mixed

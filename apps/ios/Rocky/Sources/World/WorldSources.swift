@@ -92,7 +92,7 @@ final class BehaviorWorldSource {
             store.noteDoing(.still, cause: .onItsOwn)
         case "turning":
             if isGesture(detail) {
-                store.noteDoing(.spinning, cause: .youAsked)
+                store.noteDoing(.spinning, cause: .deliberate)
             } else if detail.contains("obstacle") {
                 store.noteDoing(.turning, cause: .reflex)
             } else {
@@ -101,7 +101,7 @@ final class BehaviorWorldSource {
         case "startled":
             store.noteDoing(.backingAway, cause: .reflex)
         case "recovering":
-            store.noteDoing(.lookingAround, cause: isGesture(detail) ? .youAsked : .reflex)
+            store.noteDoing(.lookingAround, cause: isGesture(detail) ? .deliberate : .reflex)
         case "dizzy":
             store.noteDoing(.spinning, cause: .reflex)
         default:

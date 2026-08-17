@@ -79,3 +79,14 @@ describe("Fathom", () => {
     expect(FATHOM.cadence.extremeEmphasisRepeats).not.toBe(ROCKY.cadence.extremeEmphasisRepeats);
   });
 });
+
+describe("Rocky", () => {
+  it("favors signature connection beats over a repeated acknowledgement", () => {
+    expect(ROCKY.persona).toContain('"Understand." is a regular Rocky beat');
+    expect(ROCKY.persona).toContain("once every five or six turns");
+    expect(ROCKY.persona).toContain("These are frequent Rocky connection beats");
+    expect(ROCKY.persona).toContain("roughly one of every four turns");
+    expect(ROCKY.persona).toContain('"Amaze. Amaze. Amaze."');
+    expect(ROCKY.persona).toContain('"Fist my bump."');
+  });
+});

@@ -48,7 +48,8 @@ final class BodyCapabilityTests: XCTestCase {
         let text = instructions(OpenAIRealtimeMinter.withoutRobotBody(config()))
 
         XCTAssertTrue(text.hasPrefix("You are Someone."))
-        XCTAssertTrue(text.contains("not moving"), "an absent body is not quietly still, it is absent")
+        XCTAssertTrue(text.contains("while this connection is absent"))
+        XCTAssertTrue(text.contains("Do not pretend or narrate imaginary movement"))
     }
 
     func testAnUnrecognisableConfigIsLeftAlone() {

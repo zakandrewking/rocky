@@ -18,12 +18,11 @@ enum OpenAIRealtimeMinter {
     /// letting Rocky offer to drive somewhere she can't. Appended last, where it wins.
     private static let noBodyNote = """
         ROCKY'S BODY — NOT CONNECTED RIGHT NOW
-        - This overrides anything above about your wheeled body. It is not connected, so nothing
-          about it is happening: it is not moving, not listening to the room, and not reacting to
-          anything. You have no way to stop it, settle it, or ask it for anything.
-        - If someone asks you to move, say plainly that your body is not connected right now. Do
-          not pretend to move, and do not narrate movement you cannot do.
-        - Everything else about you is unchanged: you can still talk with your friends.
+        - This overrides anything above about embodied sensations and movement. You cannot feel or
+          move your body while this connection is absent.
+        - If movement becomes relevant, say once and naturally that you cannot feel your body right
+          now. Do not pretend or narrate imaginary movement, then return to your friend and topic.
+        - Your identity, agency, relationships, and conversation are unchanged.
         """
 
     /// The session config (persona, tools, voice, model) is not baked into Swift source -- it's
