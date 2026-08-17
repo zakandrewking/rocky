@@ -196,8 +196,8 @@ tuning record and the rollback; `pnpm robot:check` fails if they drift.
 
 The shape, and why: the motion loop decides at ~20Hz with reactions lasting 0.3-4s, while the
 voice character cannot speak in under ~2s. So state travels as *recent history* ("4s ago something
-loud startled me") and control travels as *intentions* honoured at the loop's natural seams --
-never as "what are you doing right now" and "do this now". Stop is the one real imperative.
+loud startled me") and control travels as Rocky's own *intentions*, never as human remote control.
+Once chosen, a single gesture now takes the motors immediately. Stop is the one human imperative.
 
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
   stream on 8768, UDP beacon under a different service name so the motion-agent discovery ignores
@@ -209,10 +209,10 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
 - [x] Finish the disposition lifecycle: rename ambiguous `normal` to `exploring` end-to-end, let
   temporary `excitable` decay to `calm` after 45 seconds, and execute payload module-level code
   under hardware stubs in `robot:check` so a boot-killing definition-order error cannot ship.
-- [x] C: queued gestures (spin, wiggle) with a TTL, consumed only in `listening` so a reflex can
-  never be interrupted by an intention. Mixed 2–8 move routines are one correlated action; each
-  physical beat carries the caller id and step, so a late transition cannot be mistaken for a
-  newer wish.
+- [x] C: correlated gestures and mixed 2–8 move routines. A newly chosen single gesture now
+  preempts autonomous motion immediately; repeats and routine steps stay queued between their
+  bounded beats. Each physical beat carries the caller id and step, so a late transition cannot
+  be mistaken for a newer wish.
 - [x] Fix story-with-movement and movement narration from the 2026-08-16 phone logs. Both tries
   became three assistant responses — an announcement plus spin, an announcement plus wiggle, then
   a tiny stage-direction story — because the model could only send one gesture at a time and every
@@ -233,6 +233,11 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now
   default to embodied performances when the robot is present and can use forward, fast forward,
   backward, left, right, turn-around, spin, and wiggle beats.
+- [x] Make a chosen directional move substantial and immediate. The 2026-08-16 live log showed
+  two `backward` choices acknowledged in about 220ms but waiting 5.75s and 3.14s for autonomous
+  exploration to yield; each then lasted only 450ms before forward motion reclaimed the motors.
+  Single gestures now preempt the autonomous state in the observer pump, forward/backward last
+  1.2s at 80 RPM, and tool follow-up cannot narrate waiting, momentum, or promised future motion.
 - [x] Keep precautions out of Rocky's conversational identity. The constructed model prompt no
   longer contains `safe`, `safety`, or `unsafe`, stop is a silent two-word behavior rather than a
   theme, and directional story moves have no extra obstacle veto or special reverse-repeat cap.
@@ -298,9 +303,9 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   tests are the wire-format record.
 - [x] Found while collapsing them: the world model was promoting an accepted intention to
   `running`/`assumed` after 0.6s. That was right for the motion agent, which began immediately and
-  never said so -- and exactly wrong for this board, which deliberately waits for a safe seam and
-  *tells you* when it starts. Rocky would have believed she was spinning during the one window the
-  board was telling her she was not. Nothing is assumed to have started any more.
+  never said so -- and exactly wrong for this board's correlated reporting. Rocky would have
+  believed she was moving before the board said it began. Single gestures now begin immediately,
+  but nothing is assumed to have started: the correlated transition remains the evidence.
 
 ## Embodiment: what voice knows about the robot (apps/ios/docs/embodiment.md)
 

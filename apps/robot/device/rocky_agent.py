@@ -6,8 +6,9 @@
 #
 # This is a body that moves on its own and that Rocky *collaborates with*, rather than one she
 # drives. She can see what it has been doing, change how wound up it is, ask it for a gesture, and
-# stop it -- and those last three are intentions, not commands: the loop honours them at its own
-# natural seams. "Stop" is the single real imperative.
+# stop it. Mood and movement remain Rocky's choices rather than a person's remote control, but
+# once Rocky chooses a gesture the body yields its autonomous motion immediately. "Stop" is the
+# single imperative that bypasses Rocky's discretion too.
 #
 # This is step16_loudness_drive_sticky.py
 # (v11 of the loudness-driving experiment) with an observation layer added -- the motion loop and
@@ -23,9 +24,9 @@
 # gap is recent history: "4 seconds ago something very loud startled me, I ran for two seconds,
 # I have been listening since." That is a true sentence whenever it arrives.
 #
-# Later phases (see TODOS.md) add the other direction as *intentions* rather than commands --
-# queued gestures consumed at this loop's natural seams, mood as multipliers over the constants
-# below, and one real imperative (stop). Nothing in this file's tuning changes for any of that.
+# Later phases (see TODOS.md) added the other direction as Rocky's *intentions* rather than direct
+# human commands: immediate self-chosen gestures, mood as multipliers over the constants below,
+# and one real imperative (stop).
 #
 # --------------------------------------------------------------------------------------------
 # ORIGINAL step16 HEADER FOLLOWS
@@ -341,8 +342,8 @@ _state = {
     "evt_last_retry": 0,
     "evt_last_snapshot": 0,
     "evt_buffer": "",
-    # Phase B/C: what the voice character has asked for. Advisory -- the motion loop decides when
-    # (and whether) to honour it. "stop" is the one exception and applies immediately.
+    # Phase B/C: Rocky's own physical choices. A single gesture takes over immediately; routines
+    # retain a queue between their correlated beats. "stop" is the one human imperative.
     "dizzy_streak": 0,
     "dizzy_last_at": 0,
     "bump_suppressed_until": 0,
@@ -389,12 +390,13 @@ GESTURES = ("spin", "wiggle", "forward", "fast_forward", "backward", "turn_left"
 MAX_GESTURE_REPEATS = 10  # "spin ten times" should work; beyond that it stops being playful
 MAX_ROUTINE_STEPS = 8  # long enough for a story beat sequence, bounded enough to remain stoppable
 GESTURE_SPIN_MS = TURN_MS * 2  # TURN_MS is the tuned ~180 degrees, so a full turn is two of them
-# Story travel uses compact physical beats so it can stay synchronized with spoken scenes.
-GESTURE_MOVE_RPM = 70
+# A directional choice must read as real travel, not a twitch lost between autonomous movements.
+# These remain bounded beats; the change is that they last long enough to be unmistakable.
+GESTURE_MOVE_RPM = 80
 GESTURE_FAST_RPM = 125
-GESTURE_FORWARD_MS = 700
-GESTURE_FAST_MS = 550
-GESTURE_BACKWARD_MS = 450
+GESTURE_FORWARD_MS = 1200
+GESTURE_FAST_MS = 900
+GESTURE_BACKWARD_MS = 1200
 GESTURE_QUARTER_TURN_MS = TURN_MS // 2
 GESTURE_TTL_MS = 6000  # an intention the loop never got a safe moment to honour expires rather
 # than firing minutes later, long after the moment that prompted it has passed
@@ -509,6 +511,7 @@ def _apply_intent(message, now):
                     "times": times,
                 }
             )
+            _start_gesture_now(now)
         return
 
     if kind == "routine":
@@ -538,16 +541,16 @@ def _queue_gestures(moves, action_id, now):
     total = len(moves)
     queued = []
     for index, name in enumerate(moves):
-        # The first step still expires quickly if no safe seam appears. Each later step gets an
-        # additional movement budget, so a valid routine cannot expire merely because its own
-        # earlier spins took time to complete.
+        # A routine's first step still expires quickly if no listening boundary appears. Direct
+        # single gestures bypass this queue immediately. Each later routine step gets an added
+        # movement budget so its own earlier spins cannot make it expire.
         expires = utime.ticks_add(now, GESTURE_TTL_MS + index * GESTURE_STEP_BUDGET_MS)
         queued.append((name, expires, action_id, index + 1, total))
     _state["gesture_queue"] = queued
 
 
 def _take_gesture(now):
-    """Consumes one valid task. Called only from listening, so reflexes always win."""
+    """Consumes one valid task, either immediately or between queued routine/repeat beats."""
     queue = _state["gesture_queue"]
     if not queue:
         return None
@@ -565,6 +568,25 @@ def _take_gesture(now):
         )
         return None
     return task
+
+
+def _start_gesture_now(now):
+    """Lets Rocky's deliberate choice take the motors from autonomous behavior immediately."""
+    task = _take_gesture(now)
+    if task is None:
+        return
+
+    # Clear only the autonomous commitment being replaced. Any remaining repeats stay queued and
+    # begin ahead of sensor-driven exploration when this beat returns to listening.
+    mbot2.drive_speed(0, 0)
+    _state["level"] = 0.0
+    _state["rpm"] = 0
+    _state["drive_started"] = None
+    _state["return_to"] = "listening"
+    _state["intentional_motion"] = False
+    _perform_gesture(task, now)
+    # Apply the new motor profile inside the observer pump instead of waiting one more 20Hz tick.
+    _tick_intentional_motion(now)
 
 
 def _perform_gesture(task, now):
@@ -953,8 +975,8 @@ def _tick_listening(now):
 
     gesture = _take_gesture(now)
     if gesture is not None:
-        # Consumed here and nowhere else: reflexes above have already had their chance, so an
-        # intention can never interrupt a flinch, a bump or an obstacle reaction.
+        # Repeats and routine steps resume ahead of autonomous exploration. A new single gesture
+        # already began immediately when its observer message arrived.
         _perform_gesture(gesture, now)
         return
 
@@ -1027,7 +1049,7 @@ def _tick_settling(now):
 
 
 def _tick_gesturing(now):
-    """Runs one directional story beat."""
+    """Runs one bounded directional choice."""
     if utime.ticks_diff(now, _state["mode_start"]) >= _state["gesture_ms"]:
         mbot2.drive_speed(0, 0)
         _state["return_to"] = "listening"

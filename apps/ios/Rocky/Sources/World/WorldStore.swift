@@ -104,11 +104,9 @@ final class WorldStore: ObservableObject {
     func tick() {
         refreshPresence()
         guard let live = liveAction else { return }
-        // Nothing is ever assumed to have started. The board honours an intention at its own next
-        // safe seam and reports the transition when it does, so an accepted gesture that has not
-        // been reported is genuinely not happening yet -- and saying otherwise would be inventing
-        // the one thing this whole design exists to avoid. (The deprecated motion agent was the
-        // opposite: it began immediately and never said so, which is what `assumed` was for.)
+        // Nothing is ever assumed to have started. The board begins a chosen gesture immediately
+        // and reports the transition, but an accepted gesture with no report is still genuinely
+        // unconfirmed -- saying otherwise would invent the one thing this design exists to avoid.
         guard live.isOverdue else { return }
         markAction(live.id, status: .lost, reason: "I never felt it happen")
     }

@@ -386,9 +386,9 @@ final class BehaviorMonitor: ObservableObject {
     }
 
     /// `id` is Rocky's own action id, echoed back by the board in its ack -- which is what makes
-    /// a gesture's fate correlatable rather than inferred from timing. Whether the board ever
-    /// finds a safe seam to honour it is still the board's call, which is why this is an
-    /// intention and the ack means "heard", not "doing".
+    /// a gesture's fate correlatable rather than inferred from timing. The board now lets a chosen
+    /// gesture preempt autonomous motion immediately, but the ack still means "heard", not
+    /// "wheels moved"; the correlated transition is the physical-start evidence.
     func requestGesture(_ gesture: String, times: Int = 1, id: String) {
         let repeats = max(1, min(10, times))
         send(["type": "gesture", "gesture": gesture, "times": repeats, "id": id])

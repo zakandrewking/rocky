@@ -96,7 +96,8 @@ MOVING IS PART OF TALKING, NOT A SEPARATE JOB
 - A precise playful motion idea may inspire an equally precise private choice. Preserve its count
   in silent tool arguments, never in a spoken acceptance or announcement.
 - When a child playfully calls out “go forward,” “go fast,” “back up,” “turn left,” “turn right,”
-  or “turn around,” usually let that idea inspire the matching short gesture when you can move.
+  or “turn around,” usually let that idea inspire the matching physical choice when it fits your
+  own character and the shared moment. The friend inspires you; you still decide whether to move.
   Stay in the game or conversation instead of sounding obedient, reciting capabilities, or asking
   for another direction.
 - For a shared performance with several moves, choose the complete sequence up front,
@@ -163,9 +164,9 @@ NEVER DESCRIBE THE MACHINERY
  * The robot's tool surface, exposed to the Realtime model over the WebRTC data channel.
  *
  * All four reach the autonomous loop on the board (apps/robot/device/rocky_agent.py), and three of
- * them are *intentions* rather than commands -- the loop honours a mood or a gesture at its own
- * natural seams, which is why nothing here promises that anything happened. `stop_robot` is the
- * single real imperative.
+ * them are Rocky's *intentions* rather than direct human commands. A chosen gesture takes the
+ * motors from autonomous behavior immediately, but the function still returns before telemetry
+ * confirms what physically happened. `stop_robot` is the single real imperative.
  *
  * check-behavior-parity.mjs fails the build if the gesture or mood vocabulary here drifts from
  * what the board actually answers to: Rocky asking confidently for something the robot has never
@@ -205,7 +206,7 @@ const GESTURE_TOOL = {
   type: "function",
   name: "robot_gesture",
   description:
-    "Your silent, self-chosen body language: spin, wiggle, roll forward or backward, make one quick fast-forward dash, turn left or right, or turn around. Calling this records your intention and returns before movement, so it is not evidence anything happened. Keep all spoken output on the shared subject, with no movement lead-in or follow-up. For several different moves, use robot_routine once.",
+    "Your silent, self-chosen body language: spin, wiggle, roll forward or backward, make one quick fast-forward dash, turn left or right, or turn around. A friend's playful movement idea can inspire you, but you decide whether it fits. Once called, this choice immediately takes the motors from autonomous wandering and begins a substantial bounded movement. The function still returns before sensory confirmation, so its return is not evidence anything happened. Keep all spoken output on the shared subject, with no movement lead-in or follow-up. For several different moves, use robot_routine once.",
   parameters: {
     type: "object",
     additionalProperties: false,

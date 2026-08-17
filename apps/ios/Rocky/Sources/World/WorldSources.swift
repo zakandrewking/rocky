@@ -49,9 +49,9 @@ final class BehaviorWorldSource {
                 confirmedFeeling = true
                 return
             }
-            // A gesture ack means the board has the wish in hand. Not "it is happening" -- that
-            // waits for the loop's next safe seam, which may be a second or two away, and claiming
-            // otherwise is exactly the kind of small lie this design exists to prevent.
+            // A gesture ack means the board has the wish in hand. It now begins the gesture in the
+            // same observer pump, but "heard" is still not motor evidence; that arrives as the
+            // correlated physical transition immediately after.
             guard (of == "gesture" || of == "routine"), let id, id == gestureActionId,
                 let action = store.action(id: id)
             else { return }

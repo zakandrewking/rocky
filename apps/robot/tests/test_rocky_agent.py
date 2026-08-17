@@ -174,6 +174,34 @@ class StillInterlockTests(unittest.TestCase):
         self.assertEqual(ultrasonic.distance_reads, 0)
         self.assertEqual(line_sensor.reflect_reads, 0)
 
+    def test_backward_choice_immediately_takes_over_autonomous_driving(self):
+        payload, _cyberpi, mbot2, _ultrasonic, _line_sensor = load_payload()
+        state = payload["_state"]
+        state.update(
+            booted=True,
+            floor=0,
+            mood="exploring",
+            mode="driving",
+            level=0.8,
+            rpm=110,
+            drive_started=200,
+        )
+
+        payload["_apply_intent"](
+            {"type": "gesture", "gesture": "backward", "id": "act_back"}, 1000
+        )
+
+        self.assertEqual(state["mode"], "gesturing")
+        self.assertTrue(state["intentional_motion"])
+        self.assertIsNone(state["drive_started"])
+        self.assertEqual(state["gesture_ms"], payload["GESTURE_BACKWARD_MS"])
+        self.assertGreaterEqual(state["gesture_ms"], 1000)
+        self.assertEqual(
+            mbot2.drive_calls[-1],
+            (-payload["GESTURE_MOVE_RPM"], payload["GESTURE_MOVE_RPM"]),
+        )
+        self.assertEqual(state["gesture_queue"], [])
+
     def test_mixed_routine_keeps_every_step_and_correlation_id(self):
         payload, *_ = load_payload()
 
@@ -189,7 +217,7 @@ class StillInterlockTests(unittest.TestCase):
         self.assertEqual((third[0], third[2], third[3:]), ("spin", "act_story", (3, 3)))
         self.assertIsNone(payload["_take_gesture"](1004))
 
-    def test_directional_story_gestures_are_short_bounded_motor_profiles(self):
+    def test_directional_gestures_are_bounded_motor_profiles(self):
         payload, _cyberpi, mbot2, ultrasonic, _line_sensor = load_payload()
         state = payload["_state"]
         state.update(booted=True, floor=0, mood="exploring")

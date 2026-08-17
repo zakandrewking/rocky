@@ -94,10 +94,10 @@ The authoritative record lives in `World/WorldStore.swift`, not in the conversat
 one `<robot-state>` is ever live: projecting a new one deletes the old item, so there is no stale
 snapshot for a response to read.
 
-The point of all that is that Rocky can be honest about what she does *not* know — "I've told my
-body to spin, but it hasn't gone yet", "that finished a few seconds ago", "I've lost track of my
-body" — instead of announcing a movement because a function returned true. The board honours a
-gesture at its own next safe seam, which can be a second or two away, so that gap is real.
+The point of all that is that Rocky can be honest about what she does *not* know — "that finished
+a few seconds ago", "I've lost track of my body" — instead of announcing a movement because a
+function returned true. A chosen gesture now takes over autonomous motion immediately, while the
+correlated board transition remains the evidence that it physically began.
 [`docs/embodiment.md`](docs/embodiment.md) is the full design, including the scenario matrix.
 
 To see what she knew: tap the state chip, then **body: what rocky knows…**. The timeline is

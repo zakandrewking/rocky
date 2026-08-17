@@ -62,8 +62,8 @@ final class EmbodimentScenarioTests: XCTestCase {
 
     // MARK: - Asked for something, but nothing has happened yet
 
-    /// "Are you doing it?" — no. She asked, the board has not got to it, and that gap is real:
-    /// this body honours an intention at its own next safe seam, which can be seconds away.
+    /// "Are you doing it?" — not known yet. The board begins a chosen gesture immediately, but
+    /// socket acceptance still arrives before the correlated transition that proves it started.
     func testAcceptedButNotStarted() throws {
         askForSpin()
         projector.flush("test")

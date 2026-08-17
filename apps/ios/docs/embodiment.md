@@ -196,11 +196,11 @@ The second axis is the one that makes this honest:
 
 **`evidence: confirmed | assumed | none`.**
 
-The board honours an intention at its own next safe seam, and reports the transition when it does.
-So between "she asked" and "it started" there is a real gap in which nothing is happening yet — and
-in which nothing may ever happen, since a gesture the loop never finds a free moment for expires.
-`accepted` says exactly that, `"sure": false` says it in the projection, and the system prompt
-turns it into *"I've told my body to spin — it hasn't gone yet"* rather than *"I'm spinning."*
+Once Rocky chooses a single gesture, the board immediately interrupts autonomous movement and
+reports the correlated transition. Socket acceptance still arrives first, so there remains a
+small but meaningful evidence gap: `accepted` means the board heard Rocky; `started`/`running`
+means it reported entering that physical movement. Nothing claims wheel motion from a successful
+function return alone. Queued repeats and routines retain their correlated step boundaries.
 
 **Nothing is ever assumed to have started.** Only the board can say that, and it does. `assumed`
 survives for the one case with nothing to wait on — a stop, where the motors are commanded off and

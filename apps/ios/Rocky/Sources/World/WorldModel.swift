@@ -10,10 +10,9 @@ import Foundation
 ///    becomes an event and is never superseded). That single rule removes every "which one does
 ///    this go in" judgement call.
 /// 2. **Status and evidence are separate axes.** `running` says what we believe; `evidence` says
-///    why we believe it. The board honours an intention at its own next safe seam, so between
-///    "she asked" and "it started" there is a real gap in which nothing is happening yet and
-///    nothing may ever happen -- and Rocky has to be able to say so. Inventing a confirmation we
-///    never received is exactly how a voice ends up asserting embodied facts it does not have.
+///    why we believe it. A chosen gesture preempts autonomous movement immediately, but socket
+///    acceptance is still not evidence that motors moved. Rocky waits for the correlated physical
+///    transition rather than inventing confirmation from a successful function return.
 
 /// The world's own clock: a monotonic counter bumped on every mutation, so any two observations
 /// can be ordered and any stale one can be recognised. Not the board's clock -- `utime.ticks_ms()`

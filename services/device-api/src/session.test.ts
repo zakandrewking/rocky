@@ -113,6 +113,7 @@ describe("createDeviceSessionConfig", () => {
   it("keeps movement silent and gives multi-beat performances one routine call", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const tools = config.tools as Array<{ name: string; description: string; parameters: unknown }>;
+    const gesture = tools.find((tool) => tool.name === "robot_gesture");
     const routine = tools.find((tool) => tool.name === "robot_routine");
 
     expect(config.instructions).toContain("BODY LANGUAGE IS SILENT");
@@ -178,7 +179,10 @@ describe("createDeviceSessionConfig", () => {
       },
     });
     expect(config.instructions).toContain("normally make it an embodied robot_performance");
-    expect(config.instructions).toContain("usually let that idea inspire the matching short gesture");
+    expect(config.instructions).toContain("usually let that idea inspire the matching physical choice");
+    expect(config.instructions).toContain("you still decide whether to move");
+    expect(gesture?.description).toContain("immediately takes the motors from autonomous wandering");
+    expect(gesture?.description).toContain("substantial bounded movement");
     expect(config.instructions).not.toMatch(/\bsafe(?:ty)?\b|\bunsafe\b/i);
     expect(config.instructions).toContain("<performance-paused>");
     expect(resume?.description).toContain("resume the unheard steps");
@@ -209,7 +213,8 @@ describe("createDeviceSessionConfig", () => {
     // The whole failure this design exists to prevent: a tool call returning successfully is not
     // evidence that a robot moved, and a description that does not say so invites exactly that
     // claim. See apps/ios/docs/embodiment.md.
-    expect(gesture).toContain("records your intention and returns before movement");
+    expect(gesture).toContain("immediately takes the motors from autonomous wandering");
+    expect(gesture).toContain("returns before sensory confirmation");
     expect(gesture).toContain("not evidence anything happened");
   });
 

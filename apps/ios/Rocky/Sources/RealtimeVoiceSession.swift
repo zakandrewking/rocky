@@ -63,7 +63,9 @@ final class RealtimeVoiceSession: ObservableObject {
         acknowledgement, movement report, capability explanation, or invitation. If the thought
         was already complete, produce no additional words or movement calls. Any ordinary text in
         the earlier response was withheld from speech because it accompanied a tool call;
-        include the actual conversational answer here if it has not yet been heard.
+        include the actual conversational answer here if it has not yet been heard. If the
+        friend's whole turn was a playful movement idea and your silent body-language choice
+        already answered it, produce no words; never narrate waiting, momentum, or future motion.
         """
 
     /// A paused session is held open, but not forever: the connection would go stale on its own
@@ -1198,8 +1200,8 @@ final class RealtimeVoiceSession: ObservableObject {
                 return Self.encodeResult(["ok": false, "problem": "I don't know that movement"])
             }
             let times = max(1, min(10, Int(args.times ?? 1)))
-            // The board honours gestures at its own seams, so this is genuinely open-ended: the
-            // expected duration is a bound for calling it lost, not a promise about when.
+            // A deliberate gesture now preempts autonomous movement on receipt. The expected
+            // duration remains a bound for calling it lost, never proof that the wheels began.
             let action = world.beginAction(
                 intent, expectedDuration: Double(times) * 2.5 + 6, total: times
             )
