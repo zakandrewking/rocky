@@ -62,6 +62,16 @@ def check_for_push():
         pass  # timeout after the sender closed its write side -- treat what we have as complete
 
     code = b"".join(chunks)
+    # A port check opens and closes a TCP connection without sending a payload. Treating that as
+    # a deployment erased the saved agent during the 2026-08-16 recovery session. Empty input is
+    # never a valid Python payload, so preserve the last known-good file and keep it running.
+    if not code:
+        try:
+            connection.sendall(b"ignored empty payload\n")
+        except Exception:
+            pass
+        connection.close()
+        return False
     try:
         with open(PAYLOAD_PATH, "wb") as f:
             f.write(code)

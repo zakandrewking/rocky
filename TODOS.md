@@ -290,6 +290,9 @@ to OpenAI.
   connections are cleared so they cannot suppress later attempts; when the body returns, the live
   Realtime session regains its body instructions and tools through `session.update` without
   discarding the paused conversation.
+- [x] OTA bootstrap ignores zero-byte connections. A read-only port probe during the 2026-08-16
+  recovery exposed that `check_for_push()` previously wrote an empty `/flash/rocky_payload.py`;
+  empty input now leaves the last known-good payload untouched.
 - [ ] **Run it on real hardware.** None of this has met a board yet. Two things to watch first:
   whether `started`/`pong` actually arrive from `rocky_agent.py` (upgrade `assumed` to `confirmed`
   in the Body panel's action rows), and whether the out-of-band salience judgment comes back fast
