@@ -1,6 +1,28 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Discovery has a real intermediate state: the sweep can find an address before the TCP stream
+/// is ready. Treating `searchFinished && !connected` as "not found" made that healthy gap become a
+/// permanent lie in the debug log.
+enum RobotSearchStatus {
+    static func isSettled(connected: Bool, searchFinished: Bool, hasHost: Bool) -> Bool {
+        connected || (searchFinished && !hasHost)
+    }
+
+    static func label(
+        connected: Bool,
+        searchFinished: Bool,
+        hasHost: Bool,
+        mode: String,
+        mood: String
+    ) -> String {
+        if connected { return "robot: connected · \(mode)/\(mood)" }
+        if hasHost { return "robot: found · connecting…" }
+        if searchFinished { return "robot: not found · voice only" }
+        return "robot: searching…"
+    }
+}
+
 /// One screen, built to look and behave like apps/desktop: Rocky's stone orb on a dark starfield
 /// (OrbView / RockyTheme, both ported from that app's styles.css) and a small monospaced state
 /// chip pinned to the bottom corner that expands into details -- desktop's `.debug-state`.
@@ -17,7 +39,6 @@ struct ContentView: View {
     @State private var showPayloadPicker = false
     @State private var showBodyPanel = false
     @State private var detailsOpen = false
-    @State private var robotSearchReported = false
     /// Set the instant the stone is tapped, before any awaiting, purely so the UI can respond to
     /// the touch rather than to the network.
     @State private var starting = false
@@ -51,14 +72,6 @@ struct ContentView: View {
         }
         .onChange(of: behavior.connected) { _, found in
             voiceSession.bodyAvailabilityChanged(found)
-            guard found else { return }
-            reportRobotSearchOnce("robot found — it moves on its own, Rocky can feel it")
-        }
-        .onChange(of: behavior.searchFinished) { _, finished in
-            // Recorded when the sweep ends rather than rediscovered on the next tap, so tapping
-            // the stone never waits to re-learn something already known.
-            guard finished, !behavior.connected else { return }
-            reportRobotSearchOnce("no robot found — voice only")
         }
     }
 
@@ -140,6 +153,16 @@ struct ContentView: View {
             : (behavior.searchFinished ? "b:none" : "b:…")
     }
 
+    private var robotStatus: String {
+        RobotSearchStatus.label(
+            connected: behavior.connected,
+            searchFinished: behavior.searchFinished,
+            hasHost: behavior.host != nil,
+            mode: behavior.mode,
+            mood: behavior.mood
+        )
+    }
+
     private var chipDetail: String {
         let voice: String = switch voiceSession.state {
         case .disconnected: "-"
@@ -183,12 +206,16 @@ struct ContentView: View {
 
     private var detailBody: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tap the stone to talk. If the robot is on the same Wi-Fi it connects itself, and Rocky can drive; if not, she is still here to talk.")
+            Text("Tap the stone to talk. Rocky finds his body on the same Wi-Fi; voice still works when it is away.")
                 .foregroundStyle(RockyTheme.mintBright.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
 
+            Text(robotStatus)
+                .foregroundStyle(RockyTheme.mint.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+
             if behavior.connected {
-                Text("Your robot moves on its own. Rocky feels what it does, can settle or liven it up, ask it for a spin, and tell it to stop — but not steer it.")
+                Text("Rocky is present in his own body. Movement is autonomous body language; mode and mood above are what he currently feels.")
                     .foregroundStyle(RockyTheme.mint.opacity(0.7))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -242,14 +269,6 @@ struct ContentView: View {
             }
         }
     }
-
-    /// Exactly one robot line ever reaches the visible log, whichever way the search ends.
-    private func reportRobotSearchOnce(_ message: String) {
-        guard !robotSearchReported else { return }
-        robotSearchReported = true
-        appendLog(message)
-    }
-
     /// Gives an in-flight robot search a moment to land before starting a session, so tapping the
     /// orb the instant the app opens doesn't silently get a body-less Rocky while discovery was
     /// still a second away. Capped, and skipped entirely once the search has resolved.
@@ -257,14 +276,19 @@ struct ContentView: View {
         let start = Date()
         let deadline = start.addingTimeInterval(2.5)
         while Date() < deadline {
-            if behavior.connected || robotSearchReported {
+            if RobotSearchStatus.isSettled(
+                connected: behavior.connected,
+                searchFinished: behavior.searchFinished,
+                hasHost: behavior.host != nil
+            ) {
                 RockyLog.write("voice: robot search settled in \(Int(Date().timeIntervalSince(start) * 1000))ms")
                 return
             }
             try? await Task.sleep(nanoseconds: 150_000_000)
         }
-        RockyLog.write("voice: waited \(Int(Date().timeIntervalSince(start) * 1000))ms for the robot search before giving up")
-        reportRobotSearchOnce("no robot found — voice only")
+        RockyLog.write(
+            "voice: waited \(Int(Date().timeIntervalSince(start) * 1000))ms for robot discovery; \(robotStatus)"
+        )
     }
 
     private func toggleVoiceSession() async {
