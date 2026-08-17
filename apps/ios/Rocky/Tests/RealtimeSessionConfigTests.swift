@@ -73,7 +73,15 @@ final class RealtimeSessionConfigTests: XCTestCase {
         // the deprecated motion agent; a config still advertising them would have Rocky offering
         // to drive a body that drives itself.
         let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
-        XCTAssertEqual(names, ["stop_robot", "get_robot_state", "set_robot_mood", "robot_gesture"])
+        XCTAssertEqual(
+            names,
+            ["stop_robot", "get_robot_state", "set_robot_mood", "robot_gesture", "robot_routine"]
+        )
+
+        let routine = (baked["tools"] as! [[String: Any]]).first { $0["name"] as? String == "robot_routine" }
+        XCTAssertNotNil(routine)
+        XCTAssertTrue(instructions.contains("BODY LANGUAGE IS SILENT"))
+        XCTAssertTrue(instructions.contains("call robot_routine once with the whole sequence"))
 
         // Whether the model speaks or only writes is the character's choice, and the app reads it
         // back from here to decide whether to run a synthesiser at all.

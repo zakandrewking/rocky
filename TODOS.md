@@ -206,7 +206,16 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   temporary `excitable` decay to `calm` after 45 seconds, and execute payload module-level code
   under hardware stubs in `robot:check` so a boot-killing definition-order error cannot ship.
 - [x] C: queued gestures (spin, wiggle) with a TTL, consumed only in `listening` so a reflex can
-  never be interrupted by an intention.
+  never be interrupted by an intention. Mixed 2–8 move routines are one correlated action; each
+  physical beat carries the caller id and step, so a late transition cannot be mistaken for a
+  newer wish.
+- [x] Fix story-with-movement and movement narration from the 2026-08-16 phone logs. Both tries
+  became three assistant responses — an announcement plus spin, an announcement plus wiggle, then
+  a tiny stage-direction story — because the model could only send one gesture at a time and every
+  tool result prompted an unsteered continuation. The first gesture could also start late enough
+  to be credited to the second action. `robot_routine` now submits the whole choreography once;
+  tool follow-ups explicitly return to the person's request; and the prompt treats ordinary body
+  language/state as silent context instead of conversational material.
 - [x] D: proactive narration of startle/bump, rate-limited and suppressed while already speaking.
 - [ ] **Test the slice on hardware** — none of the above has run on a real board yet. See the
   test plan in the commit that added it.

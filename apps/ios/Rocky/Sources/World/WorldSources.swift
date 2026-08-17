@@ -52,8 +52,13 @@ final class BehaviorWorldSource {
             // A gesture ack means the board has the wish in hand. Not "it is happening" -- that
             // waits for the loop's next safe seam, which may be a second or two away, and claiming
             // otherwise is exactly the kind of small lie this design exists to prevent.
-            guard of == "gesture", let id, id == gestureActionId else { return }
-            store.markAction(id, status: .accepted, evidence: .confirmed)
+            guard (of == "gesture" || of == "routine"), let id, id == gestureActionId,
+                let action = store.action(id: id)
+            else { return }
+            // A fast board can report the first physical transition before its earlier ack is
+            // delivered. Confirmation must never move running truth backward to merely accepted.
+            let confirmedStatus = action.status.isLive ? action.status : .accepted
+            store.markAction(id, status: confirmedStatus, evidence: .confirmed)
         case .disconnected:
             store.linkLost("I lost track of my body")
         }
@@ -124,11 +129,11 @@ final class BehaviorWorldSource {
                 id, status: .cancelled, evidence: .confirmed, reason: "I went still before I finished"
             )
         case "listening" where detail.contains("expired"):
-            guard let id = gestureActionId else { return }
+            guard let id = gestureActionId, isCurrentGesture(detail) else { return }
             gestureActionId = nil
             store.markAction(id, status: .failed, reason: "I never got a free moment for it")
         case "turning", "recovering":
-            guard isGesture(detail), let id = gestureActionId else { return }
+            guard isCurrentGesture(detail), let id = gestureActionId else { return }
             gestureRepeatsSeen += 1
             store.markAction(id, status: .running, evidence: .confirmed, done: gestureRepeatsSeen)
         default:
@@ -138,6 +143,21 @@ final class BehaviorWorldSource {
 
     private func isGesture(_ detail: String) -> Bool {
         detail.hasPrefix("gesture:")
+    }
+
+    /// New payloads put the caller id on every physical transition. That closes the race seen in
+    /// the story log: a spin already underway was credited to the newer pending wiggle. Accept a
+    /// missing id only for compatibility with a board that has not received the new payload yet.
+    private func isCurrentGesture(_ detail: String) -> Bool {
+        guard isGesture(detail) || detail.contains("expired") else { return false }
+        guard let reported = gestureId(in: detail) else { return true }
+        return reported == gestureActionId
+    }
+
+    private func gestureId(in detail: String) -> String? {
+        guard let marker = detail.range(of: " id:") else { return nil }
+        let tail = detail[marker.upperBound...]
+        return tail.split(separator: " ", maxSplits: 1).first.map(String.init)
     }
 
     /// A gesture is done when the board is back to sitting still with nothing left to repeat.

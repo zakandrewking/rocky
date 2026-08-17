@@ -39,6 +39,17 @@ final class RealtimeVoiceSession: ObservableObject {
         """
     }
 
+    /// Function output is an implementation seam, not a fresh conversational topic. The generic
+    /// continuation used in the failed story session made the model announce every move in its
+    /// own response. This explicitly returns attention to what the person asked for.
+    static let toolFollowupPrompt = """
+        Continue the person's actual request, not the tool call. Tools and body state are silent
+        context. Do not announce, explain, confirm, recap, or offer movements. If they asked for a
+        story, game, song, joke, or explanation, deliver that content naturally; never substitute
+        movement stage directions. If your previous response already fully answered them, produce
+        no additional words and make no additional movement calls.
+        """
+
     /// A paused session is held open, but not forever: the connection would go stale on its own
     /// eventually, and holding a Realtime session all day to save a resume nobody asked for is
     /// not a trade worth making.
@@ -909,7 +920,10 @@ final class RealtimeVoiceSession: ObservableObject {
             await performToolCall(name: name, argumentsJSON: call.arguments ?? "{}", callId: callId)
         }
         if !calls.isEmpty {
-            requestResponse(reason: "after \(calls.compactMap(\.name).joined(separator: "+"))")
+            requestResponse(
+                instructions: Self.toolFollowupPrompt,
+                reason: "after \(calls.compactMap(\.name).joined(separator: "+"))"
+            )
         }
     }
 
@@ -1012,6 +1026,20 @@ final class RealtimeVoiceSession: ObservableObject {
             world.markAction(action.id, status: .accepted)
             return Self.decided(action)
 
+        case "robot_routine":
+            let args = try JSONDecoder().decode(RoutineArgs.self, from: data)
+            let moves = Array(args.moves.filter { $0 == "spin" || $0 == "wiggle" }.prefix(8))
+            guard moves.count >= 2 else {
+                return Self.encodeResult(["ok": false, "problem": "I need at least two valid moves"])
+            }
+            let action = world.beginAction(
+                .routine, expectedDuration: Double(moves.count) * 3.5 + 6, total: moves.count
+            )
+            behaviorSource.expect(gesture: action.id)
+            behavior.requestRoutine(moves, id: action.id)
+            world.markAction(action.id, status: .accepted)
+            return Self.decided(action)
+
         case "stop_robot":
             let action = world.beginAction(.stop, expectedDuration: 0.3)
             behavior.stopMoving()
@@ -1081,6 +1109,10 @@ final class RealtimeVoiceSession: ObservableObject {
     private struct GestureArgs: Decodable {
         let gesture: String
         let times: Double?
+    }
+
+    private struct RoutineArgs: Decodable {
+        let moves: [String]
     }
 
     /// Encodes a small, flat JSON object for a function_call_output. Values are deliberately

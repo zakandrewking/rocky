@@ -344,11 +344,10 @@ _state = {
     "bump_suppressed_until": 0,
     "mood": BOOT_MOOD,
     "mood_since": 0,
-    "gesture": None,  # (name, expires_at_ticks) or None
-    "gesture_repeats": 0,  # how many more times to do it once the current one finishes
-    "gesture_name": "",
-    "gesture_id": "",  # the caller's own id for this intention, echoed back so it can follow
-    # what became of it instead of guessing from timing
+    # (name, expires_at_ticks, caller_id, one_based_step, total_steps), oldest first. A real queue
+    # is necessary for mixed story/dance routines: the old single slot let a follow-up wiggle
+    # overwrite a spin that had not started yet, while both sides confidently claimed success.
+    "gesture_queue": [],
 }
 
 
@@ -380,9 +379,11 @@ MOODS = {
 EXCITABLE_COOLDOWN_MS = 45000
 GESTURES = ("spin", "wiggle")
 MAX_GESTURE_REPEATS = 10  # "spin ten times" should work; beyond that it stops being playful
+MAX_ROUTINE_STEPS = 8  # long enough for a story beat sequence, bounded enough to remain stoppable
 GESTURE_SPIN_MS = TURN_MS * 2  # TURN_MS is the tuned ~180 degrees, so a full turn is two of them
 GESTURE_TTL_MS = 6000  # an intention the loop never got a safe moment to honour expires rather
 # than firing minutes later, long after the moment that prompted it has passed
+GESTURE_STEP_BUDGET_MS = 3500  # later routine steps get time for earlier movements to finish
 
 
 def _mood():
@@ -397,10 +398,9 @@ def _hold_still(now, detail="still interlock"):
     tick that Rocky goes still. Reasserting zero speed every tick makes the invariant physical,
     not merely a state-machine convention.
     """
-    had_queued_gesture = _state["gesture"] is not None or _state["gesture_repeats"] > 0
+    had_queued_gesture = bool(_state["gesture_queue"])
     mbot2.drive_speed(0, 0)
-    _state["gesture"] = None
-    _state["gesture_repeats"] = 0
+    _state["gesture_queue"] = []
     _state["level"] = 0.0
     _state["rpm"] = 0
     _state["drive_started"] = None
@@ -451,8 +451,7 @@ def _apply_intent(message, now):
     if kind == "stop":
         # The one imperative. A person saying "stop" means now, and it is also the safety path.
         mbot2.drive_speed(0, 0)
-        _state["gesture"] = None
-        _state["gesture_repeats"] = 0
+        _state["gesture_queue"] = []
         _state["level"] = 0.0
         _state["rpm"] = 0
         _state["drive_started"] = None
@@ -478,57 +477,92 @@ def _apply_intent(message, now):
                 times = max(1, min(MAX_GESTURE_REPEATS, int(times)))
             except Exception:
                 times = 1
-            # Waits for a seam where interrupting would not feel wrong. Repeats are counted down
-            # one at a time rather than run as one long movement, so "stop" can land between them.
-            _state["gesture"] = (gesture, utime.ticks_add(now, GESTURE_TTL_MS))
-            _state["gesture_name"] = gesture
-            _state["gesture_repeats"] = times - 1
-            _state["gesture_id"] = str(message.get("id", ""))
+            action_id = str(message.get("id", ""))
+            _queue_gestures([gesture] * times, action_id, now)
             _emit(
                 {
                     "type": "ack",
                     "t": now,
                     "of": "gesture",
-                    "id": _state["gesture_id"],
+                    "id": action_id,
                     "gesture": gesture,
                     "times": times,
                 }
             )
         return
 
+    if kind == "routine":
+        moves = message.get("moves")
+        if isinstance(moves, list) and 2 <= len(moves) <= MAX_ROUTINE_STEPS:
+            valid = True
+            for move in moves:
+                if move not in GESTURES:
+                    valid = False
+            if valid:
+                action_id = str(message.get("id", ""))
+                _queue_gestures(moves, action_id, now)
+                _emit(
+                    {
+                        "type": "ack",
+                        "t": now,
+                        "of": "routine",
+                        "id": action_id,
+                        "moves": len(moves),
+                    }
+                )
+        return
+
+
+def _queue_gestures(moves, action_id, now):
+    """Replaces wishes that have not begun with one correlated, interruptible sequence."""
+    total = len(moves)
+    queued = []
+    for index, name in enumerate(moves):
+        # The first step still expires quickly if no safe seam appears. Each later step gets an
+        # additional movement budget, so a valid routine cannot expire merely because its own
+        # earlier spins took time to complete.
+        expires = utime.ticks_add(now, GESTURE_TTL_MS + index * GESTURE_STEP_BUDGET_MS)
+        queued.append((name, expires, action_id, index + 1, total))
+    _state["gesture_queue"] = queued
+
 
 def _take_gesture(now):
-    """Returns the next gesture to perform, counting down any repeats first."""
-    """Consumes a queued gesture if one is still valid. Called only from listening, so reflexes
-    (startle, bump, approach) always win and a gesture can never interrupt a flinch."""
-    queued = _state["gesture"]
-    if queued is None:
-        if _state["gesture_repeats"] > 0:
-            _state["gesture_repeats"] -= 1
-            return _state["gesture_name"]
+    """Consumes one valid task. Called only from listening, so reflexes always win."""
+    queue = _state["gesture_queue"]
+    if not queue:
         return None
-    name, expires = queued
-    _state["gesture"] = None
+    task = queue.pop(0)
+    name, expires, action_id, _step, _total = task
     if utime.ticks_diff(expires, now) <= 0:
-        _emit({"type": "event", "t": now, "mode": "listening", "detail": "gesture expired: " + name})
+        _state["gesture_queue"] = []
+        _emit(
+            {
+                "type": "event",
+                "t": now,
+                "mode": "listening",
+                "detail": "gesture expired: " + name + " id:" + action_id,
+            }
+        )
         return None
-    return name
+    return task
 
 
-def _perform_gesture(gesture, now):
+def _perform_gesture(task, now):
     """Both gestures reuse machinery the motion loop already has, rather than adding new states
     with their own untuned timings."""
+    gesture, _expires, action_id, step, total = task
+    detail = "gesture: {} id:{} step:{}/{}".format(gesture, action_id, step, total)
     if gesture == "spin":
         _state["turn_ms"] = GESTURE_SPIN_MS  # a whole turn, not the tuned half-turn
         _state["turn_rpm"] = TURN_RPM
-        _enter("turning", now, "gesture: spin")
+        _enter("turning", now, detail)
         _show_face("O   O", (255, 150, 0))
         return
     if gesture == "wiggle":
         # The recovery wobble without its leading 180 -- a glance-about, not a full turn.
         _state["recover_index"] = 1
         _state["recover_seg_start"] = now
-        _enter("recovering", now, "gesture: wiggle")
+        _enter("recovering", now, detail)
 
 
 def _open_observer_sockets():

@@ -95,9 +95,18 @@ function toolEnum(source, property) {
   const body = source.match(new RegExp(`${property}: \\{ type: "string", enum: \\[([^\\]]*)\\]`))?.[1];
   return body ? [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort() : null;
 }
+/** The enum on an array property's items, e.g. moves: { type: "array", items: { ... } } */
+function toolArrayItemEnum(source, property) {
+  const start = source.indexOf(`${property}: {`);
+  if (start < 0) return null;
+  const body = source.slice(start, source.indexOf("required:", start));
+  const items = body.match(/items: \{ type: "string", enum: \[([^\]]*)\]/)?.[1];
+  return items ? [...items.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort() : null;
+}
 
 for (const [label, onBoard, offered] of [
   ["gestures", pythonNames(live, "GESTURES"), toolEnum(session, "gesture")],
+  ["routine moves", pythonNames(live, "GESTURES"), toolArrayItemEnum(session, "moves")],
   ["moods", pythonKeys(live, "MOODS"), toolEnum(session, "mood")],
 ]) {
   if (!onBoard || !offered) drifted.push(`${label}: could not be read from both sides`);

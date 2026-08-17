@@ -329,6 +329,15 @@ final class BehaviorMonitor: ObservableObject {
         RockyLog.write("behavior: gesture \(gesture)\(repeats > 1 ? " x\(repeats)" : "") (\(id))")
     }
 
+    /// One correlated sequence lets a story have several physical beats without each move
+    /// becoming a separate model response (or overwriting the move before it on the board).
+    func requestRoutine(_ moves: [String], id: String) {
+        let bounded = Array(moves.prefix(8))
+        guard bounded.count >= 2 else { return }
+        send(["type": "routine", "moves": bounded, "id": id])
+        RockyLog.write("behavior: routine \(bounded.joined(separator: "+")) (\(id))")
+    }
+
     /// Recent history, newest first, as the model should read it: what happened and how long ago.
     func recentHistory(limit: Int = 8) -> [[String: Any]] {
         events.suffix(limit).reversed().map { event in

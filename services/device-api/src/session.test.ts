@@ -81,10 +81,16 @@ describe("createDeviceSessionConfig", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const names = (config.tools as Array<{ name: string }>).map((tool) => tool.name);
 
-    // These four reach apps/robot/device/rocky_agent.py, the one payload that runs. The steering
+    // These five reach apps/robot/device/rocky_agent.py, the one payload that runs. The steering
     // tools are gone with the deprecated motion agent -- a tool the body cannot honour is worse
     // than a missing one, because the model will use it and then explain that it worked.
-    expect(names).toEqual(["stop_robot", "get_robot_state", "set_robot_mood", "robot_gesture"]);
+    expect(names).toEqual([
+      "stop_robot",
+      "get_robot_state",
+      "set_robot_mood",
+      "robot_gesture",
+      "robot_routine",
+    ]);
   });
 
   it("teaches the character that the robot boots still and must be woken", () => {
@@ -98,6 +104,25 @@ describe("createDeviceSessionConfig", () => {
     expect(mood?.description).toContain("Your body boots still");
     expect(mood?.parameters).toMatchObject({
       properties: { mood: { enum: ["calm", "exploring", "excitable", "still"] } },
+    });
+  });
+
+  it("keeps movement silent and gives multi-beat performances one routine call", () => {
+    const config = createDeviceSessionConfig() as SessionConfig;
+    const tools = config.tools as Array<{ name: string; description: string; parameters: unknown }>;
+    const routine = tools.find((tool) => tool.name === "robot_routine");
+
+    expect(config.instructions).toContain("BODY LANGUAGE IS SILENT");
+    expect(config.instructions).toContain("No \"I will spin\", \"now a wiggle\"");
+    expect(config.instructions).toContain("call robot_routine once with the whole sequence");
+    expect(config.instructions).toContain("deliver that content normally");
+    expect(config.instructions).toContain("and continuously");
+    expect(config.instructions).not.toContain("The instant you decide to move, say it");
+    expect(routine?.description).toContain("deliver the requested content in the same response");
+    expect(routine?.parameters).toMatchObject({
+      properties: {
+        moves: { minItems: 2, maxItems: 8, items: { enum: ["spin", "wiggle"] } },
+      },
     });
   });
 
@@ -119,8 +144,8 @@ describe("createDeviceSessionConfig", () => {
     // The whole failure this design exists to prevent: a tool call returning successfully is not
     // evidence that a robot moved, and a description that does not say so invites exactly that
     // claim. See apps/ios/docs/embodiment.md.
-    expect(gesture).toContain("on its way");
-    expect(gesture).toContain("its own next free moment");
+    expect(gesture).toContain("records an intention and returns before movement");
+    expect(gesture).toContain("not evidence that anything happened");
   });
 
   it("defines both vocabularies, so the machinery is never spoken", () => {
@@ -135,11 +160,10 @@ describe("createDeviceSessionConfig", () => {
     }
     expect(instructions).toContain("oof -- I bumped into something");
 
-    // From the first live session: she narrated a pending gesture as a work queue, and referred to
-    // herself in the third person. Both were faithful readings of what she was being handed, and
-    // both now have the exact failing line written down next to what to say instead.
-    expect(instructions).toContain("spinning may start when rolling is done");
-    expect(instructions).toContain("okay — spinning!");
+    // The first live session narrated a pending gesture as a work queue; the story session then
+    // narrated every move as a separate response. Both are now ruled out at the shared cause.
+    expect(instructions).toContain("Movement is punctuation, not the subject");
+    expect(instructions).toContain('No "I will spin", "now a wiggle"');
     expect(instructions).toContain('Never "the body"');
   });
 

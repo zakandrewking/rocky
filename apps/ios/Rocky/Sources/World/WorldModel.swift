@@ -79,13 +79,14 @@ enum ActionStatus: String, Sendable, Codable {
 /// deprecated motion agent (apps/robot/deprecated/motion_agent.py); this body chooses where it
 /// goes itself.
 enum ActionIntent: String, Sendable, Codable {
-    case spin, wiggle, stop
+    case spin, wiggle, routine, stop
 
     /// The plain word for this, used in projections and in the debug view.
     var word: String {
         switch self {
         case .spin: return "spin"
         case .wiggle: return "wiggle"
+        case .routine: return "move with the story"
         case .stop: return "stop"
         }
     }
@@ -96,6 +97,7 @@ enum ActionIntent: String, Sendable, Codable {
         switch self {
         case .spin: return "spinning"
         case .wiggle: return "wiggling"
+        case .routine: return "moving with the story"
         case .stop: return "stopping"
         }
     }

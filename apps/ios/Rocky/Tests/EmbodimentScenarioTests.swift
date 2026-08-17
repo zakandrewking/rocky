@@ -157,6 +157,55 @@ final class EmbodimentScenarioTests: XCTestCase {
         XCTAssertEqual(store.action(id: spin.id)?.evidence, .confirmed)
     }
 
+    func testAMixedRoutineIsOneCorrelatedAction() {
+        let routine = store.beginAction(.routine, expectedDuration: 16, total: 3)
+        behaviour.expect(gesture: routine.id)
+        store.markAction(routine.id, status: .accepted)
+        behaviour.handle(.acknowledged(of: "routine", id: routine.id))
+
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin id:\(routine.id) step:1/3"))
+        behaviour.handle(.transition(mode: "listening", detail: ""))
+        XCTAssertEqual(store.action(id: routine.id)?.done, 1)
+        XCTAssertEqual(store.action(id: routine.id)?.status, .running)
+
+        behaviour.handle(.transition(mode: "recovering", detail: "gesture: wiggle id:\(routine.id) step:2/3"))
+        behaviour.handle(.transition(mode: "listening", detail: ""))
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin id:\(routine.id) step:3/3"))
+        behaviour.handle(.transition(mode: "listening", detail: ""))
+
+        XCTAssertEqual(store.action(id: routine.id)?.done, 3)
+        XCTAssertEqual(store.action(id: routine.id)?.status, .succeeded)
+        XCTAssertEqual(store.action(id: routine.id)?.evidence, .confirmed)
+    }
+
+    func testAnOldPhysicalMoveCannotBeCreditedToANewerWish() {
+        let old = askForSpin()
+        let newer = store.beginAction(.wiggle, expectedDuration: 8)
+        behaviour.expect(gesture: newer.id)
+        store.markAction(newer.id, status: .accepted)
+
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin id:\(old.id) step:1/1"))
+        behaviour.handle(.transition(mode: "listening", detail: ""))
+
+        XCTAssertEqual(store.action(id: old.id)?.status, .superseded)
+        XCTAssertEqual(store.action(id: newer.id)?.status, .accepted)
+        XCTAssertEqual(store.action(id: newer.id)?.done, 0)
+
+        behaviour.handle(.transition(mode: "recovering", detail: "gesture: wiggle id:\(newer.id) step:1/1"))
+        XCTAssertEqual(store.action(id: newer.id)?.status, .running)
+        XCTAssertEqual(store.action(id: newer.id)?.done, 1)
+    }
+
+    func testLateGestureAckCannotMoveRunningTruthBackward() {
+        let spin = askForSpin()
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin id:\(spin.id) step:1/1"))
+
+        behaviour.handle(.acknowledged(of: "gesture", id: spin.id))
+
+        XCTAssertEqual(store.action(id: spin.id)?.status, .running)
+        XCTAssertEqual(store.action(id: spin.id)?.evidence, .confirmed)
+    }
+
     /// A new instruction while one is live. The snapshot carries only the new one -- there is no
     /// version of this in which Rocky is shown two things she is currently doing.
     func testSupersededByAnotherRequest() throws {

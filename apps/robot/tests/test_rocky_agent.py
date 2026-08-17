@@ -109,8 +109,7 @@ class StillInterlockTests(unittest.TestCase):
             mode="startled",
             rpm=165,
             drive_started=500,
-            gesture=("spin", 5000),
-            gesture_repeats=4,
+            gesture_queue=[("spin", 5000, "act_test", 1, 2), ("wiggle", 8500, "act_test", 2, 2)],
         )
 
         payload["tick"]()
@@ -119,8 +118,7 @@ class StillInterlockTests(unittest.TestCase):
         self.assertEqual(state["mode"], "listening")
         self.assertEqual(state["rpm"], 0)
         self.assertIsNone(state["drive_started"])
-        self.assertIsNone(state["gesture"])
-        self.assertEqual(state["gesture_repeats"], 0)
+        self.assertEqual(state["gesture_queue"], [])
         self.assertEqual(cyberpi.loudness_reads, 0, "loudness cannot trigger a jump while still")
         self.assertEqual(ultrasonic.distance_reads, 0, "proximity cannot trigger a jump while still")
         self.assertEqual(line_sensor.reflect_reads, 0, "a jolt/floor change cannot trigger a spin while still")
@@ -149,6 +147,39 @@ class StillInterlockTests(unittest.TestCase):
         payload["tick"]()
         payload["tick"]()  # first awake tick notices the 5 cm obstacle; second performs the jolt
         self.assertTrue(any(left or right for left, right in mbot2.drive_calls))
+
+    def test_mixed_routine_keeps_every_step_and_correlation_id(self):
+        payload, *_ = load_payload()
+
+        payload["_apply_intent"](
+            {"type": "routine", "moves": ["spin", "wiggle", "spin"], "id": "act_story"}, 1000
+        )
+
+        first = payload["_take_gesture"](1001)
+        second = payload["_take_gesture"](1002)
+        third = payload["_take_gesture"](1003)
+        self.assertEqual((first[0], first[2], first[3:]), ("spin", "act_story", (1, 3)))
+        self.assertEqual((second[0], second[2], second[3:]), ("wiggle", "act_story", (2, 3)))
+        self.assertEqual((third[0], third[2], third[3:]), ("spin", "act_story", (3, 3)))
+        self.assertIsNone(payload["_take_gesture"](1004))
+
+    def test_a_new_routine_replaces_only_steps_that_have_not_started(self):
+        payload, *_ = load_payload()
+        payload["_apply_intent"](
+            {"type": "routine", "moves": ["spin", "wiggle"], "id": "act_old"}, 1000
+        )
+        already_started = payload["_take_gesture"](1001)
+
+        payload["_apply_intent"](
+            {"type": "routine", "moves": ["wiggle", "spin"], "id": "act_new"}, 1002
+        )
+
+        self.assertEqual((already_started[0], already_started[2]), ("spin", "act_old"))
+        replacement = payload["_take_gesture"](1003)
+        self.assertEqual((replacement[0], replacement[2]), ("wiggle", "act_new"))
+        final_move = payload["_take_gesture"](1004)
+        self.assertEqual((final_move[0], final_move[2]), ("spin", "act_new"))
+        self.assertIsNone(payload["_take_gesture"](1005))
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ final class BodyCapabilityTests: XCTestCase {
                 ["type": "function", "name": "get_robot_state"],
                 ["type": "function", "name": "set_robot_mood"],
                 ["type": "function", "name": "robot_gesture"],
+                ["type": "function", "name": "robot_routine"],
             ],
             "tool_choice": "auto",
         ]
