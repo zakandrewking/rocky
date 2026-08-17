@@ -602,7 +602,6 @@ final class RealtimeVoiceSession: ObservableObject {
         suspendedPerformance = nil
         cancelPerformanceTiming()
         stopLocalAudio()
-        RockyAudioEngine.shared.removeMutedSpeechActivityListener()
         hume?.cancel()
         humePlayer = nil
         storySounds = nil
@@ -644,11 +643,6 @@ final class RealtimeVoiceSession: ObservableObject {
     // MARK: - Rocky's voice and her alien chatter
 
     private func startLocalAudio() {
-        if hume != nil {
-            RockyAudioEngine.shared.installMutedSpeechActivityListener { [weak self] in
-                self?.handleMutedSpeechStarted()
-            }
-        }
         eridian = EridianAudio()
         let effects = StorySoundEffects()
         storySounds = effects
@@ -684,34 +678,6 @@ final class RealtimeVoiceSession: ObservableObject {
         eridian?.stop()
         humePlayer?.stop()
         storySounds?.stop()
-    }
-
-    /// Speech detected by the local voice-processing unit while the WebRTC microphone is gated.
-    /// This is the missing first half of Hume barge-in: stop Rocky immediately, then reopen the
-    /// WebRTC track so the rest of the person's utterance reaches Realtime VAD and transcription.
-    private func handleMutedSpeechStarted() {
-        guard Self.isMutedSpeechBargeIn(
-            hasLocalVoice: hume != nil,
-            isPaused: isPaused,
-            isUttering: responseStartedAt != nil,
-            microphoneGated: gatedForOwnVoice
-        ) else { return }
-
-        log("friend speech detected through local echo cancellation — interrupting")
-        if let activeResponseId {
-            client.send(ResponseCancelEvent(responseId: activeResponseId))
-            client.send(OutputAudioBufferClearEvent())
-        }
-        handleUserStartedSpeaking()
-    }
-
-    static func isMutedSpeechBargeIn(
-        hasLocalVoice: Bool,
-        isPaused: Bool,
-        isUttering: Bool,
-        microphoneGated: Bool
-    ) -> Bool {
-        hasLocalVoice && !isPaused && isUttering && microphoneGated
     }
 
     /// Barge-in. The server cancels the *response* itself; what it cannot do is stop audio this

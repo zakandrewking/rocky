@@ -26,7 +26,6 @@ final class RockyAudioEngine {
     private let engine = AVAudioEngine()
     private var players: [Channel: AVAudioPlayerNode] = [:]
     private var observer: NSObjectProtocol?
-    private var mutedSpeechListenerInstalled = false
 
     private init() {
         // WebRTC activating its own voice-processing audio unit reconfigures the shared session
@@ -99,51 +98,6 @@ final class RockyAudioEngine {
         for player in players.values where !wasRunning || !player.isPlaying {
             player.play()
         }
-    }
-
-    /// Arms the input side of this engine as an echo-cancelled barge-in detector.
-    ///
-    /// Hume is rendered through this engine rather than WebRTC, so WebRTC cannot remove Rocky's
-    /// own voice from its microphone track. That track remains disabled while she talks. Apple's
-    /// voice-processing audio unit can still distinguish nearby speech from audio rendered by
-    /// this same engine, however, and its muted-speech callback lets us reopen WebRTC as soon as a
-    /// friend begins speaking without ever forwarding Rocky's own voice to the model.
-    ///
-    /// Returns false rather than disturbing playback if the device cannot create the
-    /// voice-processing input. The ordinary half-duplex echo gate remains the fallback.
-    @discardableResult
-    func installMutedSpeechActivityListener(onSpeechStarted: @escaping @MainActor () -> Void) -> Bool {
-        let input = engine.inputNode
-        if !input.isVoiceProcessingEnabled {
-            engine.stop()
-            do {
-                try input.setVoiceProcessingEnabled(true)
-            } catch {
-                RockyLog.write("audio: local barge-in unavailable: \(error.localizedDescription)")
-                return false
-            }
-        }
-
-        input.isVoiceProcessingInputMuted = true
-        let installed = input.setMutedSpeechActivityEventListener { event in
-            // Keep the realtime audio callback tiny; all session mutation belongs on MainActor.
-            guard event.rawValue == 0 else { return }
-            Task { @MainActor in onSpeechStarted() }
-        }
-        guard installed else {
-            RockyLog.write("audio: local barge-in listener was rejected")
-            return false
-        }
-        mutedSpeechListenerInstalled = true
-        ensureRunning()
-        RockyLog.write("audio: local barge-in detector armed")
-        return true
-    }
-
-    func removeMutedSpeechActivityListener() {
-        guard mutedSpeechListenerInstalled else { return }
-        _ = engine.inputNode.setMutedSpeechActivityEventListener(nil)
-        mutedSpeechListenerInstalled = false
     }
 
     func stop() {

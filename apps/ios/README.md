@@ -13,9 +13,9 @@ and temporary LED color are real body-language tools the model chooses for itsel
 the one robot payload
 ([`apps/robot/device/rocky_agent.py`](../robot/device/rocky_agent.py)) can answer, and nothing it
 can't. `AVAudioSession` runs in `.voiceChat` mode. Realtime-voiced characters use WebRTC's echo
-cancellation directly; while Hume is speaking, its WebRTC microphone track stays gated against
-self-transcription and an `AVAudioEngine` voice-processing listener detects nearby speech through
-the mute, stops local playback, and reopens the track for barge-in.
+cancellation directly. Hume currently requires a microphone gate during local playback to avoid
+self-transcription; a barge-in solution must share WebRTC's single capture device rather than
+opening a competing `AVAudioEngine` input.
 
 **No laptop server at runtime.** The app mints its own ephemeral OpenAI secret directly
 (`OpenAIRealtimeMinter.swift`, hitting `POST /v1/realtime/client_secrets` straight from the
