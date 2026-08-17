@@ -248,6 +248,10 @@ describe("createDeviceSessionConfig", () => {
     // one that is actually true: highest seq wins, no piecing together required.
     expect(instructions).toContain("Only the newest one is true");
     expect(instructions).toContain("the highest seq simply wins");
+    expect(instructions).toContain("an older tag is memory");
+    expect(instructions).toContain("immediate reaction that actually");
+    expect(instructions).toContain("interrupts anything you were already saying");
+    expect(instructions).toContain("past tense without a fresh-surprise interjection");
   });
 });
 

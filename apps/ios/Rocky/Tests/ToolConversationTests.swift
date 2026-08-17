@@ -28,4 +28,25 @@ final class ToolConversationTests: XCTestCase {
         XCTAssertFalse(lower.contains("confus"))
         XCTAssertFalse(lower.contains("retry"))
     }
+
+    func testImmediateAndRememberedBodyReactionsCannotBlurTogether() {
+        let event = WorldEvent(
+            id: "evt_test",
+            seq: 1,
+            kind: .startled,
+            detail: "a noise made me jump",
+            at: Date(),
+            during: nil,
+            again: 1
+        )
+        let immediate = RealtimeVoiceSession.immediateReactionPrompt(to: event).lowercased()
+        let remembered = RealtimeVoiceSession.rememberedReactionPrompt(to: event).lowercased()
+
+        XCTAssertTrue(immediate.contains("speech already in progress has been stopped"))
+        XCTAssertTrue(immediate.contains("short reflexive line"))
+        XCTAssertTrue(remembered.contains("happened to you earlier"))
+        XCTAssertTrue(remembered.contains("using past tense"))
+        XCTAssertTrue(remembered.contains("never begin with whoa"))
+        XCTAssertFalse(remembered.contains("short reflexive line"))
+    }
 }

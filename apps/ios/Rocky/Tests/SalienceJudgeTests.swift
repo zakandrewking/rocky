@@ -16,11 +16,11 @@ final class SalienceJudgeTests: XCTestCase {
     }
 
     private func speaking(_ text: String, response: String = "resp_A", seq: WorldSeq = 10) -> VoiceMoment {
-        VoiceMoment(isGenerating: true, responseId: response, utteranceSoFar: text, worldSeq: seq)
+        VoiceMoment(isUttering: true, responseId: response, utteranceSoFar: text, worldSeq: seq)
     }
 
     private var silent: VoiceMoment {
-        VoiceMoment(isGenerating: false, responseId: nil, utteranceSoFar: "", worldSeq: 10)
+        VoiceMoment(isUttering: false, responseId: nil, utteranceSoFar: "", worldSeq: 10)
     }
 
     // MARK: - Deterministic tier
@@ -54,6 +54,20 @@ final class SalienceJudgeTests: XCTestCase {
     func testAnAmbiguousEventMidSentenceIsLeftToTheJudge() {
         let judge = SalienceJudge()
         XCTAssertNil(judge.rule(on: event(.blocked), action: nil, moment: speaking("and then the tunnel")))
+    }
+
+    /// Realtime text generation is already over here, but Hume is still audibly playing it. The
+    /// utterance identity survives that seam, so a startle must cut through instead of queueing.
+    func testAStartleDuringSynthesizedPlaybackStillInterrupts() {
+        let judge = SalienceJudge()
+        let playback = VoiceMoment(
+            isUttering: true,
+            responseId: "resp_already_generated",
+            utteranceSoFar: "Quiet room is like low pressure in the mind.",
+            worldSeq: 10
+        )
+
+        XCTAssertEqual(judge.rule(on: event(.startled), action: nil, moment: playback), .interrupt)
     }
 
     /// From the first live session: ten obstacle turns against three startles, one shared cooldown,

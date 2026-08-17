@@ -337,6 +337,11 @@ to OpenAI.
   and one *superseding* out-of-band judgment slot handles the ambiguous middle. Every judgment
   carries a ticket (`event_id`, `voice_response_id`, `world_seq`) and is discarded if it comes back
   referring to a response or a world that is no longer current.
+- [x] Make audible playback, not Realtime text generation, define whether Rocky is mid-utterance.
+  The 2026-08-16 log showed a startle 303ms after text generation ended but while roughly 14s of
+  Hume speech remained; the surprise response queued behind it and “Whoa” arrived late. A salient
+  reflex now stops local playback (while preserving a resumable story) before speaking, while a
+  deliberately deferred body note is prompted as past memory and cannot use a fresh interjection.
 - [x] The Body panel (one tap from the state chip) and `Documents/world.jsonl`, pulled by
   `apps/ios/scripts/pull-log.sh` alongside `session.log`. The Responses tab answers "what robot
   state did the model have available when this response began", written at `response.created`

@@ -24,7 +24,10 @@ enum SalienceVerdict: String, Sendable {
 /// doesn't -- in particular no reference to any server-side item, so a judgment can never be
 /// invalidated by an item disappearing underneath it.
 struct VoiceMoment: Sendable {
-    let isGenerating: Bool
+    /// True until the current words have actually drained from the speaker. Model generation can
+    /// finish many seconds before Hume playback, and calling that gap "quiet" queues a reflexive
+    /// reaction behind the very sentence it needed to interrupt.
+    let isUttering: Bool
     let responseId: String?
     let utteranceSoFar: String
     let worldSeq: WorldSeq
@@ -124,7 +127,7 @@ final class SalienceJudge {
         let urgency = event.kind.urgency
         guard urgency > .none else { return .context }
 
-        guard moment.isGenerating else {
+        guard moment.isUttering else {
             // Nothing to cut off, so this is starting a response rather than interrupting one --
             // a different act, and cheaper to get wrong. Still not for routine events: "I nudged a
             // chair", unprompted, every few seconds is the sports-commentator failure.

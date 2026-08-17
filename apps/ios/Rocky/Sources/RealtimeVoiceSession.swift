@@ -30,13 +30,25 @@ final class RealtimeVoiceSession: ObservableObject {
         clear continuing topic, express simple pleasure in the friend's presence and stop.
         """
 
-    /// What to say about something that just happened to her body. Phrased as a thing already
-    /// over, because it is: a flinch lasts under a second and she cannot speak in under two.
-    private static func reactionPrompt(to event: WorldEvent) -> String {
+    /// A reflex is allowed to sound immediate only on the path that has actually preempted any
+    /// words already in the speaker. This promise is enforced by `interrupt(because:)` below.
+    static func immediateReactionPrompt(to event: WorldEvent) -> String {
         """
-        This just happened to your body: \(event.detail). It is over now. Say one short line
-        reacting to it as something that happened to you, in your own way of speaking. Do not name
-        it, do not describe it as a state or a mode, and do not ask what to do next.
+        A surprising thing just happened to you: \(event.detail). This response is immediate: any
+        speech already in progress has been stopped instead of playing before this reaction. Say
+        one short reflexive line in your own voice. Do not name a state or mode, and do not ask
+        what to do next.
+        """
+    }
+
+    /// A reaction deliberately saved until the current utterance ends is memory, not a reflex.
+    /// Make the temporal distinction explicit so a delayed note cannot open with “Whoa”.
+    static func rememberedReactionPrompt(to event: WorldEvent) -> String {
+        """
+        This happened to you earlier: \(event.detail). It did not interrupt the shared
+        conversation. If it is still worth mentioning, say one short line that clearly remembers
+        it as finished, using past tense. Do not act freshly surprised and never begin with Whoa,
+        Wow, Oh, Ah, Ow, or a gasp. Do not name a state or mode, and do not ask what to do next.
         """
     }
 
@@ -130,6 +142,9 @@ final class RealtimeVoiceSession: ObservableObject {
     // `requestResponse`, and exactly one request can be waiting.
 
     private var activeResponseId: String?
+    /// The identity of the utterance people can still hear. Unlike `activeResponseId`, this stays
+    /// set after Realtime finishes generating text and until local Hume playback actually drains.
+    private var utteranceResponseId: String?
     /// Set the instant `response.create` goes out, cleared when the response is created or the
     /// attempt fails. The id only arrives on `response.created`, which is at least a round trip
     /// later -- so without this, two requests inside that window both look like the first one, and
@@ -317,18 +332,21 @@ final class RealtimeVoiceSession: ObservableObject {
         case .afterUtterance:
             reactAfterUtterance = event
         case .interrupt, .urgent:
-            if activeResponseId != nil {
+            if responseStartedAt != nil {
                 interrupt(because: event)
             } else {
-                requestResponse(instructions: Self.reactionPrompt(to: event), reason: "reacting to \(event.id)")
+                requestResponse(
+                    instructions: Self.immediateReactionPrompt(to: event),
+                    reason: "reacting immediately to \(event.id)"
+                )
             }
         }
     }
 
     private func currentMoment() -> VoiceMoment {
         VoiceMoment(
-            isGenerating: activeResponseId != nil,
-            responseId: activeResponseId,
+            isUttering: responseStartedAt != nil,
+            responseId: utteranceResponseId,
             utteranceSoFar: utteranceSoFar,
             worldSeq: world.seq
         )
@@ -359,7 +377,10 @@ final class RealtimeVoiceSession: ObservableObject {
         guard let parked = parkedRequest else {
             if let event = reactAfterUtterance {
                 reactAfterUtterance = nil
-                requestResponse(instructions: Self.reactionPrompt(to: event), reason: "reacting after the utterance")
+                requestResponse(
+                    instructions: Self.rememberedReactionPrompt(to: event),
+                    reason: "remembering \(event.id) after the utterance"
+                )
             }
             return
         }
@@ -375,13 +396,25 @@ final class RealtimeVoiceSession: ObservableObject {
     /// last is what keeps her memory of what she said matching what was heard -- otherwise she
     /// remembers finishing a sentence nobody heard the end of, and refers back to it.
     private func interrupt(because event: WorldEvent) {
-        guard let responseId = activeResponseId else { return }
-        log("interrupting \(responseId) for \(event.id) (\(event.kind.rawValue))")
-        client.send(ResponseCancelEvent(responseId: responseId))
-        client.send(OutputAudioBufferClearEvent())
+        guard responseStartedAt != nil else { return }
+        let responseId = utteranceResponseId
+        let generatingResponseId = activeResponseId
+        log(
+            "interrupting \(responseId ?? "local playback") for \(event.id) "
+                + "(\(event.kind.rawValue))"
+        )
+
+        // Preserve an interleaved story before stopping its players. Their drain callbacks are
+        // synchronous, and without this they can advance the performance at the interruption.
+        suspendActivePerformance(notifyVoice: true, reason: "body reacted to \(event.id)")
+
+        if let generatingResponseId {
+            client.send(ResponseCancelEvent(responseId: generatingResponseId))
+            client.send(OutputAudioBufferClearEvent())
+        }
         stopLocalAudio()
         hume?.cancel()
-        if let itemId = currentAssistantItemId, let started = audioStartedAt {
+        if generatingResponseId != nil, let itemId = currentAssistantItemId, let started = audioStartedAt {
             // Approximate, and honestly so: on WebRTC the exact playback position is not
             // reported, so this is how long audio had been arriving. Erring long would delete
             // words she did say; erring short leaves a fragment she did not. Elapsed-since-first-
@@ -389,18 +422,26 @@ final class RealtimeVoiceSession: ObservableObject {
             let heard = Int(Date().timeIntervalSince(started) * 1000)
             client.send(ConversationItemTruncateEvent(itemId: itemId, audioEndMs: heard))
         }
-        WorldLog.shared.closeLedger(responseId, outcome: "interrupted", interruptedBy: event.id)
+        if let responseId {
+            WorldLog.shared.closeLedger(responseId, outcome: "interrupted", interruptedBy: event.id)
+        }
         speaking = false
         finishResponse(reason: "interrupted by \(event.id)")
-        // Parked, not sent. The server has not processed the cancel yet, and a `response.create`
-        // that overtakes it is rejected outright -- so the reaction goes out on the
-        // `response.done` the cancel produces. The watchdog covers the case where it never does.
-        parkedRequest = (Self.reactionPrompt(to: event), "interrupted by \(event.id)")
+
+        let reaction = (Self.immediateReactionPrompt(to: event), "interrupted by \(event.id)")
+        // When generation already ended, only local Hume playback was interrupted. Its queue is
+        // empty now, so the reaction can start immediately. A live server response must first
+        // acknowledge cancellation or response.create may overtake response.cancel.
+        guard let generatingResponseId else {
+            requestResponse(instructions: reaction.0, reason: reaction.1)
+            return
+        }
+        parkedRequest = reaction
         cancelWatchdog?.cancel()
         cancelWatchdog = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(1500))
             guard !Task.isCancelled else { return }
-            await self?.forceReleaseAfterCancel(responseId)
+            await self?.forceReleaseAfterCancel(generatingResponseId)
         }
     }
 
@@ -571,6 +612,7 @@ final class RealtimeVoiceSession: ObservableObject {
         worldTicker?.cancel()
         worldTicker = nil
         responseStartedAt = nil
+        utteranceResponseId = nil
         userStoppedSpeakingAt = nil
         micOpen = true
         isPaused = false
@@ -824,6 +866,7 @@ final class RealtimeVoiceSession: ObservableObject {
         turnWatchdog?.cancel()
         turnWatchdog = nil
         responseStartedAt = nil
+        utteranceResponseId = nil
         firstTextAt = nil
         firstAudioAt = nil
         audioStartedAt = nil
@@ -897,6 +940,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
         case "response.created":
             activeResponseId = event.response?.id
+            utteranceResponseId = event.response?.id
             awaitingResponse = false
             cancelWatchdog?.cancel()
             responseStartedAt = Date()
