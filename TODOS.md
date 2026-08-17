@@ -235,12 +235,15 @@ the one human imperative.
 - [x] Preserve interrupted performances. Pausing rewinds the current spoken/effect cue and holds
   the unheard steps; unpausing wakes the body and resumes them. A conversational interruption is
   projected privately and can later use `resume_robot_performance` without regenerating the story.
-- [ ] Restore voice interruption for Hume playback without a second capture device. The 2026-08-16
-  phone log showed the WebRTC microphone closing at every `response.created`, so semantic VAD
-  never received interruptions. AVAudioEngine's muted-speech listener looked suitable, but its
-  input took capture ownership from WebRTC on the real phone: it armed successfully, then no user
-  speech reached OpenAI even after the track reopened. The replacement must observe or supply the
-  existing WebRTC audio-device path; do not initialize another microphone audio unit.
+- [x] Restore voice interruption for Hume playback without a second capture device. The first
+  muted-speech-listener attempt took capture ownership from WebRTC and made Rocky deaf. The final
+  design injects one full-duplex `RTCAudioDevice`: WebRTC capture/playout, Hume, chords, and story
+  effects share its VoiceProcessingIO mixer, so semantic VAD keeps receiving the real microphone
+  while AEC has every sound Rocky makes as its reference. The live log then recorded four
+  mid-response `speech_started` events; one stopped Hume playback 42ms later, with no ordinary
+  self-trigger during the final uninterrupted reply. Keep the hardware full-duplex while ADM's
+  transient record/play flags change, and never restart the graph merely after stopping an empty
+  local player—the earlier churn produced 0Hz speaker formats and Core Audio `!pla` failures.
 - [x] Tighten live story timing and expand physical storytelling. Movement cues now wait for the
   correlated board transition that says the wheels actually started (with a two-second anti-hang
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now

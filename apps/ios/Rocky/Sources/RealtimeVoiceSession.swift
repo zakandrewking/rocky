@@ -133,8 +133,6 @@ final class RealtimeVoiceSession: ObservableObject {
     private var humeSawLastChunk = false
     private var pauseTimeout: Task<Void, Never>?
     private var isPaused = false
-    /// True while Rocky's own un-cancelled audio could otherwise be heard as an interruption.
-    private var gatedForOwnVoice = false
 
     // MARK: - Response lifecycle
     //
@@ -212,12 +210,9 @@ final class RealtimeVoiceSession: ObservableObject {
         guard state == .disconnected || isFailed else { return }
         state = .connecting
         wakeBodyIfStill(reason: "voice start")
-        // A reconnect gets a brand-new WebRTC track, which starts enabled. Without resetting this,
-        // the gate believes it is already closed, every close is a no-op, and Rocky talks straight
-        // into her own microphone -- which the log calls out as "mic gate leaked".
+        // A reconnect gets a brand-new WebRTC track, which starts enabled.
         micOpen = true
         isPaused = false
-        gatedForOwnVoice = false
         userStoppedSpeakingAt = nil
 
         wireWorld(behavior: behavior)
@@ -619,7 +614,6 @@ final class RealtimeVoiceSession: ObservableObject {
         userStoppedSpeakingAt = nil
         micOpen = true
         isPaused = false
-        gatedForOwnVoice = false
         speaking = false
         hasSpokenOnce = false
         state = .disconnected
@@ -696,27 +690,19 @@ final class RealtimeVoiceSession: ObservableObject {
         if responseStartedAt != nil { finishResponse(reason: "barge-in") }
     }
 
-    /// Whether this character's voice bypasses WebRTC's echo canceller.
-    ///
-    /// A Hume-voiced character is played through AVAudioEngine, which is outside the
-    /// voice-processing render path, so the microphone genuinely hears her and has to be gated
-    /// shut while she speaks. A character voiced by the Realtime model arrives on the WebRTC
-    /// track itself, which *is* echo-cancelled -- gating there would buy nothing and would cost
-    /// barge-in, since a closed microphone cannot hear an interruption.
-    private var needsMicrophoneGate: Bool { hume != nil }
-
-    /// Two separate reasons the microphone might be shut, deliberately not conflated.
-    ///
-    /// The echo gate is a workaround for one character's audio path and is off for the rest.
-    /// Pausing is what the user asked for and applies to everyone -- routing it through the gate
-    /// meant that for a character which needs no gate, pause left the microphone wide open and
-    /// the conversation carried on underneath a UI that said "paused".
+    /// Pause is the only reason the microphone track closes. Hume and every local effect now play
+    /// through WebRTC's injected voice-processing device, so its AEC removes Rocky while keeping
+    /// real nearby speech available to semantic VAD throughout her response.
     private func refreshMicrophone(_ reason: String) {
-        let open = !isPaused && !(needsMicrophoneGate && gatedForOwnVoice)
+        let open = Self.microphoneShouldBeOpen(isPaused: isPaused)
         guard micOpen != open else { return }
         micOpen = open
         client.setMicrophoneEnabled(open)
         log("mic \(open ? "open" : "closed") (\(reason))")
+    }
+
+    static func microphoneShouldBeOpen(isPaused: Bool) -> Bool {
+        !isPaused
     }
 
     /// Rocky's voice and Fathom's arrive by completely different routes, so "she started
@@ -736,16 +722,12 @@ final class RealtimeVoiceSession: ObservableObject {
     private func handleSpeakingChange(_ speaking: Bool) {
         if speaking {
             noteRockyStartedSpeaking()
-            gatedForOwnVoice = true
-            refreshMicrophone("rocky speaking")
             return
         }
         self.speaking = false
         // Playback draining is not the same as Rocky being finished: if Hume is still streaming,
-        // the queue can empty briefly between chunks. Reopening the mic there would put her own
-        // remaining audio straight back into the server's ear -- the exact fault this gate exists
-        // to prevent. Wait for the chunk Hume marked last; the turn watchdog covers the case
-        // where that never comes.
+        // the queue can empty briefly between chunks. Wait for the chunk Hume marked last before
+        // ending the utterance; the microphone itself stays continuously open.
         guard humeSawLastChunk else {
             log("playback drained mid-response, holding the turn open for more audio")
             return
@@ -864,8 +846,8 @@ final class RealtimeVoiceSession: ObservableObject {
         stopLocalAudio()
     }
 
-    /// One place where a turn ends, however it ended -- the mic reopens here and nowhere else, so
-    /// there is no path that leaves Rocky deaf.
+    /// One place where a turn ends, however it ended. The microphone stays open across ordinary
+    /// turns and this refresh only matters if pause raced with response completion.
     private func finishResponse(reason: String) {
         firstAudioWatchdog?.cancel()
         firstAudioWatchdog = nil
@@ -885,7 +867,6 @@ final class RealtimeVoiceSession: ObservableObject {
         humeSawLastChunk = false
         queuedPerformance = nil
         activePerformance = nil
-        gatedForOwnVoice = false
         refreshMicrophone(reason)
     }
 
@@ -926,11 +907,8 @@ final class RealtimeVoiceSession: ObservableObject {
             }
 
         case "input_audio_buffer.speech_started":
-            // Only a real interruption if Rocky isn't the one making the noise. The mic is gated
-            // shut while she speaks, so this should already be impossible -- if it ever fires
-            // mid-response the log says so, and that means the gate leaked.
             if responseStartedAt != nil {
-                log("speech_started DURING response — mic gate leaked, treating as barge-in")
+                log("speech_started DURING response — semantic VAD barge-in")
             }
             log("user started speaking")
             handleUserStartedSpeaking()
@@ -967,13 +945,7 @@ final class RealtimeVoiceSession: ObservableObject {
             }
             humePlayer?.beginResponse()
             eridian?.playThinkingPrelude()
-            // The chords are already audible, so close the mic now rather than at first audio.
-            gatedForOwnVoice = true
-            refreshMicrophone("response started")
-            // Armed here, not when the text finishes: a response that never produces any text at
-            // all would otherwise have no clock on it, and the mic would stay shut for good --
-            // which is precisely what "Rocky didn't respond" was. Every closed mic now has a
-            // deadline from the moment it closes.
+            // Armed here so a response that never produces text cannot hold the turn forever.
             armTurnWatchdog()
 
         case "response.output_item.added":
@@ -1051,8 +1023,7 @@ final class RealtimeVoiceSession: ObservableObject {
                 cancelWatchdog = nil
             }
             // With Hume, the turn normally ends when playback does, not when the text does --
-            // unless there was no text, in which case nothing will ever play and waiting for
-            // playback would hold the microphone shut for nothing.
+            // unless there was no text, in which case nothing will ever play.
             if hume == nil {
                 speaking = false
                 finishResponse(reason: "response done")
@@ -1348,8 +1319,6 @@ final class RealtimeVoiceSession: ObservableObject {
         queuedPerformance = nil
         activePerformance = queued
         if responseStartedAt == nil { responseStartedAt = Date() }
-        gatedForOwnVoice = true
-        refreshMicrophone("performance started")
         responseText = queued.steps.compactMap { step in
             if case .say(let text) = step { return text }
             return nil

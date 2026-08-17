@@ -60,8 +60,8 @@ final class EridianAudio {
         player.stop()
         transcriptBuffer = ""
         queuedSeconds = 0
-        // stop() leaves the node not playing; this puts it back, engine included.
-        RockyAudioEngine.shared.ensureRunning()
+        // The next scheduled chord restarts the shared graph and player. An empty stopped player
+        // must not force an audio-unit restart during barge-in or pause.
     }
 
     // MARK: - Scheduling

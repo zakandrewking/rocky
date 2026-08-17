@@ -13,9 +13,10 @@ and temporary LED color are real body-language tools the model chooses for itsel
 the one robot payload
 ([`apps/robot/device/rocky_agent.py`](../robot/device/rocky_agent.py)) can answer, and nothing it
 can't. `AVAudioSession` runs in `.voiceChat` mode. Realtime-voiced characters use WebRTC's echo
-cancellation directly. Hume currently requires a microphone gate during local playback to avoid
-self-transcription; a barge-in solution must share WebRTC's single capture device rather than
-opening a competing `AVAudioEngine` input.
+cancellation directly. Hume, Eridian chords, and story effects render through the same injected
+WebRTC `RTCAudioDevice` that captures the microphone, so VoiceProcessingIO can remove Rocky's own
+local output while leaving the mic open for OpenAI semantic-VAD barge-in. No second capture engine
+or response-time microphone gate is involved.
 
 **No laptop server at runtime.** The app mints its own ephemeral OpenAI secret directly
 (`OpenAIRealtimeMinter.swift`, hitting `POST /v1/realtime/client_secrets` straight from the
@@ -39,6 +40,8 @@ apps/ios/
 │   │   ├── RealtimeWebRTCClient.swift — peer connection, data channel, SDP exchange with OpenAI
 │   │   ├── RealtimeEvents.swift  — typed slice of the data-channel event schema (tool calls)
 │   │   ├── RealtimeVoiceSession.swift — @MainActor session state + tool-call dispatch
+│   │   ├── RockyRTCAudioDevice.swift — shared full-duplex WebRTC/local-output AEC graph
+│   │   ├── RockyAudioConverter.swift — realtime float-to-PCM16 microphone conversion
 │   │   ├── OpenAIRealtimeMinter.swift — mints an ephemeral OpenAI secret directly (no laptop)
 │   │   ├── AudioSessionManager.swift     — AVAudioSession, voiceChat/AEC mode
 │   │   ├── BehaviorMonitor.swift — finds the robot (beacon + LAN sweep), watches what it does,

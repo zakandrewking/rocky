@@ -54,4 +54,29 @@ final class ToolConversationTests: XCTestCase {
         XCTAssertFalse(remembered.contains("short reflexive line"))
     }
 
+    func testOnlyPauseClosesTheFullDuplexMicrophone() {
+        XCTAssertTrue(RealtimeVoiceSession.microphoneShouldBeOpen(isPaused: false))
+        XCTAssertFalse(RealtimeVoiceSession.microphoneShouldBeOpen(isPaused: true))
+    }
+
+    func testSharedAudioHardwareStaysFullDuplexForEitherWebRTCDirection() {
+        let recording = RockyRTCAudioDevice.hardwareDirections(
+            shouldPlay: false, shouldRecord: true
+        )
+        XCTAssertTrue(recording.input)
+        XCTAssertTrue(recording.output)
+
+        let playing = RockyRTCAudioDevice.hardwareDirections(
+            shouldPlay: true, shouldRecord: false
+        )
+        XCTAssertTrue(playing.input)
+        XCTAssertTrue(playing.output)
+
+        let idle = RockyRTCAudioDevice.hardwareDirections(
+            shouldPlay: false, shouldRecord: false
+        )
+        XCTAssertFalse(idle.input)
+        XCTAssertFalse(idle.output)
+    }
+
 }

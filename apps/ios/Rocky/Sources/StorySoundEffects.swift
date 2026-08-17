@@ -43,7 +43,8 @@ final class StorySoundEffects {
         completionFallback?.cancel()
         completionFallback = nil
         player.stop()
-        RockyAudioEngine.shared.ensureRunning()
+        // `play` starts the shared graph before its next buffer. Restarting an empty player here
+        // races AVAudioSession precisely when barge-in/pause is cancelling all local output.
     }
 
     private func finish(epoch expectedEpoch: Int) {

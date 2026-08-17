@@ -82,8 +82,9 @@ final class HumePcmPlayer {
         pendingChunks = 0
         chunksThisResponse = 0
         queuedSeconds = 0
-        // stop() leaves the node not playing; this puts it back, engine included.
-        RockyAudioEngine.shared.ensureRunning()
+        // Do not restart the graph merely to make an empty player ready. The next push starts the
+        // graph and every player before scheduling. Restarting here made each barge-in and pause
+        // race WebRTC/AVAudioSession teardown even though there was no sound left to render.
         setSpeaking(false)
     }
 

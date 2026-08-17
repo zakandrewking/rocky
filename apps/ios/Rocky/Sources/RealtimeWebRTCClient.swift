@@ -34,7 +34,11 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
         RTCInitializeSSL()
         let encoderFactory = RTCDefaultVideoEncoderFactory()
         let decoderFactory = RTCDefaultVideoDecoderFactory()
-        return RTCPeerConnectionFactory(encoderFactory: encoderFactory, decoderFactory: decoderFactory)
+        return RTCPeerConnectionFactory(
+            encoderFactory: encoderFactory,
+            decoderFactory: decoderFactory,
+            audioDevice: RockyAudioEngine.audioDevice
+        )
     }()
 
     private var peerConnection: RTCPeerConnection?
@@ -62,7 +66,14 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
         peerConnection.delegate = self
         self.peerConnection = peerConnection
 
-        let audioConstraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
+        let audioConstraints = RTCMediaConstraints(
+            mandatoryConstraints: nil,
+            optionalConstraints: [
+                "googEchoCancellation": "true",
+                "googAutoGainControl": "true",
+                "googNoiseSuppression": "true",
+            ]
+        )
         let audioSource = Self.factory.audioSource(with: audioConstraints)
         let audioTrack = Self.factory.audioTrack(with: audioSource, trackId: "rocky-mic")
         peerConnection.add(audioTrack, streamIds: ["rocky-stream"])
@@ -108,14 +119,9 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
         dataChannel?.readyState == .open
     }
 
-    /// Gates the microphone at the track, so nothing reaches OpenAI's voice-activity detection
-    /// while it's off.
-    ///
-    /// This exists because Rocky's own voice is not echo-cancelled on this platform: Hume's audio
-    /// and the Eridian chords play through AVAudioEngine, which is outside the voice-processing
-    /// render path WebRTC's AEC references, so the microphone genuinely hears her. Left open, the
-    /// server hears Rocky, decides the user is talking, cuts her off mid-sentence and transcribes
-    /// her own words as if the user had said them.
+    /// Pausing gates the microphone track. Normal response playback does not: Rocky's local audio
+    /// is rendered by the same injected voice-processing device that captures this track, so AEC
+    /// removes it while real nearby speech remains available to OpenAI semantic VAD.
     func setMicrophoneEnabled(_ enabled: Bool) {
         localAudioTrack?.isEnabled = enabled
     }
