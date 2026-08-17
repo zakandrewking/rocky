@@ -53,4 +53,39 @@ final class ToolConversationTests: XCTestCase {
         XCTAssertTrue(remembered.contains("never begin with whoa"))
         XCTAssertFalse(remembered.contains("short reflexive line"))
     }
+
+    func testMutedSpeechOnlyBargesInDuringActiveHumePlayback() {
+        XCTAssertTrue(
+            RealtimeVoiceSession.isMutedSpeechBargeIn(
+                hasLocalVoice: true,
+                isPaused: false,
+                isUttering: true,
+                microphoneGated: true
+            )
+        )
+        XCTAssertFalse(
+            RealtimeVoiceSession.isMutedSpeechBargeIn(
+                hasLocalVoice: false,
+                isPaused: false,
+                isUttering: true,
+                microphoneGated: true
+            )
+        )
+        XCTAssertFalse(
+            RealtimeVoiceSession.isMutedSpeechBargeIn(
+                hasLocalVoice: true,
+                isPaused: true,
+                isUttering: true,
+                microphoneGated: true
+            )
+        )
+        XCTAssertFalse(
+            RealtimeVoiceSession.isMutedSpeechBargeIn(
+                hasLocalVoice: true,
+                isPaused: false,
+                isUttering: false,
+                microphoneGated: true
+            )
+        )
+    }
 }

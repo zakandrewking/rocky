@@ -235,6 +235,11 @@ the one human imperative.
 - [x] Preserve interrupted performances. Pausing rewinds the current spoken/effect cue and holds
   the unheard steps; unpausing wakes the body and resumes them. A conversational interruption is
   projected privately and can later use `resume_robot_performance` without regenerating the story.
+- [x] Restore voice interruption for Hume playback. The 2026-08-16 phone log showed the WebRTC
+  microphone closing at every `response.created` and reopening only after playback, so server VAD
+  never received an interruption. Keep that echo gate, but use AVAudioEngine's muted-speech
+  activity listener to distinguish a nearby voice from Rocky's locally rendered speech, stop her
+  immediately, and reopen WebRTC for the remainder of the person's utterance.
 - [x] Tighten live story timing and expand physical storytelling. Movement cues now wait for the
   correlated board transition that says the wheels actually started (with a two-second anti-hang
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now
