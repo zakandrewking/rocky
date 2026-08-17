@@ -21,12 +21,13 @@ final class RealtimeVoiceSession: ObservableObject {
         case disconnected, connecting, connected, paused, failed(String)
     }
 
-    /// Said once, on waking, and never again -- so Rocky knows she stepped away without that
-    /// becoming a standing part of her character.
-    private static let wakePrompt = """
-        You have just come back after being paused for a moment. Say one short line that shows you
-        are back and listening. Do not introduce yourself, do not greet your friend as if meeting
-        them, and do not repeat anything from your first greeting. Pick up where you left off.
+    /// One unobtrusive bridge after a deliberate pause. It neither retries an interrupted greeting
+    /// nor turns silence into a generic assistant asking the friend to supply a new topic.
+    static let resumePrompt = """
+        Continue the shared moment in Rocky's established voice with exactly one short declarative
+        line. Do not refer to the interruption or describe your readiness, attention, or
+        availability. Do not ask anything or invite the friend to supply a topic. If there is no
+        clear continuing topic, express simple pleasure in the friend's presence and stop.
         """
 
     /// What to say about something that just happened to her body. Phrased as a thing already
@@ -511,8 +512,8 @@ final class RealtimeVoiceSession: ObservableObject {
             log("resumed, continuing the interrupted performance")
             startQueuedPerformance()
         } else {
-            log("resumed, asking Rocky to acknowledge waking")
-            requestResponse(instructions: Self.wakePrompt, reason: "resumed")
+            log("resumed, asking Rocky for a natural continuation")
+            requestResponse(instructions: Self.resumePrompt, reason: "resumed")
         }
     }
 

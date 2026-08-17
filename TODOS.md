@@ -249,6 +249,10 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   iOS to reject the entire performance and Rocky to invent a “missing-data wormhole.” The decoder
   now normalizes that unambiguous slip, the schema descriptions reinforce the field distinction,
   and tool execution errors are written explicitly to the session log.
+- [x] Remove support-assistant language from voice resume. The old one-off prompt supplied “back
+  and listening” plus “left off,” which bled into Rocky asking what felt “off or confusing.” Resume
+  now asks for one warm declarative continuation without retrying an interrupted greeting, asking
+  a question, inviting a topic, describing readiness, or referring to the pause.
 - [x] Remove operator/instruction framing exposed by the next live session. Rocky said “You guide,
   Rocky follows,” invited “just say the word,” and announced waking/movement before tool calls.
   Movement is now explicitly Rocky's autonomous alien body language; projected causes say “I chose
