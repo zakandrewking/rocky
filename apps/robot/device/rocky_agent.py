@@ -4,11 +4,11 @@
 # that is already running (see its header). There is no other agent -- the older commanded-motion
 # one is frozen at deprecated/motion_agent.py and is not pushed by anything.
 #
-# This is a body that moves on its own and that Rocky *collaborates with*, rather than one she
-# drives. She can see what it has been doing, change how wound up it is, ask it for a gesture, and
-# stop it. Mood and movement remain Rocky's choices rather than a person's remote control, but
-# once Rocky chooses a gesture the body yields its autonomous motion immediately. "Stop" is the
-# single imperative that bypasses Rocky's discretion too.
+# This is a body that moves on its own and that Rocky *collaborates with*, rather than one he
+# drives. He can see what it has been doing and choose its disposition, temporary light color,
+# gesture, or routine. Those remain Rocky's choices rather than a person's remote control, and
+# every choice overtakes the corresponding automatic behavior immediately. "Stop" is the single
+# imperative that bypasses Rocky's discretion too.
 #
 # This is step16_loudness_drive_sticky.py
 # (v11 of the loudness-driving experiment) with an observation layer added -- the motion loop and
@@ -342,8 +342,8 @@ _state = {
     "evt_last_retry": 0,
     "evt_last_snapshot": 0,
     "evt_buffer": "",
-    # Phase B/C: Rocky's own physical choices. A single gesture takes over immediately; routines
-    # retain a queue between their correlated beats. "stop" is the one human imperative.
+    # Phase B/C: Rocky's own physical choices. Every first gesture takes over immediately;
+    # routines retain only their later correlated beats. "stop" is the one human imperative.
     "dizzy_streak": 0,
     "dizzy_last_at": 0,
     "bump_suppressed_until": 0,
@@ -357,6 +357,12 @@ _state = {
     # is necessary for mixed story/dance routines: the old single slot let a follow-up wiggle
     # overwrite a spin that had not started yet, while both sides confidently claimed success.
     "gesture_queue": [],
+    # A chosen light colour temporarily overlays the automatic face/state colour. The base colour
+    # keeps updating underneath it, so expiry restores whatever Rocky's body is doing now rather
+    # than a stale colour from when the expression began.
+    "base_light": (0, 150, 255),
+    "light_override": None,
+    "light_until": None,
 }
 
 
@@ -401,6 +407,20 @@ GESTURE_QUARTER_TURN_MS = TURN_MS // 2
 GESTURE_TTL_MS = 6000  # an intention the loop never got a safe moment to honour expires rather
 # than firing minutes later, long after the moment that prompted it has passed
 GESTURE_STEP_BUDGET_MS = 3500  # later routine steps get time for earlier movements to finish
+LIGHT_COLORS = {
+    "red": (255, 0, 0),
+    "orange": (255, 90, 0),
+    "yellow": (255, 210, 0),
+    "green": (0, 255, 70),
+    "cyan": (0, 200, 255),
+    "blue": (0, 70, 255),
+    "purple": (150, 0, 255),
+    "pink": (255, 40, 160),
+    "white": (255, 255, 255),
+    "off": (0, 0, 0),
+}
+LIGHT_MIN_MS = 200
+LIGHT_MAX_MS = 10000
 
 
 def _mood():
@@ -466,7 +486,7 @@ def _emit_event(now, mode, detail):
 
 
 def _apply_intent(message, now):
-    """One intention from the voice character. Advisory by design -- see the module header."""
+    """Applies one of Rocky's own physical choices immediately -- see the module header."""
     kind = message.get("type")
 
     if kind == "stop":
@@ -533,6 +553,31 @@ def _apply_intent(message, now):
                         "moves": len(moves),
                     }
                 )
+                _start_gesture_now(now)
+        return
+
+    if kind == "light":
+        color = message.get("color")
+        if color == "auto":
+            _clear_light_override()
+        elif color in LIGHT_COLORS:
+            duration_ms = message.get("duration_ms", 2000)
+            try:
+                duration_ms = max(LIGHT_MIN_MS, min(LIGHT_MAX_MS, int(duration_ms)))
+            except Exception:
+                duration_ms = 2000
+            _set_light_override(color, duration_ms, now)
+        else:
+            return
+        _emit(
+            {
+                "type": "ack",
+                "t": now,
+                "of": "light",
+                "id": str(message.get("id", "")),
+                "color": color,
+            }
+        )
         return
 
 
@@ -541,9 +586,9 @@ def _queue_gestures(moves, action_id, now):
     total = len(moves)
     queued = []
     for index, name in enumerate(moves):
-        # A routine's first step still expires quickly if no listening boundary appears. Direct
-        # single gestures bypass this queue immediately. Each later routine step gets an added
-        # movement budget so its own earlier spins cannot make it expire.
+        # The first step is consumed immediately for both a direct gesture and a routine. Each
+        # later routine step gets an added movement budget so its own earlier spins cannot make it
+        # expire while waiting for the next listening boundary.
         expires = utime.ticks_add(now, GESTURE_TTL_MS + index * GESTURE_STEP_BUDGET_MS)
         queued.append((name, expires, action_id, index + 1, total))
     _state["gesture_queue"] = queued
@@ -798,10 +843,35 @@ def _report_error_once(event, error):
     _send_telemetry(',"event":"{}","error":"{}"'.format(event, str(error).replace('"', "'")))
 
 
+def _write_light(color):
+    cyberpi.led.on(color[0], color[1], color[2], id="all")
+
+
+def _set_light_override(name, duration_ms, now):
+    color = LIGHT_COLORS[name]
+    _state["light_override"] = color
+    _state["light_until"] = utime.ticks_add(now, duration_ms)
+    _write_light(color)
+
+
+def _clear_light_override():
+    _state["light_override"] = None
+    _state["light_until"] = None
+    _write_light(_state["base_light"])
+
+
+def _tick_light(now):
+    until = _state["light_until"]
+    if until is not None and utime.ticks_diff(now, until) >= 0:
+        _clear_light_override()
+
+
 def _show_face(label, color):
     cyberpi.display.clear()
     cyberpi.display.show_label(label, 32, 30, 50, 0)
-    cyberpi.led.on(color[0], color[1], color[2], id="all")
+    _state["base_light"] = color
+    if _state["light_override"] is None:
+        _write_light(color)
 
 
 def _face_for_level(level):
@@ -975,8 +1045,8 @@ def _tick_listening(now):
 
     gesture = _take_gesture(now)
     if gesture is not None:
-        # Repeats and routine steps resume ahead of autonomous exploration. A new single gesture
-        # already began immediately when its observer message arrived.
+        # Repeats and later routine steps resume ahead of autonomous exploration. Every new
+        # physical sequence already began its first beat when its observer message arrived.
         _perform_gesture(gesture, now)
         return
 
@@ -1182,6 +1252,7 @@ def tick():
     try:
         _pump_observers(now)
         _decay_mood(now)
+        _tick_light(now)
         if _state["mood"] == "still":
             if _state["mode"] == "listening":
                 gesture = _take_gesture(now)

@@ -126,10 +126,15 @@ Rules, stated explicitly because these are the ones that decide whether the mode
   act* — not the state machine underneath it. Showing every flip was most of why she sounded like
   she was reading a dial: she cannot speak in under two seconds, so the picture she spoke from was
   always two transitions old.
-- **A mixed routine is one act too.** A story can submit 2–8 spins and wiggles in one tool call.
-  Each physical transition carries the same action id plus its step number, so the phone follows
-  the sequence without turning each beat into another assistant response. Movement and its routine
-  state are silent context; the spoken response remains the story rather than stage directions.
+- **A mixed routine is one act too.** A story can submit 2–8 movement beats in one tool call. Its
+  first beat begins immediately; each transition carries the same action id plus its step number,
+  so the phone follows the sequence without turning each beat into another assistant response.
+  Movement and its routine state are silent context; the spoken response remains the story rather
+  than stage directions.
+- **Light is expression, not state evidence.** A chosen color immediately overlays the LEDs for a
+  bounded duration while automatic face colors keep updating underneath. Expiry restores the
+  current automatic color. Performance light cues can therefore overlap speech, effects, and
+  movement without becoming another conversational turn.
 - **`body`** is link freshness: `"here"` (heard from within 3s), `"quiet"` (3–10s), `"gone"`
   (>10s or socket closed). This is what makes "I've lost track of my body" sayable.
 - **Ages are relative and rounded** (`"3s ago"`, `"a while ago"` past 60s). Absolute timestamps are
@@ -196,11 +201,11 @@ The second axis is the one that makes this honest:
 
 **`evidence: confirmed | assumed | none`.**
 
-Once Rocky chooses a single gesture, the board immediately interrupts autonomous movement and
+Once Rocky chooses a gesture or routine, the board immediately interrupts autonomous movement and
 reports the correlated transition. Socket acceptance still arrives first, so there remains a
 small but meaningful evidence gap: `accepted` means the board heard Rocky; `started`/`running`
 means it reported entering that physical movement. Nothing claims wheel motion from a successful
-function return alone. Queued repeats and routines retain their correlated step boundaries.
+function return alone. Later repeats and routine beats retain their correlated step boundaries.
 
 **Nothing is ever assumed to have started.** Only the board can say that, and it does. `assumed`
 survives for the one case with nothing to wait on — a stop, where the motors are commanded off and
@@ -527,9 +532,10 @@ Small, additive, and none of them touch a tuned constant (`check-behavior-parity
 *what happened* rather than only *which mode was entered*: `startled` gains `"loud noise"` vs
 `"came close"`, the obstacle turn gains `"obstacle"` so it can be told from the personality turn,
 and gesture intents carry the caller's own `id`, echoed in the ack and used to follow the gesture
-through to its end. Mixed routines use a bounded queue and put that id plus `step:n/total` on every
-movement transition. A gesture's lifecycle is correlated rather than inferred from timing, even
-when an older physical move begins after a newer wish has reached the phone.
+through to its end. Mixed routines begin immediately, then use a bounded queue for later beats and
+put that id plus `step:n/total` on every movement transition. A gesture's lifecycle is correlated
+rather than inferred from timing. Temporary named-color LED overlays begin immediately and expire
+back to the latest automatic body color.
 
 ---
 

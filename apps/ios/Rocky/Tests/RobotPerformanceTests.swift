@@ -11,6 +11,7 @@ final class RobotPerformanceTests: XCTestCase {
               {"kind":"move","text":"","move":"wiggle","sound":"none","duration_ms":0},
               {"kind":"pause","text":"","move":"none","sound":"none","duration_ms":600},
               {"kind":"say","text":"A pocket wind escaped.","move":"none","sound":"none","duration_ms":0},
+              {"kind":"light","text":"","move":"none","sound":"none","color":"purple","duration_ms":1800},
               {"kind":"sound","text":"","move":"none","sound":"spaceship_flyby","duration_ms":0},
               {"kind":"move","text":"","move":"turn_left","sound":"none","duration_ms":0},
               {"kind":"pause","text":"","move":"none","sound":"none","duration_ms":1200},
@@ -23,7 +24,8 @@ final class RobotPerformanceTests: XCTestCase {
             steps,
             [
                 .say("A small door opened."), .move("wiggle"), .pause(600),
-                .say("A pocket wind escaped."), .sound("spaceship_flyby"), .move("turn_left"),
+                .say("A pocket wind escaped."), .light("purple", 1800),
+                .sound("spaceship_flyby"), .move("turn_left"),
                 .pause(1200),
                 .say("We followed it home."),
             ]
@@ -110,6 +112,24 @@ final class RobotPerformanceTests: XCTestCase {
     func testIncludesRequestedSpaceOperaEffects() {
         XCTAssertNotNil(StorySoundEffect(rawValue: "laser_blast"))
         XCTAssertNotNil(StorySoundEffect(rawValue: "spaceship_flyby"))
+    }
+
+    func testRejectsUnknownOrUnboundedLightCues() {
+        XCTAssertThrowsError(
+            try RobotPerformance.decode(
+                """
+                {"steps":[
+                  {"kind":"say","text":"First.","move":"none","sound":"none","duration_ms":0},
+                  {"kind":"move","text":"","move":"wiggle","sound":"none","duration_ms":0},
+                  {"kind":"pause","text":"","move":"none","sound":"none","duration_ms":500},
+                  {"kind":"say","text":"Middle.","move":"none","sound":"none","duration_ms":0},
+                  {"kind":"light","text":"","move":"none","sound":"none","color":"ultraviolet","duration_ms":1500},
+                  {"kind":"move","text":"","move":"spin","sound":"none","duration_ms":0},
+                  {"kind":"pause","text":"","move":"none","sound":"none","duration_ms":500}
+                ]}
+                """
+            )
+        )
     }
 
     func testRepairsAnEffectMisplacedInMoveByRealtimeArguments() throws {

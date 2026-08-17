@@ -197,22 +197,23 @@ tuning record and the rollback; `pnpm robot:check` fails if they drift.
 The shape, and why: the motion loop decides at ~20Hz with reactions lasting 0.3-4s, while the
 voice character cannot speak in under ~2s. So state travels as *recent history* ("4s ago something
 loud startled me") and control travels as Rocky's own *intentions*, never as human remote control.
-Once chosen, a single gesture now takes the motors immediately. Stop is the one human imperative.
+Once chosen, every physical expression takes over its automatic counterpart immediately. Stop is
+the one human imperative.
 
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
   stream on 8768, UDP beacon under a different service name so the motion-agent discovery ignores
   it.
 - [x] B: awake moods as multipliers over the tuned constants at their point of use, never rewriting
   them. `still` is a hard interlock above the state handlers: the board boots still, reasserts zero
-  motor speed every tick, suppresses loudness/floor/proximity reflexes and gestures, and only moves
-  after Rocky wakes it by choosing an awake mood.
+  motor speed every tick and suppresses loudness/floor/proximity reflexes. Rocky's own deliberate
+  movement and light choices can still express themselves without waking those reflexes.
 - [x] Finish the disposition lifecycle: rename ambiguous `normal` to `exploring` end-to-end, let
   temporary `excitable` decay to `calm` after 45 seconds, and execute payload module-level code
   under hardware stubs in `robot:check` so a boot-killing definition-order error cannot ship.
-- [x] C: correlated gestures and mixed 2–8 move routines. A newly chosen single gesture now
-  preempts autonomous motion immediately; repeats and routine steps stay queued between their
-  bounded beats. Each physical beat carries the caller id and step, so a late transition cannot
-  be mistaken for a newer wish.
+- [x] C: correlated gestures and mixed 2–8 move routines. Every newly chosen sequence now
+  preempts autonomous motion with its first beat immediately; only later repeats/routine steps
+  stay queued between bounded beats. Each physical beat carries the caller id and step, so a late
+  transition cannot be mistaken for a newer wish.
 - [x] Fix story-with-movement and movement narration from the 2026-08-16 phone logs. Both tries
   became three assistant responses — an announcement plus spin, an announcement plus wiggle, then
   a tiny stage-direction story — because the model could only send one gesture at a time and every
@@ -221,10 +222,16 @@ Once chosen, a single gesture now takes the motors immediately. Stop is the one 
   tool follow-ups explicitly return to the shared topic; and the prompt treats ordinary body
   language/state as silent context instead of conversational material.
 - [x] Replace duration guessing with ordered embodied performances. `robot_performance` returns the
-  actual story as `say` steps interspersed with `move` and locally synthesized 8-bit-ish `sound`
-  steps; iOS advances only when the preceding audio was heard. Laser blasts and spaceship flybys
-  are first-class cues. Tool preambles are withheld from speech, so the story—not production
-  narration—is what comes out of Rocky's mouth.
+  actual story as `say` steps interspersed with `move`, timed LED `light`, and locally synthesized
+  8-bit-ish `sound` steps; iOS advances only when the preceding audio was heard. Laser blasts and
+  spaceship flybys are first-class cues. Tool preambles are withheld from speech, so the
+  story—not production narration—is what comes out of Rocky's mouth.
+- [x] Give Rocky discretionary LED expression everywhere physical intent can appear. A standalone
+  `robot_light` choice immediately overlays automatic state lighting for 0.2–10 seconds; the base
+  color continues updating underneath and returns on expiry. Performances accept up to eight
+  named-color cues that overlap the following speech/movement/effect. The shared persona treats
+  color as occasional, silent emotional body language rather than a narrated codebook. Mood,
+  light, gesture, routine, and story cues now all take effect immediately once Rocky chooses them.
 - [x] Preserve interrupted performances. Pausing rewinds the current spoken/effect cue and holds
   the unheard steps; unpausing wakes the body and resumes them. A conversational interruption is
   projected privately and can later use `resume_robot_performance` without regenerating the story.

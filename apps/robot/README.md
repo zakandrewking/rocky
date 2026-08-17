@@ -7,13 +7,15 @@ room and moves itself, streaming what it does to whoever is watching. Independen
 
 **One agent.** `device/rocky_agent.py` is the payload. It is step16 of the loudness-driving
 experiment — eleven versions and a live calibration run — plus an observation and intention layer:
-it reports its own transitions on port 8768, and takes moods, gestures, mixed-move routines and a
-stop back the other way. Those remain Rocky's own *intentions*, not remote-control commands; once
-Rocky chooses a single gesture it immediately takes the motors from autonomous movement. Stop is
-the one human imperative. A routine queues 2–8 spins, wiggles, forward or
+it reports its own transitions on port 8768, and takes moods, temporary LED colors, gestures,
+mixed-move routines and a stop back the other way. Those remain Rocky's own *intentions*, not
+remote-control commands; once Rocky chooses any physical expression it immediately takes over
+the corresponding automatic behavior. Stop is the one human imperative. A routine begins its
+first of 2–8 spins, wiggles, forward or
 backward rolls, quick dashes, left/right turns, and turn-arounds as one interruptible, correlated
-action, with the caller id and step on every physical transition. This lets voice tell a story
-continuously while the movements run instead of starting a new voice turn for each move.
+action immediately, with later beats ordered and the caller id plus step on every physical
+transition. Chosen LED colors overlay automatic state colors for a bounded time, allowing story
+lighting to continue while speech and movement run, then restore the current automatic color.
 `scripts/check-behavior-parity.mjs` fails the build if any tuned constant drifts from
 `steps/step16_loudness_drive_sticky.py`, which stays as the tuning record and the rollback.
 

@@ -81,13 +81,14 @@ describe("createDeviceSessionConfig", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const names = (config.tools as Array<{ name: string }>).map((tool) => tool.name);
 
-    // Five reach apps/robot/device/rocky_agent.py directly; the sixth is sequenced by iOS into
-    // speech plus those same gesture messages. The steering tools are gone with the deprecated
+    // Five reach apps/robot/device/rocky_agent.py directly; performance is sequenced by iOS into
+    // speech plus those same physical messages. The steering tools are gone with the deprecated
     // motion agent.
     expect(names).toEqual([
       "stop_robot",
       "get_robot_state",
       "set_robot_mood",
+      "robot_light",
       "robot_gesture",
       "robot_routine",
       "robot_performance",
@@ -114,11 +115,12 @@ describe("createDeviceSessionConfig", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const tools = config.tools as Array<{ name: string; description: string; parameters: unknown }>;
     const gesture = tools.find((tool) => tool.name === "robot_gesture");
+    const light = tools.find((tool) => tool.name === "robot_light");
     const routine = tools.find((tool) => tool.name === "robot_routine");
 
     expect(config.instructions).toContain("BODY LANGUAGE IS SILENT");
-    expect(config.instructions).toContain("Never use future-tense movement announcements");
-    expect(config.instructions).toContain("Every spoken line around a movement call must make complete sense");
+    expect(config.instructions).toContain("Never use future-tense body-language announcements");
+    expect(config.instructions).toContain("Every spoken line around a physical-expression call must make complete sense");
     expect(config.instructions).toContain("use robot_performance once");
     expect(config.instructions).toContain("deliver that content normally");
     expect(config.instructions).toContain("and continuously");
@@ -157,7 +159,7 @@ describe("createDeviceSessionConfig", () => {
           maxItems: 31,
           items: {
             properties: {
-              kind: { enum: ["say", "move", "sound", "pause"] },
+              kind: { enum: ["say", "move", "sound", "light", "pause"] },
               move: {
                 enum: expect.arrayContaining([
                   "none",
@@ -172,7 +174,10 @@ describe("createDeviceSessionConfig", () => {
               sound: {
                 enum: expect.arrayContaining(["laser_blast", "spaceship_flyby"]),
               },
-              duration_ms: { minimum: 0, maximum: 4000 },
+              color: {
+                enum: expect.arrayContaining(["auto", "cyan", "purple", "pink", "off"]),
+              },
+              duration_ms: { minimum: 0, maximum: 10000 },
             },
           },
         },
@@ -183,6 +188,22 @@ describe("createDeviceSessionConfig", () => {
     expect(config.instructions).toContain("you still decide whether to move");
     expect(gesture?.description).toContain("immediately takes the motors from autonomous wandering");
     expect(gesture?.description).toContain("substantial bounded movement");
+    expect(routine?.description).toContain("first beat immediately takes your body");
+    expect(light?.description).toContain("self-chosen light expression");
+    expect(light?.description).toContain("takes effect immediately");
+    expect(light?.description).toContain("you decide whether it fits");
+    expect(light?.parameters).toMatchObject({
+      properties: {
+        color: {
+          enum: ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink", "white", "off"],
+        },
+        duration_ms: { minimum: 200, maximum: 10000 },
+      },
+    });
+    expect(config.instructions).toContain("Color is body language too");
+    expect(config.instructions).toContain("cues at a few dramatic changes");
+    expect(config.instructions).toContain("it takes effect immediately ahead of automatic behavior");
+    expect(config.instructions).toContain("the choice is still yours");
     expect(config.instructions).not.toMatch(/\bsafe(?:ty)?\b|\bunsafe\b/i);
     expect(config.instructions).toContain("<performance-paused>");
     expect(resume?.description).toContain("resume the unheard steps");
@@ -232,8 +253,8 @@ describe("createDeviceSessionConfig", () => {
 
     // The first live session narrated a pending gesture as a work queue; the story session then
     // narrated every move as a separate response. Both are now ruled out at the shared cause.
-    expect(instructions).toContain("Movement is punctuation, not the subject");
-    expect(instructions).toContain("Never use future-tense movement announcements");
+    expect(instructions).toContain("Movement and color are punctuation, not the subject");
+    expect(instructions).toContain("Never use future-tense body-language announcements");
     expect(instructions).toContain('Never "the body"');
   });
 

@@ -9,10 +9,14 @@ enum RobotPerformance {
         "spin", "wiggle", "forward", "fast_forward", "backward",
         "turn_left", "turn_right", "turn_around",
     ]
+    static let supportedLightColors: Set<String> = [
+        "red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink", "white", "off",
+    ]
     enum Step: Equatable {
         case say(String)
         case move(String)
         case sound(String)
+        case light(String, Int)
         case pause(Int)
     }
 
@@ -25,10 +29,11 @@ enum RobotPerformance {
         let text: String
         let move: String
         let sound: String
+        let color: String
         let durationMs: Int
 
         enum CodingKeys: String, CodingKey {
-            case kind, text, move, sound
+            case kind, text, move, sound, color
             case durationMs = "duration_ms"
         }
 
@@ -41,6 +46,7 @@ enum RobotPerformance {
             text = try values.decodeIfPresent(String.self, forKey: .text) ?? ""
             move = try values.decodeIfPresent(String.self, forKey: .move) ?? "none"
             sound = try values.decodeIfPresent(String.self, forKey: .sound) ?? "none"
+            color = try values.decodeIfPresent(String.self, forKey: .color) ?? "auto"
             durationMs = try values.decodeIfPresent(Int.self, forKey: .durationMs) ?? 0
         }
     }
@@ -64,6 +70,7 @@ enum RobotPerformance {
         var result: [Step] = []
         var moveCount = 0
         var soundCount = 0
+        var lightCount = 0
         var totalPauseMs = 0
         var needsSpokenTextBeforeNextMove = false
         var spokenCharacters = 0
@@ -72,14 +79,16 @@ enum RobotPerformance {
             let text = wire.text.trimmingCharacters(in: .whitespacesAndNewlines)
             switch wire.kind {
             case "say":
-                guard !text.isEmpty, wire.move == "none", wire.sound == "none", wire.durationMs == 0 else {
-                    throw ValidationError.invalid("say steps need text and no move, sound, or duration")
+                guard !text.isEmpty, wire.move == "none", wire.sound == "none",
+                    wire.color == "auto", wire.durationMs == 0
+                else {
+                    throw ValidationError.invalid("say steps need text and no move, sound, light, or duration")
                 }
                 spokenCharacters += text.count
                 result.append(.say(text))
                 needsSpokenTextBeforeNextMove = false
             case "move":
-                guard text.isEmpty, wire.sound == "none", wire.durationMs == 0,
+                guard text.isEmpty, wire.sound == "none", wire.color == "auto", wire.durationMs == 0,
                     supportedMoves.contains(wire.move)
                 else {
                     throw ValidationError.invalid("move steps need empty text and one supported movement")
@@ -101,16 +110,27 @@ enum RobotPerformance {
                 } else {
                     sound = nil
                 }
-                guard text.isEmpty, wire.durationMs == 0, let sound else {
-                    throw ValidationError.invalid("sound steps need one supported effect and no text, move, or duration")
+                guard text.isEmpty, wire.color == "auto", wire.durationMs == 0, let sound else {
+                    throw ValidationError.invalid("sound steps need one supported effect and no text, move, light, or duration")
                 }
                 soundCount += 1
                 guard soundCount <= 6 else {
                     throw ValidationError.invalid("a performance can use at most 6 sound effects")
                 }
                 result.append(.sound(sound))
-            case "pause":
+            case "light":
                 guard text.isEmpty, wire.move == "none", wire.sound == "none",
+                    supportedLightColors.contains(wire.color), (200...10_000).contains(wire.durationMs)
+                else {
+                    throw ValidationError.invalid("light steps need one supported color and a duration from 200 to 10000 ms")
+                }
+                lightCount += 1
+                guard lightCount <= 8 else {
+                    throw ValidationError.invalid("a performance can use at most 8 light cues")
+                }
+                result.append(.light(wire.color, wire.durationMs))
+            case "pause":
+                guard text.isEmpty, wire.move == "none", wire.sound == "none", wire.color == "auto",
                     (100...4_000).contains(wire.durationMs)
                 else {
                     throw ValidationError.invalid("pause steps need a duration from 100 to 4000 ms and no text, move, or sound")
@@ -121,7 +141,7 @@ enum RobotPerformance {
                 }
                 result.append(.pause(wire.durationMs))
             default:
-                throw ValidationError.invalid("performance step kind must be say, move, sound, or pause")
+                throw ValidationError.invalid("performance step kind must be say, move, sound, light, or pause")
             }
         }
 

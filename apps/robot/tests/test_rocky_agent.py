@@ -17,9 +17,13 @@ class DeviceDouble(types.ModuleType):
         self.loudness_reads = 0
         self.distance_reads = 0
         self.reflect_reads = 0
+        self.led_calls = []
         self.now = 1000
         self.display = types.SimpleNamespace(clear=lambda: None, show_label=lambda *args, **kwargs: None)
-        self.led = types.SimpleNamespace(on=lambda *args, **kwargs: None)
+        self.led = types.SimpleNamespace(on=self.led_on)
+
+    def led_on(self, red, green, blue, **kwargs):
+        self.led_calls.append((red, green, blue, kwargs))
 
     def drive_speed(self, left, right):
         self.drive_calls.append((left, right))
@@ -209,10 +213,11 @@ class StillInterlockTests(unittest.TestCase):
             {"type": "routine", "moves": ["spin", "wiggle", "spin"], "id": "act_story"}, 1000
         )
 
-        first = payload["_take_gesture"](1001)
+        state = payload["_state"]
+        self.assertEqual(state["mode"], "turning")
+        self.assertIn("gesture: spin id:act_story step:1/3", state["events"][-1][2])
         second = payload["_take_gesture"](1002)
         third = payload["_take_gesture"](1003)
-        self.assertEqual((first[0], first[2], first[3:]), ("spin", "act_story", (1, 3)))
         self.assertEqual((second[0], second[2], second[3:]), ("wiggle", "act_story", (2, 3)))
         self.assertEqual((third[0], third[2], third[3:]), ("spin", "act_story", (3, 3)))
         self.assertIsNone(payload["_take_gesture"](1004))
@@ -243,18 +248,60 @@ class StillInterlockTests(unittest.TestCase):
         payload["_apply_intent"](
             {"type": "routine", "moves": ["spin", "wiggle"], "id": "act_old"}, 1000
         )
-        already_started = payload["_take_gesture"](1001)
+        self.assertEqual(payload["_state"]["mode"], "turning")
 
         payload["_apply_intent"](
             {"type": "routine", "moves": ["wiggle", "spin"], "id": "act_new"}, 1002
         )
 
-        self.assertEqual((already_started[0], already_started[2]), ("spin", "act_old"))
-        replacement = payload["_take_gesture"](1003)
-        self.assertEqual((replacement[0], replacement[2]), ("wiggle", "act_new"))
+        self.assertEqual(payload["_state"]["mode"], "recovering")
+        self.assertIn("gesture: wiggle id:act_new step:1/2", payload["_state"]["events"][-1][2])
         final_move = payload["_take_gesture"](1004)
         self.assertEqual((final_move[0], final_move[2]), ("spin", "act_new"))
         self.assertIsNone(payload["_take_gesture"](1005))
+
+    def test_chosen_light_immediately_overrides_automatic_color_then_restores_current_base(self):
+        payload, cyberpi, *_ = load_payload()
+        state = payload["_state"]
+
+        payload["_show_face"]("o _ o", (0, 150, 255))
+        payload["_apply_intent"](
+            {"type": "light", "color": "purple", "duration_ms": 1500, "id": "light_story"},
+            1000,
+        )
+        self.assertEqual(cyberpi.led_calls[-1][:3], payload["LIGHT_COLORS"]["purple"])
+
+        # Automatic state changes continue underneath without stealing the chosen expression.
+        payload["_show_face"]("O   O", (255, 150, 0))
+        self.assertEqual(cyberpi.led_calls[-1][:3], payload["LIGHT_COLORS"]["purple"])
+        self.assertEqual(state["base_light"], (255, 150, 0))
+
+        payload["_tick_light"](2499)
+        self.assertEqual(cyberpi.led_calls[-1][:3], payload["LIGHT_COLORS"]["purple"])
+        payload["_tick_light"](2500)
+        self.assertEqual(cyberpi.led_calls[-1][:3], (255, 150, 0))
+        self.assertIsNone(state["light_override"])
+
+    def test_every_physical_choice_starts_immediately_over_autonomous_motion(self):
+        payload, cyberpi, mbot2, *_ = load_payload()
+        state = payload["_state"]
+        state.update(booted=True, mood="exploring", mode="driving", rpm=100, drive_started=500)
+
+        payload["_apply_intent"](
+            {"type": "routine", "moves": ["backward", "turn_left"], "id": "chosen_routine"},
+            1000,
+        )
+        self.assertEqual(state["mode"], "gesturing")
+        self.assertEqual(
+            mbot2.drive_calls[-1],
+            (-payload["GESTURE_MOVE_RPM"], payload["GESTURE_MOVE_RPM"]),
+        )
+
+        payload["_apply_intent"](
+            {"type": "light", "color": "cyan", "duration_ms": 900, "id": "chosen_light"},
+            1001,
+        )
+        self.assertEqual(cyberpi.led_calls[-1][:3], payload["LIGHT_COLORS"]["cyan"])
 
 
 if __name__ == "__main__":

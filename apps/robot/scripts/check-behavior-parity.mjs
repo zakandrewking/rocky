@@ -90,6 +90,11 @@ function pythonKeys(source, name) {
   const body = source.slice(start, source.indexOf("\n}", start));
   return [...body.matchAll(/^\s{4}"([^"]+)":/gm)].map((m) => m[1]).sort();
 }
+/** A TypeScript const tuple of string literals. */
+function typescriptNames(source, name) {
+  const body = source.match(new RegExp(`const ${name} = \\[([\\s\\S]*?)\\] as const;`))?.[1];
+  return body ? [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]).sort() : null;
+}
 /** The enum on a tool parameter, e.g. enum: ["spin", "wiggle"] */
 function toolEnum(source, property) {
   const body = source.match(new RegExp(`${property}: \\{ type: "string", enum: \\[([^\\]]*)\\]`))?.[1];
@@ -108,6 +113,7 @@ for (const [label, onBoard, offered] of [
   ["gestures", pythonNames(live, "GESTURES"), toolEnum(session, "gesture")],
   ["routine moves", pythonNames(live, "GESTURES"), toolArrayItemEnum(session, "moves")],
   ["moods", pythonKeys(live, "MOODS"), toolEnum(session, "mood")],
+  ["light colors", pythonKeys(live, "LIGHT_COLORS"), typescriptNames(session, "LIGHT_COLORS")],
 ]) {
   if (!onBoard || !offered) drifted.push(`${label}: could not be read from both sides`);
   else if (onBoard.join(",") !== offered.join(",")) {

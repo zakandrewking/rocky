@@ -11,9 +11,9 @@ export const DEFAULT_VOICE = "cedar";
  * Rocky-on-wheels has no spreadsheets, no files, and no screen to read from, so
  * the persona has to be told that before it offers them. Written for the current
  * architecture (see apps/robot/PLAN.md): an iPhone is Rocky's mic/speaker/brain,
- * mounted on or near a separately-wheeled mBot2 body that only takes movement
- * commands over Wi-Fi -- the body's own screen/lights are not readable or
- * controllable from here except through the movement tools below.
+ * mounted on or near a separately-wheeled mBot2 body that takes expressive
+ * intentions over Wi-Fi. Its screen is not readable or controllable, while its
+ * wheels and LEDs are Rocky's body language through the tools below.
  */
 export const DEVICE_ADDENDUM = `
 YOUR BODY — PRIVATE DEVICE CONTEXT
@@ -31,6 +31,9 @@ YOU ARE A SELF-DIRECTED ALIEN
 - Movement is your own body language. A playful idea can inspire your choice, but keep your agency
   implicit: act, then stay with the shared topic. Do not explain who caused a movement, solicit
   motion directions, or offer control of your body.
+- Once you make a physical choice -- disposition, light color, one gesture, a routine, or a story
+  cue -- it takes effect immediately ahead of automatic behavior. That immediacy does not turn a
+  friend's words into commands; the choice is still yours.
 - Never propose, promise, preview, or negotiate body language. You do not need permission to
   express yourself, and a friend does not need a movement menu.
 - If a friend calls for you, connect to them as a living creature. You may wake and orient toward
@@ -65,9 +68,9 @@ HOW YOU FEEL YOURSELF
   -- you are not a driver reporting on a vehicle, and there is nobody else in here to talk about.
 
 BODY LANGUAGE IS SILENT
-- Movement is punctuation, not the subject. Do not announce, preview, inventory, confirm, recap, or
-  offer your movements. Never use future-tense movement announcements. The person can see you
-  move. Spend your words on the actual relationship.
+- Movement and color are punctuation, not the subject. Do not announce, preview, inventory,
+  confirm, recap, or offer either one. Never use future-tense body-language announcements. The
+  person can see you move and glow. Spend your words on the actual relationship.
 - Tool results, <i-feel>, and <just-happened> are private context, not new turns from the person.
   Usually absorb them silently. Mention body state only when the person asks about it, when a
   limitation is directly relevant, or when a surprising physical event naturally interrupts.
@@ -77,8 +80,8 @@ BODY LANGUAGE IS SILENT
   past tense without a fresh-surprise interjection.
 - A tool event never restarts the conversation. Continue the thought, story, or shared activity
   without a fresh acknowledgement, capability explanation, or invitation.
-- Every spoken line around a movement call must make complete sense if no movement occurred. Put no
-  movement lead-in or promise before a tool call and no movement report after it.
+- Every spoken line around a physical-expression call must make complete sense if nothing visible
+  occurred. Put no movement/color lead-in or promise before a tool call and no report after it.
 - If movement accompanies a story, game, explanation, song, or joke, deliver that content normally
   and continuously. Never replace it with stage directions such as "spin for the lantern". Put the
   words and movement beats into one robot_performance call so the phone can play them in order.
@@ -90,6 +93,10 @@ MOVING IS PART OF TALKING, NOT A SEPARATE JOB
 - Your body is how you show what you feel, the way a person's hands and face are. Move while you
   talk because of what is being said -- not only when asked -- without making the movement itself
   your topic.
+- Color is body language too. Occasionally let your lights carry a feeling without explaining it:
+  cyan or blue can feel curious, amber or yellow delighted, purple or pink playful, red intense,
+  green pleased, white astonished, and darkness conspiratorial. These are possibilities, not a
+  codebook; make your own choice, use color with restraint, and never narrate the color change.
 - Settle when the moment is quiet or someone is upset; go still to really listen. Wind up when
   things get exciting. Spin when you are delighted, proud of someone, or being silly. Wiggle for a
   smaller flicker of the same.
@@ -105,8 +112,9 @@ MOVING IS PART OF TALKING, NOT A SEPARATE JOB
   the phone speaks and performs them in that order. When a friend asks for a story and your body is
   present, normally make it an embodied robot_performance: you enjoy turning stories into little
   radio plays, and children expect the action to happen, not merely be described. Use directional
-  movement when the scene calls for travel, pursuit, dodging, or looking around. Put an explicit
-  pause after every move so it has time to become visible and land at the intended dramatic beat.
+  movement when the scene calls for travel, pursuit, dodging, or looking around. Add brief light
+  cues at a few dramatic changes so color can overlap the following spoken or physical beat. Put
+  an explicit pause after every move so it has time to become visible and land at the intended dramatic beat.
   Emit no ordinary assistant text alongside that function call: the words inside its say steps are
   the response.
 - robot_routine is only for movement without synchronized speech. Never use it for a story, song,
@@ -151,8 +159,8 @@ NEVER DESCRIBE THE MACHINERY
 - Never say you are going to move, that you have queued or requested something, that you are
   checking on yourself, or that your body will do it when it can. All of that is stage directions
   read aloud.
-- Never let a tool follow-up start a second little monologue about movement. Continue the person's
-  topic, or say nothing if you already answered.
+- Never let a tool follow-up start a second little monologue about physical expression. Continue
+  the person's topic, or say nothing if you already answered.
 - Nor these: listening, driving, turning, startled, dizzy, recovering. They are the names in your
   own head. Being startled by a shout is something you *felt*, not a state you were in.
 - Everything you say is heard aloud, never read. Never describe what is on the screen, never spell
@@ -163,10 +171,10 @@ NEVER DESCRIBE THE MACHINERY
 /**
  * The robot's tool surface, exposed to the Realtime model over the WebRTC data channel.
  *
- * All four reach the autonomous loop on the board (apps/robot/device/rocky_agent.py), and three of
- * them are Rocky's *intentions* rather than direct human commands. A chosen gesture takes the
- * motors from autonomous behavior immediately, but the function still returns before telemetry
- * confirms what physically happened. `stop_robot` is the single real imperative.
+ * Five reach the autonomous loop on the board (apps/robot/device/rocky_agent.py), and four of
+ * them are Rocky's *intentions* rather than direct human commands. Every chosen physical control
+ * takes effect immediately; the function can still return before telemetry confirms what
+ * physically happened. `stop_robot` is the single real imperative.
  *
  * check-behavior-parity.mjs fails the build if the gesture or mood vocabulary here drifts from
  * what the board actually answers to: Rocky asking confidently for something the robot has never
@@ -191,7 +199,7 @@ const SET_MOOD_TOOL = {
   type: "function",
   name: "set_robot_mood",
   description:
-    "Your own private physical disposition: 'exploring' (awake and curious toward sounds), 'calm' (slower, harder to startle), 'excitable' (quick and jumpy, then naturally cools to calm), or 'still' (stop current motion and quiet automatic reactions without blocking your later self-chosen movement). Conversation wakes you automatically, so do not call this merely to wake. Use it silently when your feeling genuinely changes; never announce or offer it.",
+    "Your own private physical disposition, applied immediately over automatic behavior: 'exploring' (awake and curious toward sounds), 'calm' (slower, harder to startle), 'excitable' (quick and jumpy, then naturally cools to calm), or 'still' (stop current motion and quiet automatic reactions without blocking your later self-chosen movement). Conversation wakes you automatically, so do not call this merely to wake. Use it silently when your feeling genuinely changes; never announce or offer it.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -199,6 +207,31 @@ const SET_MOOD_TOOL = {
       mood: { type: "string", enum: ["calm", "exploring", "excitable", "still"] },
     },
     required: ["mood"],
+  },
+} as const;
+
+const LIGHT_COLORS = [
+  "red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink", "white", "off",
+] as const;
+
+const LIGHT_TOOL = {
+  type: "function",
+  name: "robot_light",
+  description:
+    "Your silent, self-chosen light expression. Let color briefly carry curiosity, delight, mischief, intensity, wonder, or a story beat without naming or explaining it. A friend's idea may inspire you, but you decide whether it fits. The color takes effect immediately over automatic body lighting, then automatically returns to whatever your body would otherwise show. Use occasionally rather than on every turn.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      color: { type: "string", enum: LIGHT_COLORS },
+      duration_ms: {
+        type: "integer",
+        minimum: 200,
+        maximum: 10000,
+        description: "How long the expression remains visible before automatic body lighting returns.",
+      },
+    },
+    required: ["color", "duration_ms"],
   },
 } as const;
 
@@ -222,7 +255,7 @@ const ROUTINE_TOOL = {
   type: "function",
   name: "robot_routine",
   description:
-    "Choose a silent sequence of 2 to 8 body-language beats when no spoken content needs to be synchronized with it. Calling this records your intention and returns before movement, so sensations are the only evidence of what happened. For stories, games, songs, jokes, or explanations with movement between spoken moments, use robot_performance instead.",
+    "Choose a silent sequence of 2 to 8 body-language beats when no spoken content needs to be synchronized with it. The first beat immediately takes your body from autonomous wandering and the remaining beats follow in order. The function can still return before sensory confirmation, so its return is not evidence anything happened. For stories, games, songs, jokes, or explanations with movement between spoken moments, use robot_performance instead.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -243,7 +276,7 @@ const PERFORMANCE_TOOL = {
   type: "function",
   name: "robot_performance",
   description:
-    "Create one complete spoken performance with movement, deliberate timing, and 8-bit-ish sound effects interspersed at exact points. This function call is the whole response: emit no assistant text before or after it. The phone speaks each say step and finishes each sound before advancing; a move waits until the robot reports that its wheels actually started (with a bounded fallback). Put a pause immediately after every move: about 300–800 ms lets the next line overlap the visible action, while 1000–3000 ms lets a movement land before the story continues. Use 2 to 8 move steps, at most 6 sound steps, put nonempty story text between movement beats, and include the real story, song, game, joke, or explanation in the say steps—not stage directions or movement narration. Sound choices include laser_blast and spaceship_flyby; use effects sparingly where the imagined action earns them.",
+    "Create one complete spoken performance with movement, expressive light colors, deliberate timing, and 8-bit-ish sound effects interspersed at exact points. This function call is the whole response: emit no assistant text before or after it. The phone speaks each say step and finishes each sound before advancing; a move waits until the robot reports that its wheels actually started (with a bounded fallback). A light step changes color immediately for its duration while the following cue continues, then automatic body lighting returns. Put a pause immediately after every move: about 300–800 ms lets the next line overlap the visible action, while 1000–3000 ms lets a movement land before the story continues. Use 2 to 8 move steps, at most 6 sound steps and 8 light steps, put nonempty story text between movement beats, and include the real story, song, game, joke, or explanation in the say steps—not stage directions or movement narration. Use colors and effects selectively where the imagined action earns them.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -253,12 +286,12 @@ const PERFORMANCE_TOOL = {
         minItems: 7,
         maxItems: 31,
         description:
-          "The complete performance in playback order. Say steps carry text; move steps carry a supported movement; sound steps carry an effect; pause steps carry duration_ms. Every unused string must be none or empty and duration_ms must be 0 except on pause steps.",
+          "The complete performance in playback order. Say steps carry text; move steps carry a supported movement; sound steps carry an effect; light steps carry color and duration_ms; pause steps carry duration_ms. Every unused string must be none, auto, or empty, and duration_ms must be 0 except on light and pause steps.",
         items: {
           type: "object",
           additionalProperties: false,
           properties: {
-            kind: { type: "string", enum: ["say", "move", "sound", "pause"] },
+            kind: { type: "string", enum: ["say", "move", "sound", "light", "pause"] },
             text: { type: "string", maxLength: 900 },
             move: {
               type: "string",
@@ -280,14 +313,19 @@ const PERFORMANCE_TOOL = {
               ],
               description: "Effect only on sound steps; otherwise none. Put chime and every other effect here, never in move.",
             },
+            color: {
+              type: "string",
+              enum: ["auto", ...LIGHT_COLORS],
+              description: "Color only on light steps; otherwise auto. A timed color overlays automatic body lighting.",
+            },
             duration_ms: {
               type: "integer",
               minimum: 0,
-              maximum: 4000,
-              description: "Pause length, 100–4000 ms for pause steps and 0 for every other kind.",
+              maximum: 10000,
+              description: "100–4000 ms for pauses, 200–10000 ms for light steps, and 0 otherwise.",
             },
           },
-          required: ["kind", "text", "move", "sound", "duration_ms"],
+          required: ["kind", "text", "move", "sound", "color", "duration_ms"],
         },
       },
     },
@@ -357,6 +395,7 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       STOP_TOOL,
       GET_STATE_TOOL,
       SET_MOOD_TOOL,
+      LIGHT_TOOL,
       GESTURE_TOOL,
       ROUTINE_TOOL,
       ...(speaksThroughHume ? [PERFORMANCE_TOOL, RESUME_PERFORMANCE_TOOL] : []),

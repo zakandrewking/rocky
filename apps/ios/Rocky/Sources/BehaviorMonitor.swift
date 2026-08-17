@@ -35,8 +35,8 @@ enum BehaviorMessage: Sendable {
 /// Rocky says "something loud scared me and I ran", the running is over, and that sentence is
 /// still true. Ages travel with every event so he can say it in the right tense.
 ///
-/// The same asymmetry runs the other way: what goes back is intentions, not commands. The board
-/// decides when to honour them.
+/// The same asymmetry runs the other way: what goes back is Rocky's intentions, not a person's
+/// commands. Once Rocky chooses a physical expression, the board honours it immediately.
 @MainActor
 final class BehaviorMonitor: ObservableObject {
     /// How much history to keep. Long enough to describe "the last little while", short enough
@@ -395,13 +395,26 @@ final class BehaviorMonitor: ObservableObject {
         RockyLog.write("behavior: gesture \(gesture)\(repeats > 1 ? " x\(repeats)" : "") (\(id))")
     }
 
-    /// One correlated sequence lets a story have several physical beats without each move
-    /// becoming a separate model response (or overwriting the move before it on the board).
+    /// One correlated sequence begins its first beat immediately, then preserves later beats
+    /// without each one becoming a separate model response or overwriting the one before it.
     func requestRoutine(_ moves: [String], id: String) {
         let bounded = Array(moves.prefix(8))
         guard bounded.count >= 2 else { return }
         send(["type": "routine", "moves": bounded, "id": id])
         RockyLog.write("behavior: routine \(bounded.joined(separator: "+")) (\(id))")
+    }
+
+    /// A temporary expressive colour overlays automatic body-state lighting, then the board
+    /// restores whichever state colour is current when the expression expires.
+    func setLight(_ color: String, durationMs: Int, id: String) {
+        let bounded = max(200, min(10_000, durationMs))
+        send(["type": "light", "color": color, "duration_ms": bounded, "id": id])
+        RockyLog.write("behavior: light \(color) for \(bounded)ms (\(id))")
+    }
+
+    func restoreAutomaticLight(id: String) {
+        send(["type": "light", "color": "auto", "duration_ms": 0, "id": id])
+        RockyLog.write("behavior: light returned to automatic (\(id))")
     }
 
     /// Recent history, newest first, as the model should read it: what happened and how long ago.

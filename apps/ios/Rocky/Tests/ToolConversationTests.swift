@@ -14,8 +14,10 @@ final class ToolConversationTests: XCTestCase {
         XCTAssertTrue(prompt.contains("acknowledgement"))
         XCTAssertTrue(prompt.contains("no additional words"))
         XCTAssertTrue(prompt.contains("earlier response was withheld"))
-        XCTAssertTrue(prompt.contains("playful movement idea"))
-        XCTAssertTrue(prompt.contains("never narrate waiting, momentum, or future motion"))
+        XCTAssertTrue(prompt.contains("playful physical idea"))
+        XCTAssertTrue(prompt.contains("movement or light choice"))
+        XCTAssertTrue(prompt.contains("never narrate waiting, momentum, future motion"))
+        XCTAssertTrue(prompt.contains("a color change"))
     }
 
     func testResumeIsAWarmContinuationRatherThanAGreetingOrSupportQuestion() {

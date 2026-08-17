@@ -8,9 +8,9 @@ original "laptop is the brain" design, and [`apps/cyberpi`](../cyberpi/README.md
 
 Rocky talks over real OpenAI Realtime voice (`gpt-realtime-2.1` — GPT-Live checked and confirmed
 not API-accessible yet, see `TODOS.md`), connected directly to OpenAI over WebRTC
-(`stasel/WebRTC`, no relay server), the same architecture `apps/desktop` uses. `stop_robot`,
-`get_robot_state`, `set_robot_mood` and `robot_gesture` are real tool calls the model picks
-arguments for — everything the one robot payload
+(`stasel/WebRTC`, no relay server), the same architecture `apps/desktop` uses. Movement, mood,
+and temporary LED color are real body-language tools the model chooses for itself — everything
+the one robot payload
 ([`apps/robot/device/rocky_agent.py`](../robot/device/rocky_agent.py)) can answer, and nothing it
 can't. `AVAudioSession` runs in `.voiceChat` mode (hardware echo cancellation) so barge-in works
 the way it does on desktop.
@@ -85,9 +85,10 @@ the scrolling log.
 
 ### Rocky knows what her body is doing
 
-Her body moves itself; she does not steer it. `robot_gesture` and `stop_robot` do not wait for it.
-They register an intent, return `{"action_id": …, "status": "accepted"}`, and whether anything
-actually moved arrives afterwards —
+Her body moves itself; she does not accept steering from a person. Once she chooses a mood,
+gesture, routine, or LED color, it takes over the corresponding automatic behavior immediately;
+`stop_robot` is the one friend-spoken imperative. Whether wheel motion actually began still
+arrives afterwards —
 as semantic state (`<robot-state>`: what she is doing, whether she is really moving, whether she is
 sure) and durable events (`<robot-event>`: she bumped into something, that finished, that failed).
 The authoritative record lives in `World/WorldStore.swift`, not in the conversation, and exactly
@@ -96,7 +97,7 @@ snapshot for a response to read.
 
 The point of all that is that Rocky can be honest about what she does *not* know — "that finished
 a few seconds ago", "I've lost track of my body" — instead of announcing a movement because a
-function returned true. A chosen gesture now takes over autonomous motion immediately, while the
+function returned true. A chosen physical expression now takes over its automatic counterpart immediately, while the
 correlated board transition remains the evidence that it physically began.
 [`docs/embodiment.md`](docs/embodiment.md) is the full design, including the scenario matrix.
 

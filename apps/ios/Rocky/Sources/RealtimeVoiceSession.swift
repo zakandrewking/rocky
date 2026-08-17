@@ -64,8 +64,9 @@ final class RealtimeVoiceSession: ObservableObject {
         was already complete, produce no additional words or movement calls. Any ordinary text in
         the earlier response was withheld from speech because it accompanied a tool call;
         include the actual conversational answer here if it has not yet been heard. If the
-        friend's whole turn was a playful movement idea and your silent body-language choice
-        already answered it, produce no words; never narrate waiting, momentum, or future motion.
+        friend's whole turn was a playful physical idea and your silent movement or light choice
+        already answered it, produce no words; never narrate waiting, momentum, future motion, or
+        a color change.
         """
 
     /// A paused session is held open, but not forever: the connection would go stale on its own
@@ -1194,6 +1195,15 @@ final class RealtimeVoiceSession: ObservableObject {
             world.noteFeeling(args.mood)
             return Self.encodeResult(["ok": true])
 
+        case "robot_light":
+            let args = try JSONDecoder().decode(LightArgs.self, from: data)
+            guard RobotPerformance.supportedLightColors.contains(args.color) else {
+                return Self.encodeResult(["ok": false, "problem": "I don't know that color"])
+            }
+            let durationMs = max(200, min(10_000, args.durationMs))
+            behavior.setLight(args.color, durationMs: durationMs, id: callId)
+            return Self.encodeResult(["ok": true])
+
         case "robot_gesture":
             let args = try JSONDecoder().decode(GestureArgs.self, from: data)
             guard let intent = ActionIntent(rawValue: args.gesture), intent.isGesture else {
@@ -1316,6 +1326,16 @@ final class RealtimeVoiceSession: ObservableObject {
         let times: Double?
     }
 
+    private struct LightArgs: Decodable {
+        let color: String
+        let durationMs: Int
+
+        enum CodingKeys: String, CodingKey {
+            case color
+            case durationMs = "duration_ms"
+        }
+    }
+
     private struct RoutineArgs: Decodable {
         let moves: [String]
     }
@@ -1370,6 +1390,18 @@ final class RealtimeVoiceSession: ObservableObject {
                 log("performance step \(stepNumber) played \(sound)")
                 storySounds.play(effect)
                 return
+            case .light(let color, let durationMs):
+                performance.currentStepIndex = stepIndex
+                activePerformance = performance
+                if let behavior, behavior.connected {
+                    behavior.setLight(
+                        color, durationMs: durationMs,
+                        id: "\(performance.id)-light-\(stepNumber)"
+                    )
+                    log("performance step \(stepNumber) lit \(color) for \(durationMs)ms")
+                } else {
+                    log("performance light skipped because the body is away")
+                }
             case .say(let text):
                 performance.currentStepIndex = stepIndex
                 activePerformance = performance
