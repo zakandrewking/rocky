@@ -59,6 +59,10 @@ pnpm robot:check                                                    # syntax + u
 pnpm robot:push <board-ip> apps/robot/device/rocky_agent.py         # push to a live board
 ```
 
+On macOS, the uploader automatically retries through the native TCP client if Node incorrectly
+reports that the reachable board has no route. It does not retry after a connection is made, so a
+payload is never deliberately sent twice.
+
 Press the board's Home button before any re-push: a running unbounded loop can stall the transfer
 indefinitely (see `STEPS.md`).
 

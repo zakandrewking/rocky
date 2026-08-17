@@ -39,6 +39,10 @@ crashing.**
   uploaded once via mBlock, then `scripts/push.mjs` reloaded a test payload three times in a row
   with zero further mBlock/USB, including one push with the USB cable fully disconnected. Scripted
   OTA is real on stock CyberOS; `PLAN.md`'s OTA answer updated accordingly.
+- [x] Make robot pushes recover from the recurring macOS/Node route mismatch: when Node reports
+  `EHOSTUNREACH`/`ENETUNREACH` before connecting, `push.mjs` now retries once through the native
+  TCP client. Confirmed the failure mode against a reachable live robot before adding the fallback;
+  a native client uploaded the same payload and received the board's byte-count reply immediately.
 - [x] Rewrite `rocky_agent.py` as a proper `bootstrap.py` payload (`tick()`-based) instead of a
   standalone blocking program left over from before the OTA loader existed. Fixed a real bug in
   the process: `drive`/`turn` used to loop internally for the whole commanded distance/angle,
