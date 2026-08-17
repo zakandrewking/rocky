@@ -297,6 +297,13 @@ FACES = (
     (0.95, "maxed", "X   X", (255, 0, 90)),  # "X eyes" at/near max speed, per live feedback
 )
 
+# The robot wakes physically still. DEFAULT_MOOD is the ordinary awake/fallback disposition;
+# BOOT_MOOD is deliberately separate so a reboot can never silently re-arm the motors, and the
+# excitement decay target is separate again so cooling down cannot accidentally mean going inert.
+DEFAULT_MOOD = "exploring"
+BOOT_MOOD = "still"
+EXCITABLE_DECAY_MOOD = "calm"
+
 _state = {
     "booted": False,
     "floor": None,
@@ -335,7 +342,8 @@ _state = {
     "dizzy_streak": 0,
     "dizzy_last_at": 0,
     "bump_suppressed_until": 0,
-    "mood": "normal",
+    "mood": BOOT_MOOD,
+    "mood_since": 0,
     "gesture": None,  # (name, expires_at_ticks) or None
     "gesture_repeats": 0,  # how many more times to do it once the current one finishes
     "gesture_name": "",
@@ -349,16 +357,27 @@ _state = {
 # Everything here is wrapped so an observation failure can never take the motion loop down with
 # it -- a dropped socket must cost visibility, never driving.
 
-# Mood scales the tuned constants at their point of use; it never rewrites them. That is what
-# keeps every value above the source of truth and every nudge reversible.
+# Awake moods scale the tuned constants at their point of use; they never rewrite them. "still"
+# is stronger: tick() treats it as a hard motor interlock and does not run a sensor/state handler.
+# That keeps every value above the source of truth and every nudge reversible.
 #   startle: multiplies STARTLE_CUTOFF -- higher is harder to startle
 #   speed:   multiplies the committed rpm -- 0.0 means "listen but never drive"
 MOODS = {
-    "normal": {"startle": 1.0, "speed": 1.0},
+    # The resting disposition: awake, restless, happy to wander toward whatever it hears. Named
+    # "exploring" rather than "normal" because it is not a neutral -- it is the one that makes the
+    # robot go looking, and it is what "come over here" resolves to. It cannot steer, but it can
+    # become the kind of thing that rolls toward a voice.
+    "exploring": {"startle": 1.0, "speed": 1.0},
     "calm": {"startle": 1.4, "speed": 0.7},
     "excitable": {"startle": 0.7, "speed": 1.0},
     "still": {"startle": 1.4, "speed": 0.0},
 }
+# Excitement burns off. Every other disposition is a standing decision -- "settle down" and "keep
+# still" are things a person asked for and should not quietly undo themselves -- but being wound up
+# is a state you come down from into calm, and left alone it never did: one "ooh, fun!" early in a session
+# silently lowered the startle threshold by 30% for the next twenty minutes. GUESSED, like every
+# other timing in this file: tune it against how long a burst of play actually feels.
+EXCITABLE_COOLDOWN_MS = 45000
 GESTURES = ("spin", "wiggle")
 MAX_GESTURE_REPEATS = 10  # "spin ten times" should work; beyond that it stops being playful
 GESTURE_SPIN_MS = TURN_MS * 2  # TURN_MS is the tuned ~180 degrees, so a full turn is two of them
@@ -367,7 +386,43 @@ GESTURE_TTL_MS = 6000  # an intention the loop never got a safe moment to honour
 
 
 def _mood():
-    return MOODS.get(_state["mood"], MOODS["normal"])
+    return MOODS.get(_state["mood"], MOODS[DEFAULT_MOOD])
+
+
+def _hold_still(now, detail="still interlock"):
+    """Hard movement interlock: stop now and bypass every sensor-driven state handler.
+
+    This is intentionally centralized rather than repeated in loudness, floor, and proximity
+    checks. It also catches an already-running drive, turn, jump, recovery, or gesture on the same
+    tick that Rocky goes still. Reasserting zero speed every tick makes the invariant physical,
+    not merely a state-machine convention.
+    """
+    had_queued_gesture = _state["gesture"] is not None or _state["gesture_repeats"] > 0
+    mbot2.drive_speed(0, 0)
+    _state["gesture"] = None
+    _state["gesture_repeats"] = 0
+    _state["level"] = 0.0
+    _state["rpm"] = 0
+    _state["drive_started"] = None
+    _state["return_to"] = "listening"
+    if _state["mode"] != "listening" or had_queued_gesture:
+        _enter("listening", now, detail)
+        _show_face("o _ o", (0, 150, 255))
+    _send_telemetry(',"interlock":"still"')
+
+
+def _decay_mood(now):
+    """Lets excitement burn off on its own. Only excitement: the others are standing requests."""
+    if _state["mood"] != "excitable":
+        return
+    if utime.ticks_diff(now, _state["mood_since"]) < EXCITABLE_COOLDOWN_MS:
+        return
+    _state["mood"] = EXCITABLE_DECAY_MOOD
+    _state["mood_since"] = now
+    # No behaviour transition: coming down off a burst of excitement is not an incident Rocky
+    # should narrate. Raw telemetry records the lifecycle and the 500ms snapshot carries the new
+    # disposition to the phone.
+    _send_telemetry(',"event":"mood_decayed"')
 
 
 def _emit(payload):
@@ -409,6 +464,9 @@ def _apply_intent(message, now):
         mood = message.get("mood")
         if mood in MOODS:
             _state["mood"] = mood
+            _state["mood_since"] = now
+            if mood == "still":
+                _hold_still(now)
             _emit({"type": "ack", "t": now, "of": "mood", "id": str(message.get("id", "")), "mood": mood})
         return
 
@@ -1001,7 +1059,11 @@ def tick():
     now = utime.ticks_ms()
     try:
         _pump_observers(now)
-        _TICKS[_state["mode"]](now)
+        _decay_mood(now)
+        if _state["mood"] == "still":
+            _hold_still(now)
+        else:
+            _TICKS[_state["mode"]](now)
     except Exception:
         mbot2.drive_speed(0, 0)  # never let bootstrap drop this payload with motors spinning
         raise

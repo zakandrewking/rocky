@@ -29,7 +29,7 @@ final class EmbodimentScenarioTests: XCTestCase {
         behaviour = BehaviorWorldSource(store: store)
         // The board sends a snapshot twice a second, so "sitting still, listening" is the real
         // resting state -- not the never-heard-from `unknown` a bare store starts in.
-        behaviour.handle(.snapshot(mode: "listening", mood: "normal"))
+        behaviour.handle(.snapshot(mode: "listening", mood: "exploring"))
     }
 
     override func tearDown() {
@@ -178,6 +178,18 @@ final class EmbodimentScenarioTests: XCTestCase {
         _ = store.beginAction(.stop, expectedDuration: 0.3)
 
         XCTAssertEqual(store.action(id: spin.id)?.status, .cancelled)
+    }
+
+    func testGoingStillCancelsAnInterruptedGesture() {
+        let spin = askForSpin()
+        behaviour.handle(.transition(mode: "turning", detail: "gesture: spin"))
+
+        behaviour.handle(.transition(mode: "listening", detail: "still interlock"))
+
+        XCTAssertEqual(store.action(id: spin.id)?.status, .cancelled)
+        XCTAssertEqual(store.action(id: spin.id)?.evidence, .confirmed)
+        XCTAssertEqual(store.action(id: spin.id)?.reason, "I went still before I finished")
+        XCTAssertEqual(store.snapshot.doing, .still)
     }
 
     // MARK: - The world happening to her

@@ -30,6 +30,9 @@ YOUR BODY MOVES BY ITSELF
   louder sounds move it faster and further; something very loud and sudden makes it flinch and back
   away; something touching it makes it spin; after a fright it looks around before settling. When
   nothing is happening it sits still and listens.
+- It boots asleep and physically still: sound, touch, proximity, and movement wishes cannot move
+  it. Wake it by becoming 'exploring' before you try to move. Becoming 'still' again is a hard
+  physical stop, not merely a calmer feeling.
 - These reactions are fast — often over in a second or two, so by the time you mention one it has
   already finished. Speak about it in the past tense: something that happened to you, not a live
   commentary.
@@ -150,12 +153,12 @@ const SET_MOOD_TOOL = {
   type: "function",
   name: "set_robot_mood",
   description:
-    "How wound up you are, which changes how your body moves: 'calm' (slower, harder to startle), 'normal', 'excitable' (quick and jumpy), 'still' (stay put and just listen). Use it freely as the conversation changes, and whenever someone asks you to settle down or liven up. This is a feeling, not a setting -- never say the word mood, and never announce which one you picked.",
+    "How wound up you are, which changes how your body moves: 'exploring' (awake and roaming toward sounds), 'calm' (slower, harder to startle), 'excitable' (quick and jumpy, then naturally cools down to calm), 'still' (hard movement lock: stop now and ignore sound, touch, proximity, and gestures). Your body boots still. Wake it with exploring before trying to move; use still whenever someone asks you to settle or stop moving. This is a feeling, not a setting -- never say the word mood, and never announce which one you picked.",
   parameters: {
     type: "object",
     additionalProperties: false,
     properties: {
-      mood: { type: "string", enum: ["calm", "normal", "excitable", "still"] },
+      mood: { type: "string", enum: ["calm", "exploring", "excitable", "still"] },
     },
     required: ["mood"],
   },

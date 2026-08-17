@@ -186,7 +186,7 @@ crashing.**
 
 ## Behaviour + voice collaboration (a thin slice of all four phases now exists)
 
-`apps/robot/device/rocky_behavior.py` is step16's autonomous loop plus an observation/intention
+`apps/robot/device/rocky_agent.py` is step16's autonomous loop plus an observation/intention
 layer. Its tuning is byte-identical to `steps/step16_loudness_drive_sticky.py`, which stays as the
 tuning record and the rollback; `pnpm robot:check` fails if they drift.
 
@@ -198,7 +198,13 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
   stream on 8768, UDP beacon under a different service name so the motion-agent discovery ignores
   it.
-- [x] B: mood as multipliers over the tuned constants at their point of use, never rewriting them.
+- [x] B: awake moods as multipliers over the tuned constants at their point of use, never rewriting
+  them. `still` is a hard interlock above the state handlers: the board boots still, reasserts zero
+  motor speed every tick, suppresses loudness/floor/proximity reflexes and gestures, and only moves
+  after Rocky wakes it by choosing an awake mood.
+- [x] Finish the disposition lifecycle: rename ambiguous `normal` to `exploring` end-to-end, let
+  temporary `excitable` decay to `calm` after 45 seconds, and execute payload module-level code
+  under hardware stubs in `robot:check` so a boot-killing definition-order error cannot ship.
 - [x] C: queued gestures (spin, wiggle) with a TTL, consumed only in `listening` so a reflex can
   never be interrupted by an intention.
 - [x] D: proactive narration of startle/bump, rate-limited and suppressed while already speaking.
@@ -259,7 +265,7 @@ to OpenAI.
   (a drive/turn has begun, where `ack` only ever meant *finished*) and `pong` (a heartbeat reply,
   because an open TCP socket does not prove the interpreter is running on this hardware — see the
   board-freeze incident above, where the port answered SYN while nothing was ever serviced).
-- [x] `rocky_behavior.py` transitions carry their reason (`startled` → "loud noise" vs "came
+- [x] `rocky_agent.py` transitions carry their reason (`startled` → "loud noise" vs "came
   close", the obstacle turn vs the personality turn) and gestures echo the caller's own id, so a
   gesture's fate is correlated rather than inferred from timing. No tuned constant touched;
   `check-behavior-parity.mjs` still passes.
@@ -292,7 +298,7 @@ to OpenAI.
   context truncation is busting the prefix long before our appends matter.
 - [ ] Tune the interruption cooldown (8s) and the projection coalescing window (700ms) against a
   real session rather than a guess. Both are first guesses in the same sense as every constant in
-  `rocky_behavior.py`, and both are the kind of thing that only reads wrong out loud.
+  `rocky_agent.py`, and both are the kind of thing that only reads wrong out loud.
 - [ ] `VoiceMoment.claimsMotion` is a keyword match over the utterance so far. It decides whether a
   bump *contradicts* Rocky or merely happens near her, so it is load-bearing for the deterministic
   interrupt — worth revisiting once there are real transcripts to check it against.

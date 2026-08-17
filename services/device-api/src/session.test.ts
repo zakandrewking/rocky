@@ -87,6 +87,20 @@ describe("createDeviceSessionConfig", () => {
     expect(names).toEqual(["stop_robot", "get_robot_state", "set_robot_mood", "robot_gesture"]);
   });
 
+  it("teaches the character that the robot boots still and must be woken", () => {
+    const config = createDeviceSessionConfig() as SessionConfig;
+    const tools = config.tools as Array<{ name: string; description: string; parameters: unknown }>;
+    const mood = tools.find((tool) => tool.name === "set_robot_mood");
+
+    expect(config.instructions).toContain("It boots asleep and physically still");
+    expect(config.instructions).toContain("Wake it by becoming 'exploring'");
+    expect(mood?.description).toContain("hard movement lock");
+    expect(mood?.description).toContain("Your body boots still");
+    expect(mood?.parameters).toMatchObject({
+      properties: { mood: { enum: ["calm", "exploring", "excitable", "still"] } },
+    });
+  });
+
   it("does not offer to drive a body that drives itself", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const names = (config.tools as Array<{ name: string }>).map((tool) => tool.name);

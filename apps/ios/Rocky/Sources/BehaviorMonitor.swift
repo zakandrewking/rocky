@@ -13,7 +13,7 @@ struct BehaviorEvent: Sendable, Equatable {
 
 /// What the board just said, in the board's own vocabulary.
 ///
-/// Deliberately untranslated. `rocky_behavior.py` speaks in state-machine names ("dizzy",
+/// Deliberately untranslated. `rocky_agent.py` speaks in state-machine names ("dizzy",
 /// "recovering") that came out of eleven versions of motion tuning and mean nothing to a person;
 /// turning them into something Rocky could say is BehaviorWorldSource's job, and keeping the two
 /// apart means the tuning record and the character can each change without the other.
@@ -25,7 +25,7 @@ enum BehaviorMessage: Sendable {
     case disconnected
 }
 
-/// Watches the robot's autonomous behaviour (apps/robot/device/rocky_behavior.py) and passes the
+/// Watches the robot's autonomous behaviour (apps/robot/device/rocky_agent.py) and passes the
 /// voice character's intentions back to it.
 ///
 /// The two loops run on incompatible clocks, and that shapes this whole class. The motion loop
@@ -50,7 +50,7 @@ final class BehaviorMonitor: ObservableObject {
     /// "no robot" means "none there" or "still looking".
     @Published private(set) var searchFinished = false
     @Published private(set) var mode = "unknown"
-    @Published private(set) var mood = "normal"
+    @Published private(set) var mood = "still"
     @Published private(set) var events: [BehaviorEvent] = []
 
     /// Every line the board sends, verbatim in its own vocabulary. Deciding what any of it means

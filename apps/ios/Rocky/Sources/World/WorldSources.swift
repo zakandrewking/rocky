@@ -117,6 +117,12 @@ final class BehaviorWorldSource {
             )
         case "turning" where detail.contains("obstacle"):
             store.record(.blocked, detail: "something got in my way and I had to turn")
+        case "listening" where detail.contains("still interlock"):
+            guard let id = gestureActionId else { return }
+            gestureActionId = nil
+            store.markAction(
+                id, status: .cancelled, evidence: .confirmed, reason: "I went still before I finished"
+            )
         case "listening" where detail.contains("expired"):
             guard let id = gestureActionId else { return }
             gestureActionId = nil

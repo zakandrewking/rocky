@@ -128,7 +128,7 @@ pnpm cyberpi:restore # write a backup back to the CyberPi (typed confirmation re
 pnpm cyberpi:flash-rocky # build and flash the native firmware over USB
 pnpm cyberpi:ota # push a new build to the CyberPi over Wi-Fi, no USB required
 pnpm --filter @rocky/robot test # robot SDK unit tests, no hardware needed
-pnpm robot:check # syntax-check the CyberOS device agent and its OTA payloads
+pnpm robot:check # syntax/unit/import-check the CyberOS payloads and verify tuning parity
 pnpm robot:push # push a new payload to a live CyberPi (needs bootstrap.py already on the board)
 pnpm ios:check # regenerate Rocky.xcodeproj from apps/ios/project.yml
 pnpm ios:test # run the iOS app's unit tests on the Simulator

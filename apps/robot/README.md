@@ -13,6 +13,10 @@ one real imperative. `scripts/check-behavior-parity.mjs` fails the build if any 
 drifts from `steps/step16_loudness_drive_sticky.py`, which stays as the tuning record and the
 rollback.
 
+The live payload boots in `still`, a hard motor interlock that bypasses every movement-producing
+sensor and gesture path. Rocky must choose an awake disposition (`exploring`, `calm`, or
+`excitable`) before the body can move; choosing `still` again stops current motion immediately.
+
 **The commanded-motion agent is deprecated.** There used to be a second payload — a body that sat
 still until told to drive or turn, over its own protocol on port 8765. It is frozen at
 [`deprecated/motion_agent.py`](deprecated/motion_agent.py) and nothing pushes it. Only one payload
@@ -48,7 +52,7 @@ crashing.
 ## Development
 
 ```bash
-pnpm robot:check                                                    # syntax + tuning parity
+pnpm robot:check                                                    # syntax + unit/import checks + tuning parity
 pnpm robot:push <board-ip> apps/robot/device/rocky_agent.py         # push to a live board
 ```
 

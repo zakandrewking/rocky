@@ -991,8 +991,8 @@ final class RealtimeVoiceSession: ObservableObject {
         case "set_robot_mood":
             let args = try JSONDecoder().decode(MoodArgs.self, from: data)
             // Deliberately not an action. How wound up she is has no beginning, middle or end to
-            // track -- and registering it as one would supersede whatever movement was actually in
-            // flight, so settling down mid-spin would silently abandon the spin.
+            // track. The board itself makes "still" a hard stop and reports the resulting
+            // listening transition; registering a second phone-side action would race that truth.
             behaviorSource.expectFeelingChange()
             behavior.setMood(args.mood, id: "mood")
             world.noteFeeling(args.mood)
