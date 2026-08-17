@@ -61,7 +61,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
         let connectedSession = try XCTUnwrap(connected["session"] as? [String: Any])
         let voiceOnlySession = try XCTUnwrap(voiceOnly["session"] as? [String: Any])
         XCTAssertEqual(connectedSession["type"] as? String, "realtime")
-        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 5)
+        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 7)
         XCTAssertEqual(connectedSession["tool_choice"] as? String, "auto")
         XCTAssertEqual((voiceOnlySession["tools"] as? [Any])?.count, 0)
         XCTAssertEqual(voiceOnlySession["tool_choice"] as? String, "none")
@@ -86,19 +86,21 @@ final class RealtimeSessionConfigTests: XCTestCase {
         // Conduct is shared across characters; a build missing it would be a real safety gap.
         XCTAssertTrue(instructions.contains("Never tell a child to smell"))
 
-        // Exactly what apps/robot/device/rocky_agent.py answers to. The steering tools went with
-        // the deprecated motion agent; a config still advertising them would have Rocky offering
-        // to drive a body that drives itself.
+        // Five commands reach the board directly; robot_performance is sequenced by iOS into
+        // spoken segments and those same gesture commands.
         let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
         XCTAssertEqual(
             names,
-            ["stop_robot", "get_robot_state", "set_robot_mood", "robot_gesture", "robot_routine"]
+            [
+                "stop_robot", "get_robot_state", "set_robot_mood", "robot_gesture",
+                "robot_routine", "robot_performance", "resume_robot_performance",
+            ]
         )
 
         let routine = (baked["tools"] as! [[String: Any]]).first { $0["name"] as? String == "robot_routine" }
         XCTAssertNotNil(routine)
         XCTAssertTrue(instructions.contains("BODY LANGUAGE IS SILENT"))
-        XCTAssertTrue(instructions.contains("call robot_routine once with the whole sequence"))
+        XCTAssertTrue(instructions.contains("use robot_performance once"))
 
         // Whether the model speaks or only writes is the character's choice, and the app reads it
         // back from here to decide whether to run a synthesiser at all.

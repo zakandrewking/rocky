@@ -16,11 +16,11 @@ final class RockyAudioEngine {
     static let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
     var sampleRate: Double { Self.format.sampleRate }
 
-    /// The two things Rocky plays. Fixed channels rather than a player per session: connecting
-    /// again used to attach another pair of nodes to the same engine and never detach the old
+    /// The things Rocky plays. Fixed channels rather than a player per session: connecting again
+    /// used to attach another set of nodes to the same engine and never detach the old
     /// ones.
     enum Channel: CaseIterable {
-        case voice, chords
+        case voice, chords, effects
     }
 
     private let engine = AVAudioEngine()

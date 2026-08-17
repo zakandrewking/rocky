@@ -66,6 +66,10 @@ final class BehaviorMonitor: ObservableObject {
     private var connection: NWConnection?
     private var scanTask: Task<Void, Never>?
     private var buffer = ""
+    /// Lifecycle mood commands can cross on the wire when pause is tapped twice quickly. Keep the
+    /// newest request separate from confirmed telemetry so resume can reverse an in-flight still
+    /// without pretending the board has already applied either command.
+    private var requestedMood: String?
 
     init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768) {
         self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
@@ -117,6 +121,7 @@ final class BehaviorMonitor: ObservableObject {
         connection?.cancel()
         connection = nil
         connected = false
+        requestedMood = nil
     }
 
     private struct Beacon: Decodable {
@@ -242,6 +247,7 @@ final class BehaviorMonitor: ObservableObject {
                         self.onBoardMessage?(.disconnected)
                     }
                     self.connected = false
+                    self.requestedMood = nil
                     self.connection = nil
                 default:
                     break
@@ -259,6 +265,7 @@ final class BehaviorMonitor: ObservableObject {
                 if isComplete || error != nil {
                     if self.connected { self.onBoardMessage?(.disconnected) }
                     self.connected = false
+                    self.requestedMood = nil
                     self.connection?.cancel()
                     self.connection = nil
                     return
@@ -296,13 +303,19 @@ final class BehaviorMonitor: ObservableObject {
         case "snapshot":
             mode = message["mode"] as? String ?? mode
             mood = message["mood"] as? String ?? mood
+            if requestedMood == mood { requestedMood = nil }
             onBoardMessage?(.snapshot(mode: mode, mood: mood))
         case "hello":
             mode = message["mode"] as? String ?? mode
             mood = message["mood"] as? String ?? mood
+            if requestedMood == mood { requestedMood = nil }
             RockyLog.write("behavior: robot says hello (mode \(mode), mood \(mood))")
             onBoardMessage?(.hello(mode: mode, mood: mood))
         case "ack":
+            if message["of"] as? String == "mood", let confirmed = message["mood"] as? String {
+                mood = confirmed
+                if requestedMood == confirmed { requestedMood = nil }
+            }
             onBoardMessage?(
                 .acknowledged(of: message["of"] as? String ?? "", id: (message["id"] as? String).flatMap { $0.isEmpty ? nil : $0 })
             )
@@ -334,6 +347,7 @@ final class BehaviorMonitor: ObservableObject {
     }
 
     func setMood(_ mood: String, id: String) {
+        requestedMood = mood
         send(["type": "mood", "mood": mood, "id": id])
         RockyLog.write("behavior: asked for mood \(mood)")
     }
@@ -341,17 +355,33 @@ final class BehaviorMonitor: ObservableObject {
     /// The board deliberately boots in the hard `still` interlock. Voice lifecycle, not the
     /// language model, owns crossing that boundary: otherwise one missed tool call leaves every
     /// later gesture accepted and immediately cancelled by the board.
-    static func wakeMoodIfNeeded(connected: Bool, currentMood: String) -> String? {
-        connected && currentMood == "still" ? "exploring" : nil
+    static func wakeMoodIfNeeded(
+        connected: Bool, currentMood: String, requestedMood: String? = nil
+    ) -> String? {
+        connected && (requestedMood ?? currentMood) == "still" ? "exploring" : nil
+    }
+
+    static func pauseMoodIfConnected(_ connected: Bool) -> String? {
+        connected ? "still" : nil
     }
 
     @discardableResult
     func wakeFromStill(id: String) -> Bool {
-        guard let wakeMood = Self.wakeMoodIfNeeded(connected: connected, currentMood: mood) else {
+        guard let wakeMood = Self.wakeMoodIfNeeded(
+            connected: connected, currentMood: mood, requestedMood: requestedMood
+        ) else {
             return false
         }
         setMood(wakeMood, id: id)
         RockyLog.write("behavior: voice lifecycle woke the robot from still")
+        return true
+    }
+
+    @discardableResult
+    func stillForVoicePause(id: String) -> Bool {
+        guard let pauseMood = Self.pauseMoodIfConnected(connected) else { return false }
+        setMood(pauseMood, id: id)
+        RockyLog.write("behavior: voice pause put the robot in still")
         return true
     }
 

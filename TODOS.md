@@ -216,6 +216,16 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   to be credited to the second action. `robot_routine` now submits the whole choreography once;
   tool follow-ups explicitly return to the shared topic; and the prompt treats ordinary body
   language/state as silent context instead of conversational material.
+- [x] Replace duration guessing with ordered embodied performances. `robot_performance` returns the
+  actual story as `say` steps interspersed with `move` and locally synthesized 8-bit-ish `sound`
+  steps; iOS advances only when the preceding audio was heard. Laser blasts and spaceship flybys
+  are first-class cues. Tool preambles are withheld from speech, so the story—not production
+  narration—is what comes out of Rocky's mouth.
+- [x] Preserve interrupted performances. Pausing rewinds the current spoken/effect cue and holds
+  the unheard steps; unpausing wakes the body and resumes them. A conversational interruption is
+  projected privately and can later use `resume_robot_performance` without regenerating the story.
+- [x] Make voice pause a physical pause: iOS sends `still` before silencing voice, engaging the
+  board's hard motor/sensor interlock. Resume retains the deterministic `still → exploring` wake.
 - [x] Remove operator/instruction framing exposed by the next live session. Rocky said “You guide,
   Rocky follows,” invited “just say the word,” and announced waking/movement before tool calls.
   Movement is now explicitly Rocky's autonomous alien body language; projected causes say “I chose
@@ -235,8 +245,8 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   spacing rules so one repeated habit is not simply replaced by another.
 - [x] D: proactive narration of startle/bump, rate-limited and suppressed while already speaking.
 - [x] **Test the slice on hardware.** Live iOS sessions have confirmed hello/snapshots, autonomous
-  transitions, mood changes, gestures, and the `still` boot interlock on the real board. The mixed
-  routine added later still needs its own live story run.
+  transitions, mood changes, gestures, the `still` boot interlock, and a complete four-beat mixed
+  story routine on the real board.
 - [ ] Measure tick rate before/after the observation layer. This loop's sampling *is* its pipeline
   (one `get_loudness()` per tick, no smoothing, startle is an edge trigger), so anything that slows
   the tick degrades startle detection without changing a single constant.

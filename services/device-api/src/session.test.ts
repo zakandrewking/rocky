@@ -81,15 +81,17 @@ describe("createDeviceSessionConfig", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const names = (config.tools as Array<{ name: string }>).map((tool) => tool.name);
 
-    // These five reach apps/robot/device/rocky_agent.py, the one payload that runs. The steering
-    // tools are gone with the deprecated motion agent -- a tool the body cannot honour is worse
-    // than a missing one, because the model will use it and then explain that it worked.
+    // Five reach apps/robot/device/rocky_agent.py directly; the sixth is sequenced by iOS into
+    // speech plus those same gesture messages. The steering tools are gone with the deprecated
+    // motion agent.
     expect(names).toEqual([
       "stop_robot",
       "get_robot_state",
       "set_robot_mood",
       "robot_gesture",
       "robot_routine",
+      "robot_performance",
+      "resume_robot_performance",
     ]);
   });
 
@@ -115,17 +117,40 @@ describe("createDeviceSessionConfig", () => {
     expect(config.instructions).toContain("BODY LANGUAGE IS SILENT");
     expect(config.instructions).toContain("Never use future-tense movement announcements");
     expect(config.instructions).toContain("Every spoken line around a movement call must make complete sense");
-    expect(config.instructions).toContain("call robot_routine once with the whole sequence");
+    expect(config.instructions).toContain("use robot_performance once");
     expect(config.instructions).toContain("deliver that content normally");
     expect(config.instructions).toContain("and continuously");
     expect(config.instructions).not.toContain("The instant you decide to move, say it");
-    expect(routine?.description).toContain("Deliver the story, game, song, joke, or explanation itself");
-    expect(routine?.description).toContain("no movement lead-in");
+    expect(routine?.description).toContain("when no spoken content needs to be synchronized");
     expect(routine?.parameters).toMatchObject({
       properties: {
         moves: { minItems: 2, maxItems: 8, items: { enum: ["spin", "wiggle"] } },
       },
     });
+
+    const performance = tools.find((tool) => tool.name === "robot_performance");
+    const resume = tools.find((tool) => tool.name === "resume_robot_performance");
+    expect(performance?.description).toContain("after the preceding words have actually been heard");
+    expect(performance?.description).toContain("emit no assistant text before or after it");
+    expect(performance?.parameters).toMatchObject({
+      properties: {
+        steps: {
+          minItems: 5,
+          maxItems: 17,
+          items: {
+            properties: {
+              kind: { enum: ["say", "move", "sound"] },
+              move: { enum: ["none", "spin", "wiggle"] },
+              sound: {
+                enum: expect.arrayContaining(["laser_blast", "spaceship_flyby"]),
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(config.instructions).toContain("<performance-paused>");
+    expect(resume?.description).toContain("resume the unheard steps");
   });
 
   it("does not offer steering or cast the friend as Rocky's operator", () => {

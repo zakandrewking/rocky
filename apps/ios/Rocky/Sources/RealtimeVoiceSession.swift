@@ -48,7 +48,9 @@ final class RealtimeVoiceSession: ObservableObject {
         and body state are silent body language, never a new conversational turn. Continue the
         current thought, story, game, song, joke, or explanation naturally without a fresh
         acknowledgement, movement report, capability explanation, or invitation. If the thought
-        was already complete, produce no additional words or movement calls.
+        was already complete, produce no additional words or movement calls. Any ordinary text in
+        the earlier response was withheld from speech because it accompanied a tool call;
+        include the actual conversational answer here if it has not yet been heard.
         """
 
     /// A paused session is held open, but not forever: the connection would go stale on its own
@@ -88,6 +90,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// one network hop instead of two, which is most of why it sounds quicker.
     private let hume: HumeSpeech? = OpenAIRealtimeMinter.characterSpeaksThroughHume ? HumeSpeech() : nil
     private var humePlayer: HumePcmPlayer?
+    private var storySounds: StorySoundEffects?
     private var humeTextBuffer = ""
     /// The quiet alien chatter under her voice.
     private var eridian: EridianAudio?
@@ -104,6 +107,10 @@ final class RealtimeVoiceSession: ObservableObject {
     private var firstTextAt: Date?
     private var firstAudioAt: Date?
     private var responseText = ""
+    /// The exact text currently being synthesized. Usually this is the response text; during an
+    /// interleaved performance it is only the current say step, so a Hume retry cannot accidentally
+    /// speak the entire performance at once and skip its movement cues.
+    private var humeUtteranceText = ""
     private var firstAudioWatchdog: Task<Void, Never>?
     private var turnWatchdog: Task<Void, Never>?
     private var retriedThisResponse = false
@@ -143,6 +150,19 @@ final class RealtimeVoiceSession: ObservableObject {
     private var salienceText: [String: String] = [:]
     /// An event judged worth reacting to, but not worth cutting a sentence in half for.
     private var reactAfterUtterance: WorldEvent?
+
+    private struct PerformancePlayback {
+        let id: String
+        let steps: [RobotPerformance.Step]
+        var nextIndex = 0
+        /// A say or sound step currently being heard. If interrupted, replay it from its beginning
+        /// rather than skipping words merely because synthesis had already started.
+        var currentStepIndex: Int? = nil
+    }
+
+    private var queuedPerformance: PerformancePlayback?
+    private var activePerformance: PerformancePlayback?
+    private var suspendedPerformance: PerformancePlayback?
 
     /// How long to wait for Hume's first audio before assuming the request was lost.
     private static let firstAudioTimeout: Duration = .milliseconds(2500)
@@ -235,7 +255,14 @@ final class RealtimeVoiceSession: ObservableObject {
             self?.sendSalienceRequest(ticket, prompt)
         }
         behavior?.onBoardMessage = { [weak self] message in
-            self?.behaviorSource.handle(message)
+            guard let self else { return }
+            self.behaviorSource.handle(message)
+            // Connection readiness can precede the board's hello, while BehaviorMonitor still
+            // carries the mood from before a power cycle. Re-check the confirmed hello so a newly
+            // rebooted still body always wakes during an active conversation.
+            if case .hello(_, let mood) = message, mood == "still" {
+                self.wakeBodyIfStill(reason: "robot hello")
+            }
         }
         worldTicker?.cancel()
         worldTicker = Task { [weak self] in
@@ -425,6 +452,10 @@ final class RealtimeVoiceSession: ObservableObject {
         guard state == .connected else { return }
         // Set first: finishResponse below reopens the microphone, and pausing has to outrank that.
         isPaused = true
+        if behavior?.stillForVoicePause(id: "voice-paused") == true {
+            log("robot moved into still (voice paused)")
+        }
+        suspendActivePerformance(notifyVoice: false, reason: "voice paused")
         stopLocalAudio()
         hume?.cancel()
         // Unconditionally, not only mid-response: generation may have finished while audio is
@@ -462,8 +493,15 @@ final class RealtimeVoiceSession: ObservableObject {
         wakeBodyIfStill(reason: "voice resume")
         client.setRemoteAudioEnabled(true)
         refreshMicrophone("resumed")
-        log("resumed, asking Rocky to acknowledge waking")
-        requestResponse(instructions: Self.wakePrompt, reason: "resumed")
+        if let suspendedPerformance {
+            self.suspendedPerformance = nil
+            queuedPerformance = suspendedPerformance
+            log("resumed, continuing the interrupted performance")
+            startQueuedPerformance()
+        } else {
+            log("resumed, asking Rocky to acknowledge waking")
+            requestResponse(instructions: Self.wakePrompt, reason: "resumed")
+        }
     }
 
     /// Keeps the conversation but changes whether Rocky is offered physical tools. This makes a
@@ -502,9 +540,13 @@ final class RealtimeVoiceSession: ObservableObject {
 
     func disconnect() {
         client.close()
+        queuedPerformance = nil
+        activePerformance = nil
+        suspendedPerformance = nil
         stopLocalAudio()
         hume?.cancel()
         humePlayer = nil
+        storySounds = nil
         eridian = nil
         humeTextBuffer = ""
         sessionHasBody = nil
@@ -543,6 +585,12 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func startLocalAudio() {
         eridian = EridianAudio()
+        let effects = StorySoundEffects()
+        storySounds = effects
+        effects.onFinished = { [weak self] in
+            guard self?.activePerformance != nil else { return }
+            self?.advancePerformance()
+        }
         guard let hume else { return }
         let player = HumePcmPlayer()
         humePlayer = player
@@ -570,15 +618,20 @@ final class RealtimeVoiceSession: ObservableObject {
     private func stopLocalAudio() {
         eridian?.stop()
         humePlayer?.stop()
+        storySounds?.stop()
     }
 
     /// Barge-in. The server cancels the *response* itself; what it cannot do is stop audio this
     /// app has already queued locally, so that has to happen here or Rocky keeps talking over the
     /// person interrupting her.
     private func handleUserStartedSpeaking() {
+        // Clear a performance before stopping its player. `stop()` synchronously reports playback
+        // drained; leaving the script active there would advance to the next movement exactly when
+        // the person was trying to interrupt it.
+        suspendActivePerformance(notifyVoice: true, reason: "friend interrupted")
+        if responseStartedAt != nil { finishResponse(reason: "barge-in") }
         stopLocalAudio()
         hume?.cancel()
-        if responseStartedAt != nil { finishResponse(reason: "barge-in") }
     }
 
     /// Whether this character's voice bypasses WebRTC's echo canceller.
@@ -635,6 +688,10 @@ final class RealtimeVoiceSession: ObservableObject {
             log("playback drained mid-response, holding the turn open for more audio")
             return
         }
+        if activePerformance != nil {
+            advancePerformance()
+            return
+        }
         if let started = responseStartedAt {
             log("rocky finished speaking, \(Self.ms(since: started)) after response started")
         }
@@ -675,7 +732,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// fresh connection recovers it.
     private func armFirstAudioWatchdog() {
         firstAudioWatchdog?.cancel()
-        guard hume != nil, !responseText.isEmpty else { return }
+        guard hume != nil, !humeUtteranceText.isEmpty else { return }
         firstAudioWatchdog = Task { [weak self] in
             try? await Task.sleep(for: Self.firstAudioTimeout)
             guard !Task.isCancelled else { return }
@@ -684,7 +741,7 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     private func handleMissingFirstAudio() {
-        guard firstAudioAt == nil, !responseText.isEmpty else { return }
+        guard firstAudioAt == nil, !humeUtteranceText.isEmpty else { return }
         guard !retriedThisResponse else {
             log("hume produced no audio after retry, giving up on this turn")
             finishResponse(reason: "no audio after retry")
@@ -699,7 +756,7 @@ final class RealtimeVoiceSession: ObservableObject {
         humeTextBuffer = ""
         humeSawLastChunk = false
         humePlayer?.beginResponse()
-        sendToHume(responseText, flush: true)
+        sendToHume(humeUtteranceText, flush: true)
         armFirstAudioWatchdog()
     }
 
@@ -712,8 +769,13 @@ final class RealtimeVoiceSession: ObservableObject {
         // always arrives and ends the turn, so a watchdog there would only ever fire early on a
         // long reply and cut it short.
         guard hume != nil else { return }
-        let words = responseText.split(whereSeparator: \.isWhitespace).count
-        let budget = min(12_000, max(4_000, 2_000 + words * 420))
+        let words = humeUtteranceText.split(whereSeparator: \.isWhitespace).count
+        // A performance's entire script arrives inside function arguments, so it can have no
+        // output_text while the model is still validly generating. Give that generation the full
+        // ceiling; once a say step begins, the ordinary word-based playback budget takes over.
+        let budget = humeUtteranceText.isEmpty
+            ? 12_000
+            : min(12_000, max(4_000, 2_000 + words * 420))
         turnWatchdog = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(budget))
             guard !Task.isCancelled else { return }
@@ -736,8 +798,8 @@ final class RealtimeVoiceSession: ObservableObject {
             return
         }
         log("turn watchdog: stuck after \(budget)ms with nothing queued, releasing the turn")
-        stopLocalAudio()
         finishResponse(reason: "turn watchdog")
+        stopLocalAudio()
     }
 
     /// One place where a turn ends, however it ended -- the mic reopens here and nowhere else, so
@@ -752,11 +814,14 @@ final class RealtimeVoiceSession: ObservableObject {
         firstAudioAt = nil
         audioStartedAt = nil
         responseText = ""
+        humeUtteranceText = ""
         utteranceSoFar = ""
         currentAssistantItemId = nil
         humeTextBuffer = ""
         retriedThisResponse = false
         humeSawLastChunk = false
+        queuedPerformance = nil
+        activePerformance = nil
         gatedForOwnVoice = false
         refreshMicrophone(reason)
     }
@@ -824,6 +889,7 @@ final class RealtimeVoiceSession: ObservableObject {
             retriedThisResponse = false
             humeSawLastChunk = false
             responseText = ""
+            humeUtteranceText = ""
             utteranceSoFar = ""
             currentAssistantItemId = nil
             audioStartedAt = nil
@@ -865,15 +931,10 @@ final class RealtimeVoiceSession: ObservableObject {
                 responseText += delta
                 utteranceSoFar += delta
                 eridian?.pushTranscriptDelta(delta)
-                sendToHume(delta)
             }
         case "response.output_text.done":
             responseText = event.text ?? responseText
-            sendToHume("", flush: true)
             eridian?.flushTranscript()
-            log("said: \(responseText)")
-            armFirstAudioWatchdog()
-            armTurnWatchdog()
 
         // Realtime-voice path: the audio itself arrives on the media track, so the transcript is
         // the only sign here that she has started talking -- and the only thing that can drive
@@ -903,6 +964,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
         case "response.done":
             let status = event.response?.status ?? "unknown"
+            let toolCalls = event.toolCalls
             if status != "completed" {
                 let detail = event.response?.status_details
                 log("response ended as \(status): \(detail?.reason ?? detail?.error?.message ?? "no reason given")")
@@ -930,7 +992,20 @@ final class RealtimeVoiceSession: ObservableObject {
             if hume == nil {
                 speaking = false
                 finishResponse(reason: "response done")
-            } else if responseText.isEmpty {
+            } else if toolCalls.isEmpty, !responseText.isEmpty {
+                // Hold Hume text until the response shape is known. The model can emit a spoken
+                // preamble before a function item; streaming that immediately made movement tools
+                // audible as “I will now...” announcements before we knew a tool was coming.
+                humeUtteranceText = responseText
+                log("said: \(responseText)")
+                sendToHume(responseText, flush: true)
+                armFirstAudioWatchdog()
+                armTurnWatchdog()
+            } else if !toolCalls.isEmpty, !responseText.isEmpty {
+                log("withheld \(responseText.count)-character tool preamble from speech")
+            } else if !toolCalls.contains(where: {
+                $0.name == "robot_performance" || $0.name == "resume_robot_performance"
+            }) {
                 log("response produced no text, nothing to speak — releasing the turn")
                 finishResponse(reason: "empty response")
             }
@@ -952,15 +1027,22 @@ final class RealtimeVoiceSession: ObservableObject {
         // turn with two tool calls asked for two responses, and the second was rejected -- the
         // model had answered, and nothing came out.
         let calls = event.toolCalls
+        var performancePrepared = false
         for call in calls {
             guard let name = call.name, let callId = call.call_id else { continue }
-            await performToolCall(name: name, argumentsJSON: call.arguments ?? "{}", callId: callId)
+            performancePrepared = await performToolCall(
+                name: name, argumentsJSON: call.arguments ?? "{}", callId: callId
+            ) || performancePrepared
         }
         if !calls.isEmpty {
-            requestResponse(
-                instructions: Self.toolFollowupPrompt,
-                reason: "after \(calls.compactMap(\.name).joined(separator: "+"))"
-            )
+            if performancePrepared {
+                startQueuedPerformance()
+            } else {
+                requestResponse(
+                    instructions: Self.toolFollowupPrompt,
+                    reason: "after \(calls.compactMap(\.name).joined(separator: "+"))"
+                )
+            }
         }
     }
 
@@ -1019,20 +1101,22 @@ final class RealtimeVoiceSession: ObservableObject {
 
     // MARK: - Tools
 
-    private func performToolCall(name: String, argumentsJSON: String, callId: String) async {
+    private func performToolCall(name: String, argumentsJSON: String, callId: String) async -> Bool {
         RockyLog.write("tool call: \(name) \(argumentsJSON)")
         WorldLog.shared.write(.tool, "\(name) \(argumentsJSON)", seq: world.seq)
         lastToolCall = name
         let output: String
         do {
-            output = try await execute(name: name, argumentsJSON: argumentsJSON)
+            output = try await execute(name: name, argumentsJSON: argumentsJSON, callId: callId)
         } catch {
             output = Self.encodeResult(["ok": false, "problem": error.localizedDescription])
         }
         client.send(FunctionCallOutputEvent(callId: callId, output: output))
+        return (name == "robot_performance" || name == "resume_robot_performance")
+            && queuedPerformance != nil
     }
 
-    private func execute(name: String, argumentsJSON: String) async throws -> String {
+    private func execute(name: String, argumentsJSON: String, callId: String) async throws -> String {
         let data = Data(argumentsJSON.utf8)
         guard let behavior, behavior.connected else {
             return Self.encodeResult(["ok": false, "problem": "my body isn't with me right now"])
@@ -1076,6 +1160,27 @@ final class RealtimeVoiceSession: ObservableObject {
             behavior.requestRoutine(moves, id: action.id)
             world.markAction(action.id, status: .accepted)
             return Self.decided(action)
+
+        case "robot_performance":
+            guard hume != nil else {
+                return Self.encodeResult([
+                    "ok": false, "problem": "this voice cannot play an interleaved performance"
+                ])
+            }
+            let steps = try RobotPerformance.decode(argumentsJSON)
+            suspendedPerformance = nil
+            queuedPerformance = PerformancePlayback(id: callId, steps: steps)
+            return Self.encodeResult(["ok": true])
+
+        case "resume_robot_performance":
+            guard let suspendedPerformance else {
+                return Self.encodeResult([
+                    "ok": false, "problem": "there is no interrupted performance to resume"
+                ])
+            }
+            self.suspendedPerformance = nil
+            queuedPerformance = suspendedPerformance
+            return Self.encodeResult(["ok": true])
 
         case "stop_robot":
             let action = world.beginAction(.stop, expectedDuration: 0.3)
@@ -1150,6 +1255,113 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private struct RoutineArgs: Decodable {
         let moves: [String]
+    }
+
+    private func startQueuedPerformance() {
+        guard let queued = queuedPerformance else { return }
+        queuedPerformance = nil
+        activePerformance = queued
+        if responseStartedAt == nil { responseStartedAt = Date() }
+        gatedForOwnVoice = true
+        refreshMicrophone("performance started")
+        responseText = queued.steps.compactMap { step in
+            if case .say(let text) = step { return text }
+            return nil
+        }.joined(separator: " ")
+        utteranceSoFar = responseText
+        log("performance started with \(queued.steps.count) interleaved steps")
+        advancePerformance()
+    }
+
+    /// Advances only after the preceding spoken segment has actually drained from the speaker.
+    /// Movement is dispatched at that audible boundary, then the next say step begins synthesis
+    /// immediately so the body beat fills the small text-to-speech gap instead of creating one.
+    private func advancePerformance() {
+        firstAudioWatchdog?.cancel()
+        turnWatchdog?.cancel()
+        humeTextBuffer = ""
+        humeSawLastChunk = false
+
+        if var performance = activePerformance {
+            performance.currentStepIndex = nil
+            activePerformance = performance
+        }
+
+        while var performance = activePerformance, performance.nextIndex < performance.steps.count {
+            let stepIndex = performance.nextIndex
+            let stepNumber = stepIndex + 1
+            let step = performance.steps[stepIndex]
+            performance.nextIndex += 1
+
+            switch step {
+            case .move(let move):
+                activePerformance = performance
+                dispatchPerformanceMove(move, performanceId: performance.id, step: stepNumber)
+            case .sound(let sound):
+                performance.currentStepIndex = stepIndex
+                activePerformance = performance
+                guard let effect = StorySoundEffect(rawValue: sound), let storySounds else { continue }
+                log("performance step \(stepNumber) played \(sound)")
+                storySounds.play(effect)
+                return
+            case .say(let text):
+                performance.currentStepIndex = stepIndex
+                activePerformance = performance
+                firstAudioAt = nil
+                humeUtteranceText = text
+                humePlayer?.beginResponse()
+                eridian?.pushTranscriptDelta(text)
+                eridian?.flushTranscript()
+                log("performance said: \(text)")
+                sendToHume(text, flush: true)
+                armFirstAudioWatchdog()
+                armTurnWatchdog()
+                return
+            }
+        }
+
+        activePerformance = nil
+        suspendedPerformance = nil
+        log("performance finished")
+        finishResponse(reason: "performance ended")
+    }
+
+    private func suspendActivePerformance(notifyVoice: Bool, reason: String) {
+        guard var performance = activePerformance else { return }
+        performance.nextIndex = RobotPerformance.resumeIndex(
+            nextIndex: performance.nextIndex,
+            currentStepIndex: performance.currentStepIndex
+        )
+        performance.currentStepIndex = nil
+        activePerformance = nil
+        suspendedPerformance = performance
+        log("performance paused at step \(performance.nextIndex + 1)/\(performance.steps.count) (\(reason))")
+
+        guard notifyVoice, client.isDataChannelOpen else { return }
+        let itemId = "performance_paused_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        client.send(
+            ConversationItemCreateEvent(
+                id: itemId,
+                text: """
+                    <performance-paused>The performance was interrupted before step \
+                    \(performance.nextIndex + 1) of \(performance.steps.count). Its unheard steps \
+                    are held locally. Do not claim it finished.</performance-paused>
+                    """
+            )
+        )
+    }
+
+    private func dispatchPerformanceMove(_ move: String, performanceId: String, step: Int) {
+        guard let behavior, behavior.connected else {
+            log("performance movement skipped because the body is away")
+            return
+        }
+        let intent: ActionIntent = move == "wiggle" ? .wiggle : .spin
+        let action = world.beginAction(intent, expectedDuration: 8.5)
+        behaviorSource.expect(gesture: action.id)
+        behavior.requestGesture(move, id: action.id)
+        world.markAction(action.id, status: .accepted)
+        log("performance step \(step) moved \(move) (\(performanceId))")
     }
 
     /// Encodes a small, flat JSON object for a function_call_output. Values are deliberately

@@ -74,9 +74,8 @@ BODY LANGUAGE IS SILENT
 - Every spoken line around a movement call must make complete sense if no movement occurred. Put no
   movement lead-in or promise before a tool call and no movement report after it.
 - If movement accompanies a story, game, explanation, song, or joke, deliver that content normally
-  and continuously. Never replace it with stage directions such as "spin for the lantern". For two
-  or more different moves, call robot_routine once with the whole sequence; do not make a separate
-  spoken response or tool call for each beat.
+  and continuously. Never replace it with stage directions such as "spin for the lantern". Put the
+  words and movement beats into one robot_performance call so the phone can play them in order.
 - Your sensations lag by a second or two. Never give a running commentary. If something failed and
   the failure matters to the shared moment, say it once, briefly, then continue.
 - get_robot_state is memory. Use it silently; answer your friend, never the lookup.
@@ -91,8 +90,15 @@ MOVING IS PART OF TALKING, NOT A SEPARATE JOB
 - A precise playful motion idea may inspire an equally precise private choice. Preserve its count
   in silent tool arguments, never in a spoken acceptance or announcement.
 - For a shared performance with several moves, choose the complete sequence up front,
-  call robot_routine once, and give the performance in the same response. The story is the words;
-  the routine is silent body language running alongside it.
+  use robot_performance once. Put the actual words and silent movement beats in its ordered steps;
+  the phone speaks and performs them in that order. Emit no ordinary assistant text alongside that
+  function call: the words inside its say steps are the response.
+- robot_routine is only for movement without synchronized speech. Never use it for a story, song,
+  game, joke, or explanation whose body language should land between particular spoken moments.
+- <performance-paused> is private playback state, never a friend speaking. It means an earlier
+  performance was interrupted and its unheard steps are still held on the phone. Call
+  resume_robot_performance silently only when the friend asks to continue or the conversation
+  naturally returns to that story; otherwise leave it paused without repeatedly offering it.
 - Stop immediately if anyone sounds frightened, or says stop, wait, or careful. Then relate to
   them normally; never describe yourself as awaiting further orders.
 
@@ -201,7 +207,7 @@ const ROUTINE_TOOL = {
   type: "function",
   name: "robot_routine",
   description:
-    "Choose a silent sequence of 2 to 8 body-language beats for shared play. Calling this records your intention and returns before movement, so sensations are the only evidence of what happened. Deliver the story, game, song, joke, or explanation itself in the same response. Spoken output must make sense without the routine: no movement lead-in, names, promise, or follow-up.",
+    "Choose a silent sequence of 2 to 8 body-language beats when no spoken content needs to be synchronized with it. Calling this records your intention and returns before movement, so sensations are the only evidence of what happened. For stories, games, songs, jokes, or explanations with movement between spoken moments, use robot_performance instead.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -215,6 +221,64 @@ const ROUTINE_TOOL = {
       },
     },
     required: ["moves"],
+  },
+} as const;
+
+const PERFORMANCE_TOOL = {
+  type: "function",
+  name: "robot_performance",
+  description:
+    "Create one complete spoken performance with movement and 8-bit-ish sound effects interspersed at exact points. This function call is the whole response: emit no assistant text before or after it. The phone speaks each say step, triggers each move step, and plays each sound step in order after the preceding words have actually been heard. Use 2 to 8 move steps, at most 6 sound steps, put a nonempty say step between moves, and include the real story, song, game, joke, or explanation in the say steps—not stage directions or movement narration. Sound choices include laser_blast and spaceship_flyby; use effects sparingly where the imagined action earns them.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      steps: {
+        type: "array",
+        minItems: 5,
+        maxItems: 17,
+        description:
+          "The complete performance in playback order. Say steps carry text; move steps carry spin or wiggle; sound steps carry a supported effect. Every unused field must be none or empty.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            kind: { type: "string", enum: ["say", "move", "sound"] },
+            text: { type: "string", maxLength: 900 },
+            move: { type: "string", enum: ["none", "spin", "wiggle"] },
+            sound: {
+              type: "string",
+              enum: [
+                "none",
+                "chime",
+                "zap",
+                "rumble",
+                "footsteps",
+                "sparkle",
+                "alarm",
+                "laser_blast",
+                "spaceship_flyby",
+              ],
+            },
+          },
+          required: ["kind", "text", "move", "sound"],
+        },
+      },
+    },
+    required: ["steps"],
+  },
+} as const;
+
+const RESUME_PERFORMANCE_TOOL = {
+  type: "function",
+  name: "resume_robot_performance",
+  description:
+    "Silently resume the unheard steps of an interleaved performance that was interrupted earlier. Use only when private <performance-paused> context exists and the friend asks to continue or naturally returns to that story. Emit no ordinary assistant text alongside this call; the saved story continues itself.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {},
+    required: [],
   },
 } as const;
 
@@ -263,7 +327,14 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
     // Exactly what apps/robot/device/rocky_agent.py answers to, and nothing else. A tool the body
     // cannot honour is worse than a missing one: the model will use it and then explain,
     // confidently, that it did something that never happened.
-    tools: [STOP_TOOL, GET_STATE_TOOL, SET_MOOD_TOOL, GESTURE_TOOL, ROUTINE_TOOL],
+    tools: [
+      STOP_TOOL,
+      GET_STATE_TOOL,
+      SET_MOOD_TOOL,
+      GESTURE_TOOL,
+      ROUTINE_TOOL,
+      ...(speaksThroughHume ? [PERFORMANCE_TOOL, RESUME_PERFORMANCE_TOOL] : []),
+    ],
     tool_choice: "auto",
   };
 }

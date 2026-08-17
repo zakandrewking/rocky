@@ -13,5 +13,6 @@ final class ToolConversationTests: XCTestCase {
         XCTAssertTrue(prompt.contains("never a new conversational turn"))
         XCTAssertTrue(prompt.contains("acknowledgement"))
         XCTAssertTrue(prompt.contains("no additional words"))
+        XCTAssertTrue(prompt.contains("earlier response was withheld"))
     }
 }
