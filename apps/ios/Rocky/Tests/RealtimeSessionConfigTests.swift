@@ -53,6 +53,23 @@ final class RealtimeSessionConfigTests: XCTestCase {
         XCTAssertEqual(OpenAIRealtimeMinter.withoutRobotBody(Data("not json".utf8)), Data("not json".utf8))
     }
 
+    func testBodySessionUpdatesRestoreAndRemoveToolsWithoutReplacingTheConversation() throws {
+        let connected = try XCTUnwrap(OpenAIRealtimeMinter.bodySessionUpdate(hasBody: true))
+        let voiceOnly = try XCTUnwrap(OpenAIRealtimeMinter.bodySessionUpdate(hasBody: false))
+        XCTAssertEqual(connected["type"] as? String, "session.update")
+
+        let connectedSession = try XCTUnwrap(connected["session"] as? [String: Any])
+        let voiceOnlySession = try XCTUnwrap(voiceOnly["session"] as? [String: Any])
+        XCTAssertEqual(connectedSession["type"] as? String, "realtime")
+        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 5)
+        XCTAssertEqual(connectedSession["tool_choice"] as? String, "auto")
+        XCTAssertEqual((voiceOnlySession["tools"] as? [Any])?.count, 0)
+        XCTAssertEqual(voiceOnlySession["tool_choice"] as? String, "none")
+        XCTAssertTrue(
+            (voiceOnlySession["instructions"] as? String)?.contains("NOT CONNECTED RIGHT NOW") == true
+        )
+    }
+
     /// The config the app actually ships is generated at build time, so a change to session.ts
     /// or the generate script that broke its shape would otherwise only show up on a real device.
     /// Deliberately character-agnostic: which character is baked in is a build-time choice, and

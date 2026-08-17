@@ -50,6 +50,7 @@ struct ContentView: View {
             behavior.start()
         }
         .onChange(of: behavior.connected) { _, found in
+            voiceSession.bodyAvailabilityChanged(found)
             guard found else { return }
             reportRobotSearchOnce("robot found — it moves on its own, Rocky can feel it")
         }
@@ -280,6 +281,7 @@ struct ContentView: View {
             return
         }
         if voiceSession.state == .paused {
+            behavior.reconnect()
             voiceSession.resume()
             appendLog("voice: resumed")
             return

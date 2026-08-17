@@ -78,6 +78,8 @@ final class RealtimeVoiceSession: ObservableObject {
     private let salience = SalienceJudge()
     private lazy var behaviorSource = BehaviorWorldSource(store: world)
     private var behavior: BehaviorMonitor?
+    /// Capability currently advertised to Realtime; the physical link may change while paused.
+    private var sessionHasBody: Bool?
     private var worldTicker: Task<Void, Never>?
 
     /// The synthesiser, present only when the active character actually wants one. Characters
@@ -181,6 +183,7 @@ final class RealtimeVoiceSession: ObservableObject {
             startLocalAudio()
             let hasBody = behavior?.connected == true
             let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasBody: hasBody)
+            sessionHasBody = hasBody
             log(
                 "minted secret in \(Self.ms(since: connectStart)) (body: \(hasBody ? "yes" : "none"), voice: \(hume == nil ? "openai" : "hume"))"
             )
@@ -201,6 +204,7 @@ final class RealtimeVoiceSession: ObservableObject {
             // channel can actually carry it.
             client.onDataChannelOpen = { [weak self] in
                 Task { @MainActor in
+                    self?.syncBodyAvailability()
                     self?.greetIfNeeded()
                 }
             }
@@ -210,6 +214,7 @@ final class RealtimeVoiceSession: ObservableObject {
             // engine; bring it back before Rocky has anything to say.
             RockyAudioEngine.shared.ensureRunning()
             state = .connected
+            syncBodyAvailability()
             log("webrtc negotiated in \(Self.ms(since: negotiateStart)), connected in \(Self.ms(since: connectStart)) total")
         } catch {
             state = .failed(error.localizedDescription)
@@ -458,6 +463,24 @@ final class RealtimeVoiceSession: ObservableObject {
         requestResponse(instructions: Self.wakePrompt, reason: "resumed")
     }
 
+    /// Keeps the conversation but changes whether Rocky is offered physical tools. This makes a
+    /// robot found after startup or during a pause usable without creating a new voice session.
+    func bodyAvailabilityChanged(_ hasBody: Bool) {
+        guard state == .connected || state == .paused, sessionHasBody != hasBody,
+            let update = OpenAIRealtimeMinter.bodySessionUpdate(hasBody: hasBody)
+        else { return }
+        guard client.send(jsonObject: update) else {
+            log("body capability update waiting for the data channel")
+            return
+        }
+        sessionHasBody = hasBody
+        log("body capability updated: \(hasBody ? "connected" : "voice only")")
+    }
+
+    private func syncBodyAvailability() {
+        bodyAvailabilityChanged(behavior?.connected == true)
+    }
+
     private func endLongPause() {
         guard state == .paused else { return }
         log("paused too long, closing the session")
@@ -471,6 +494,7 @@ final class RealtimeVoiceSession: ObservableObject {
         humePlayer = nil
         eridian = nil
         humeTextBuffer = ""
+        sessionHasBody = nil
         firstAudioWatchdog?.cancel()
         turnWatchdog?.cancel()
         pauseTimeout?.cancel()

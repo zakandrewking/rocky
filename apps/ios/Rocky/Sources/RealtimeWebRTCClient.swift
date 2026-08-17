@@ -94,6 +94,16 @@ final class RealtimeWebRTCClient: NSObject, @unchecked Sendable {
         dataChannel.sendData(buffer)
     }
 
+    /// Capability updates originate in the baked JSON config and retain its complete tool
+    /// schemas. Sending that validated object avoids maintaining a second Swift copy of them.
+    @discardableResult
+    func send(jsonObject: [String: Any]) -> Bool {
+        guard let dataChannel, dataChannel.readyState == .open else { return false }
+        guard let data = try? JSONSerialization.data(withJSONObject: jsonObject) else { return false }
+        dataChannel.sendData(RTCDataBuffer(data: data, isBinary: false))
+        return true
+    }
+
     var isDataChannelOpen: Bool {
         dataChannel?.readyState == .open
     }

@@ -75,21 +75,38 @@ final class BehaviorMonitor: ObservableObject {
     // MARK: - Finding the robot
 
     func start() {
-        guard listener == nil else { return }
-        let params = NWParameters.udp
-        params.allowLocalEndpointReuse = true
-        guard let listener = try? NWListener(using: params, on: beaconPort) else { return }
-        listener.newConnectionHandler = { [weak self] incoming in
-            Task { @MainActor in self?.readBeacon(incoming) }
+        if listener == nil {
+            let params = NWParameters.udp
+            params.allowLocalEndpointReuse = true
+            if let listener = try? NWListener(using: params, on: beaconPort) {
+                listener.newConnectionHandler = { [weak self] incoming in
+                    Task { @MainActor in self?.readBeacon(incoming) }
+                }
+                listener.start(queue: .main)
+                self.listener = listener
+                RockyLog.write("behavior: listening for the robot's beacon")
+            }
         }
-        listener.start(queue: .main)
-        self.listener = listener
-        RockyLog.write("behavior: listening for the robot's beacon")
+        reconnect()
+    }
 
-        // The beacon is only a fast path, and on this hardware it has never actually arrived --
-        // every session's log shows the motion agent's beacon timing out and the robot being
-        // found by sweeping instead. So the sweep is the real mechanism here, not the fallback.
-        scanTask = Task { [weak self] in await self?.scanForRobot() }
+    /// Starts a fresh discovery pass when the app appears or voice comes back from pause.
+    /// A failed connection and completed task used to remain installed, suppressing later scans.
+    func reconnect() {
+        guard !connected, scanTask == nil else { return }
+        connection?.cancel()
+        connection = nil
+        buffer = ""
+        searchFinished = false
+        RockyLog.write("behavior: trying to reconnect to the robot")
+
+        // The beacon is only a fast path, and on this hardware the sweep is the reliable path.
+        // Keep listening for beacons, but make each reconnect request launch a fresh bounded scan.
+        scanTask = Task { [weak self] in
+            await self?.scanForRobot()
+            guard !Task.isCancelled else { return }
+            self?.scanTask = nil
+        }
     }
 
     func stop() {
@@ -213,17 +230,19 @@ final class BehaviorMonitor: ObservableObject {
         self.connection = connection
         connection.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
+                guard let self, self.connection === connection else { return }
                 switch state {
                 case .ready:
-                    self?.connected = true
+                    self.connected = true
                     RockyLog.write("behavior: watching the robot at \(host):\(port)")
-                    self?.receive()
+                    self.receive()
                 case .failed, .cancelled:
-                    if self?.connected == true {
+                    if self.connected {
                         RockyLog.write("robot: lost the behaviour connection")
-                        self?.onBoardMessage?(.disconnected)
+                        self.onBoardMessage?(.disconnected)
                     }
-                    self?.connected = false
+                    self.connected = false
+                    self.connection = nil
                 default:
                     break
                 }

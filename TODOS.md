@@ -286,6 +286,10 @@ to OpenAI.
   `apps/ios/scripts/pull-log.sh` alongside `session.log`. The Responses tab answers "what robot
   state did the model have available when this response began", written at `response.created`
   rather than reconstructed — by the time anyone asks, the superseded state is gone.
+- [x] Robot discovery retries on app startup and every voice resume. Completed scans and failed
+  connections are cleared so they cannot suppress later attempts; when the body returns, the live
+  Realtime session regains its body instructions and tools through `session.update` without
+  discarding the paused conversation.
 - [ ] **Run it on real hardware.** None of this has met a board yet. Two things to watch first:
   whether `started`/`pong` actually arrive from `rocky_agent.py` (upgrade `assumed` to `confirmed`
   in the Body panel's action rows), and whether the out-of-band salience judgment comes back fast

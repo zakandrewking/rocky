@@ -103,4 +103,27 @@ enum OpenAIRealtimeMinter {
         return (try? JSONSerialization.data(withJSONObject: root)) ?? data
     }
 
+    /// Changes body capabilities inside an existing Realtime session. Re-minting would throw
+    /// away the paused conversation; this updates only instructions and tools, leaving it intact.
+    static func bodySessionUpdate(hasBody: Bool) -> [String: Any]? {
+        guard let configURL = Bundle.main.url(forResource: "RealtimeSessionConfig", withExtension: "json"),
+            let baked = try? Data(contentsOf: configURL)
+        else { return nil }
+        let selected = hasBody ? baked : withoutRobotBody(baked)
+        guard let root = try? JSONSerialization.jsonObject(with: selected) as? [String: Any],
+            let session = root["session"] as? [String: Any],
+            let instructions = session["instructions"], let tools = session["tools"],
+            let toolChoice = session["tool_choice"]
+        else { return nil }
+        return [
+            "type": "session.update",
+            "session": [
+                "type": "realtime",
+                "instructions": instructions,
+                "tools": tools,
+                "tool_choice": toolChoice,
+            ],
+        ]
+    }
+
 }
