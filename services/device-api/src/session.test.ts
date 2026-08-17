@@ -93,15 +93,15 @@ describe("createDeviceSessionConfig", () => {
     ]);
   });
 
-  it("teaches the character that the robot boots still and must be woken", () => {
+  it("teaches the character that startup wakes privately out of the boot interlock", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const tools = config.tools as Array<{ name: string; description: string; parameters: unknown }>;
     const mood = tools.find((tool) => tool.name === "set_robot_mood");
 
-    expect(config.instructions).toContain("You wake asleep and physically still");
-    expect(config.instructions).toContain("Become 'exploring' when your curiosity wakes");
+    expect(config.instructions).toContain("You boot asleep and physically still");
+    expect(config.instructions).toContain("your curiosity wakes automatically");
     expect(mood?.description).toContain("hard safety lock");
-    expect(mood?.description).toContain("your feeling and agency");
+    expect(mood?.description).toContain("do not call this merely to wake");
     expect(mood?.parameters).toMatchObject({
       properties: { mood: { enum: ["calm", "exploring", "excitable", "still"] } },
     });
@@ -114,11 +114,13 @@ describe("createDeviceSessionConfig", () => {
 
     expect(config.instructions).toContain("BODY LANGUAGE IS SILENT");
     expect(config.instructions).toContain("Never use future-tense movement announcements");
+    expect(config.instructions).toContain("Every spoken line around a movement call must make complete sense");
     expect(config.instructions).toContain("call robot_routine once with the whole sequence");
     expect(config.instructions).toContain("deliver that content normally");
     expect(config.instructions).toContain("and continuously");
     expect(config.instructions).not.toContain("The instant you decide to move, say it");
-    expect(routine?.description).toContain("deliver the actual shared content in the same response");
+    expect(routine?.description).toContain("Deliver the story, game, song, joke, or explanation itself");
+    expect(routine?.description).toContain("no movement lead-in");
     expect(routine?.parameters).toMatchObject({
       properties: {
         moves: { minItems: 2, maxItems: 8, items: { enum: ["spin", "wiggle"] } },
@@ -138,6 +140,8 @@ describe("createDeviceSessionConfig", () => {
     expect(config.instructions).toContain("operator. Their words are part of a relationship");
     expect(config.instructions).toContain("Movement is your own body language");
     expect(config.instructions).toContain("motion directions, or offer control");
+    expect(config.instructions).toContain("Never propose, promise, preview, or negotiate body language");
+    expect(config.instructions).toContain("list of motions you can or cannot perform");
     expect(config.instructions).toContain("A tool event never restarts the conversation");
   });
 
@@ -150,7 +154,7 @@ describe("createDeviceSessionConfig", () => {
     // evidence that a robot moved, and a description that does not say so invites exactly that
     // claim. See apps/ios/docs/embodiment.md.
     expect(gesture).toContain("records your intention and returns before movement");
-    expect(gesture).toContain("not evidence that anything happened");
+    expect(gesture).toContain("not evidence anything happened");
   });
 
   it("defines both vocabularies, so the machinery is never spoken", () => {

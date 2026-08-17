@@ -135,7 +135,9 @@ struct ContentView: View {
     }
 
     private var bodyDescription: String {
-        behavior.connected ? "b:\(behavior.mode)" : (behavior.searchFinished ? "b:none" : "b:…")
+        behavior.connected
+            ? "b:\(behavior.mode)/\(behavior.mood)"
+            : (behavior.searchFinished ? "b:none" : "b:…")
     }
 
     private var chipDetail: String {

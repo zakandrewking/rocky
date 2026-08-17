@@ -167,6 +167,7 @@ final class RealtimeVoiceSession: ObservableObject {
         self.behavior = behavior
         guard state == .disconnected || isFailed else { return }
         state = .connecting
+        wakeBodyIfStill(reason: "voice start")
         // A reconnect gets a brand-new WebRTC track, which starts enabled. Without resetting this,
         // the gate believes it is already closed, every close is a no-op, and Rocky talks straight
         // into her own microphone -- which the log calls out as "mic gate leaked".
@@ -458,6 +459,7 @@ final class RealtimeVoiceSession: ObservableObject {
         pauseTimeout = nil
         isPaused = false
         state = .connected
+        wakeBodyIfStill(reason: "voice resume")
         client.setRemoteAudioEnabled(true)
         refreshMicrophone("resumed")
         log("resumed, asking Rocky to acknowledge waking")
@@ -476,10 +478,20 @@ final class RealtimeVoiceSession: ObservableObject {
         }
         sessionHasBody = hasBody
         log("body capability updated: \(hasBody ? "connected" : "voice only")")
+        if hasBody { wakeBodyIfStill(reason: "robot found") }
     }
 
     private func syncBodyAvailability() {
         bodyAvailabilityChanged(behavior?.connected == true)
+    }
+
+    /// Startup safety belongs to the board; waking for an active conversation belongs here. This
+    /// happens before Rocky can choose a gesture, and also when a body arrives after voice did.
+    private func wakeBodyIfStill(reason: String) {
+        guard state == .connecting || state == .connected,
+            behavior?.wakeFromStill(id: "voice-active") == true
+        else { return }
+        log("robot moved from still to exploring (\(reason))")
     }
 
     private func endLongPause() {

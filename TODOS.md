@@ -221,6 +221,12 @@ never as "what are you doing right now" and "do this now". Stop is the one real 
   Movement is now explicitly Rocky's autonomous alien body language; projected causes say “I chose
   to,” tools describe private choices rather than obedience, and follow-ups return to the shared
   relationship rather than a person's “request.” Safety stop remains immediate.
+- [x] Wake the body deterministically when voice starts/resumes or finds a robot mid-session. The
+  board still boots safely locked in `still`, but iOS—not an unreliable model tool choice—moves it
+  to `exploring` before any conversational gesture. Other active moods are preserved.
+- [x] Close the remaining capability-negotiation leak found in the same post-deploy log. An older
+  “say you cannot steer” rule made Rocky contrast that with an offer of body language, then preview
+  a routine. Movement now has no spoken negotiation or lead-in; spoken content must stand alone.
 - [x] Rebalance Rocky's verbal tics: “Understand.” is now an occasional beat instead of the default;
   signature connection phrases and rotating contextual easter eggs are encouraged more often, with
   spacing rules so one repeated habit is not simply replaced by another.

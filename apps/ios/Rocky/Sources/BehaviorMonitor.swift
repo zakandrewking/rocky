@@ -338,6 +338,23 @@ final class BehaviorMonitor: ObservableObject {
         RockyLog.write("behavior: asked for mood \(mood)")
     }
 
+    /// The board deliberately boots in the hard `still` interlock. Voice lifecycle, not the
+    /// language model, owns crossing that boundary: otherwise one missed tool call leaves every
+    /// later gesture accepted and immediately cancelled by the board.
+    static func wakeMoodIfNeeded(connected: Bool, currentMood: String) -> String? {
+        connected && currentMood == "still" ? "exploring" : nil
+    }
+
+    @discardableResult
+    func wakeFromStill(id: String) -> Bool {
+        guard let wakeMood = Self.wakeMoodIfNeeded(connected: connected, currentMood: mood) else {
+            return false
+        }
+        setMood(wakeMood, id: id)
+        RockyLog.write("behavior: voice lifecycle woke the robot from still")
+        return true
+    }
+
     /// `id` is Rocky's own action id, echoed back by the board in its ack -- which is what makes
     /// a gesture's fate correlatable rather than inferred from timing. Whether the board ever
     /// finds a safe seam to honour it is still the board's call, which is why this is an
