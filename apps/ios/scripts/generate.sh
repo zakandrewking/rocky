@@ -5,8 +5,9 @@
 #      ephemeral Realtime secret, and the Hume credentials for Rocky's actual voice. Personal-use
 #      tradeoff: unlike services/device-api's whole reason for existing, these keys are not scoped
 #      or revocable without rotating them, so this only belongs on a phone you control.
-#   2. Regenerate Rocky/Resources/RealtimeSessionConfig.json from the one real definition of
-#      Rocky's persona (services/device-api/src/session.ts), so the two apps never drift.
+#   2. Regenerate Rocky/Resources/RealtimeSessionConfig.json from the character registry and
+#      session builder in services/device-api, so every selectable personality stays defined in
+#      one place.
 # Anything missing from .env is baked as empty rather than failing -- the app still builds and
 # degrades honestly (no OpenAI key: no voice at all; no Hume key: OpenAI's own voice instead).
 
@@ -33,8 +34,8 @@ export ROCKY_OPENAI_KEY_IOS="$(read_env OPENAI_API_KEY)"
 export ROCKY_HUME_KEY_IOS="$(read_env HUME_API_KEY)"
 export ROCKY_HUME_VOICE_ID_IOS="$(read_env HUME_VOICE_ID)"
 
-# Passed through to the dump script below, which decides who the app is going to be. Without
-# this the build silently ships the default character whatever .env asks for.
+# Passed through to the dump script below. ROCKY_CHARACTER chooses the fresh-install default; all
+# registered characters are bundled so the phone can switch between them at runtime.
 #
 # Written as if-blocks, not `[ -n "$X" ] && export ...`: under `set -e` a false test is a failing
 # command, so the one-liner form aborts the whole build the moment a variable is simply unset.

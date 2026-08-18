@@ -200,6 +200,11 @@ loud startled me") and control travels as Rocky's own *intentions*, never as hum
 Once chosen, every physical expression takes over its automatic counterpart immediately. Stop is
 the one human imperative.
 
+- [x] Let the person choose who is speaking on iOS. The main-screen personality pill opens a
+  persisted Rocky/Fathom selector; the build now bundles every registry entry from
+  `services/device-api/src/characters/` instead of baking only one prompt. Selection controls the
+  full generated session and voice path, and a paused conversation ends before a different
+  character starts so identity and memory never change mid-session.
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
   stream on 8768, UDP beacon under a different service name so the motion-agent discovery ignores
   it.

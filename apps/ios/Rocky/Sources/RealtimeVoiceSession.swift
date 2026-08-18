@@ -24,7 +24,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// One unobtrusive bridge after a deliberate pause. It neither retries an interrupted greeting
     /// nor turns silence into a generic assistant asking the friend to supply a new topic.
     static let resumePrompt = """
-        Continue the shared moment in Rocky's established voice with exactly one short declarative
+        Continue the shared moment in your established voice with exactly one short declarative
         line. Do not refer to the interruption or describe your readiness, attention, or
         availability. Do not ask anything or invite the friend to supply a topic. If there is no
         clear continuing topic, express simple pleasure in the friend's presence and stop.
@@ -97,6 +97,9 @@ final class RealtimeVoiceSession: ObservableObject {
     private let salience = SalienceJudge()
     private lazy var behaviorSource = BehaviorWorldSource(store: world)
     private var behavior: BehaviorMonitor?
+    /// Fixed for the lifetime of one Realtime conversation. Changing personality starts a new
+    /// session rather than mutating a character's voice and memory halfway through a thought.
+    private var activeCharacterID = PersonalityCatalog.defaultCharacterID
     /// Capability currently advertised to Realtime; the physical link may change while paused.
     private var sessionHasBody: Bool?
     private var worldTicker: Task<Void, Never>?
@@ -104,7 +107,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// The synthesiser, present only when the active character actually wants one. Characters
     /// voiced by the Realtime model itself speak over the WebRTC track and never touch this --
     /// one network hop instead of two, which is most of why it sounds quicker.
-    private let hume: HumeSpeech? = OpenAIRealtimeMinter.characterSpeaksThroughHume ? HumeSpeech() : nil
+    private var hume: HumeSpeech?
     private var humePlayer: HumePcmPlayer?
     private var storySounds: StorySoundEffects?
     private var humeTextBuffer = ""
@@ -205,9 +208,13 @@ final class RealtimeVoiceSession: ObservableObject {
     /// That is a supported, ordinary state -- the app is then exactly what apps/desktop is, a
     /// voice-only Rocky -- so the body tools are dropped from the session rather than left to fail
     /// (see OpenAIRealtimeMinter).
-    func connect(behavior: BehaviorMonitor?) async {
+    func connect(behavior: BehaviorMonitor?, characterID: String) async {
         self.behavior = behavior
         guard state == .disconnected || isFailed else { return }
+        activeCharacterID = PersonalityCatalog.resolvedID(characterID)
+        hume = OpenAIRealtimeMinter.characterSpeaksThroughHume(characterID: activeCharacterID)
+            ? HumeSpeech()
+            : nil
         state = .connecting
         wakeBodyIfStill(reason: "voice start")
         // A reconnect gets a brand-new WebRTC track, which starts enabled.
@@ -223,7 +230,10 @@ final class RealtimeVoiceSession: ObservableObject {
             try await AudioSessionManager.configureForVoice()
             startLocalAudio()
             let hasBody = behavior?.connected == true
-            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasBody: hasBody)
+            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(
+                hasBody: hasBody,
+                characterID: activeCharacterID
+            )
             sessionHasBody = hasBody
             log(
                 "minted secret in \(Self.ms(since: connectStart)) (body: \(hasBody ? "yes" : "none"), voice: \(hume == nil ? "openai" : "hume"))"
@@ -560,7 +570,10 @@ final class RealtimeVoiceSession: ObservableObject {
     /// robot found after startup or during a pause usable without creating a new voice session.
     func bodyAvailabilityChanged(_ hasBody: Bool) {
         guard state == .connected || state == .paused, sessionHasBody != hasBody,
-            let update = OpenAIRealtimeMinter.bodySessionUpdate(hasBody: hasBody)
+            let update = OpenAIRealtimeMinter.bodySessionUpdate(
+                hasBody: hasBody,
+                characterID: activeCharacterID
+            )
         else { return }
         guard client.send(jsonObject: update) else {
             log("body capability update waiting for the data channel")
@@ -598,6 +611,7 @@ final class RealtimeVoiceSession: ObservableObject {
         cancelPerformanceTiming()
         stopLocalAudio()
         hume?.cancel()
+        hume = nil
         humePlayer = nil
         storySounds = nil
         eridian = nil
@@ -637,7 +651,9 @@ final class RealtimeVoiceSession: ObservableObject {
     // MARK: - Rocky's voice and her alien chatter
 
     private func startLocalAudio() {
-        eridian = EridianAudio()
+        // The Eridian chord layer belongs to Rocky's Hume voice, not to Realtime-voiced
+        // characters such as Fathom.
+        eridian = hume == nil ? nil : EridianAudio()
         let effects = StorySoundEffects()
         storySounds = effects
         effects.onFinished = { [weak self] in

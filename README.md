@@ -252,10 +252,11 @@ making an API call. The command prints a short summary and writes the detailed i
 `local-data/evals/latest-transcript-review.md`, which makes prompt changes easy to compare against
 real family interactions.
 
-The primary cadence knobs live together in
-`apps/desktop/src/shared/personality.ts`: normal reply length, sentence cap, greeting length,
-question cap, and emphasis repetition. Tune those values first when listening feedback is about
-pace or verbosity; use the longer persona prompt for behavioral changes.
+Each character's cadence knobs live with its source in `services/device-api/src/characters/`:
+normal reply length, sentence cap, greeting length, question cap, and emphasis repetition. Tune
+those values first when listening feedback is about pace or verbosity; use the longer persona
+text in the same character file for behavioral changes. The deprecated desktop app keeps its own
+frozen copy and is not the source of truth.
 
 ### Experimental cloned voice
 

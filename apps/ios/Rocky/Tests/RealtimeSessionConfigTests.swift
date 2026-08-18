@@ -70,41 +70,54 @@ final class RealtimeSessionConfigTests: XCTestCase {
         )
     }
 
-    /// The config the app actually ships is generated at build time, so a change to session.ts
-    /// or the generate script that broke its shape would otherwise only show up on a real device.
-    /// Deliberately character-agnostic: which character is baked in is a build-time choice, and
-    /// this asserts the shape holds whoever it is.
-    func testTheBakedConfigIsPresentAndHasTheRobotTools() throws {
-        let url = try XCTUnwrap(
-            Bundle(for: Self.self).url(forResource: "RealtimeSessionConfig", withExtension: "json"),
-            "RealtimeSessionConfig.json is missing -- build with apps/ios/scripts/generate.sh"
-        )
-        let baked = session(of: try Data(contentsOf: url))
+    func testTheBakedCatalogContainsEverySelectablePersonality() throws {
+        XCTAssertEqual(Set(PersonalityCatalog.profiles.map(\.id)), ["rocky", "fathom"])
+        XCTAssertEqual(PersonalityCatalog.resolvedID("not-a-character"), PersonalityCatalog.defaultCharacterID)
 
-        let instructions = baked["instructions"] as! String
-        XCTAssertTrue(instructions.contains("You are "), "a character has to say who it is")
-        // Conduct is shared across characters; a build missing it would be a real safety gap.
-        XCTAssertTrue(instructions.contains("Never tell a child to smell"))
+        for profile in PersonalityCatalog.profiles {
+            XCTAssertNotNil(
+                OpenAIRealtimeMinter.bakedSessionData(for: profile.id),
+                "selector shows \(profile.id), but it has no session config"
+            )
+        }
+    }
 
-        // Five expressive controls reach the board directly; robot_performance is sequenced by
-        // iOS into spoken segments and those same gesture/light messages.
-        let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
-        XCTAssertEqual(
-            names,
-            [
+    /// The configs the app actually ships are generated at build time, so a change to session.ts
+    /// or the generate script that broke one character would otherwise only show up on a device.
+    func testEveryBakedConfigHasItsPersonaAndRobotTools() throws {
+        for profile in PersonalityCatalog.profiles {
+            let data = try XCTUnwrap(OpenAIRealtimeMinter.bakedSessionData(for: profile.id))
+            let baked = session(of: data)
+
+            let instructions = baked["instructions"] as! String
+            XCTAssertTrue(instructions.contains("You are \(profile.name)"))
+            // Conduct is shared across characters; a build missing it would be a real safety gap.
+            XCTAssertTrue(instructions.contains("Never tell a child to smell"))
+
+            // Five expressive controls reach the board directly. Interleaved performances need
+            // local Hume playback and therefore only belong to text-output characters.
+            let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
+            var expected = [
                 "stop_robot", "get_robot_state", "set_robot_mood", "robot_light", "robot_gesture",
-                "robot_routine", "robot_performance", "resume_robot_performance",
+                "robot_routine",
             ]
-        )
+            let modalities = baked["output_modalities"] as! [String]
+            if modalities == ["text"] {
+                expected += ["robot_performance", "resume_robot_performance"]
+            }
+            XCTAssertEqual(names, expected)
 
-        let routine = (baked["tools"] as! [[String: Any]]).first { $0["name"] as? String == "robot_routine" }
-        XCTAssertNotNil(routine)
-        XCTAssertTrue(instructions.contains("BODY LANGUAGE IS SILENT"))
-        XCTAssertTrue(instructions.contains("use robot_performance once"))
+            let routine = (baked["tools"] as! [[String: Any]]).first { $0["name"] as? String == "robot_routine" }
+            XCTAssertNotNil(routine)
+            XCTAssertTrue(instructions.contains("BODY LANGUAGE IS SILENT"))
 
-        // Whether the model speaks or only writes is the character's choice, and the app reads it
-        // back from here to decide whether to run a synthesiser at all.
-        let modalities = baked["output_modalities"] as! [String]
-        XCTAssertTrue(modalities == ["audio"] || modalities == ["text"], "got \(modalities)")
+            // Whether the model speaks or only writes is the character's choice, and the app reads
+            // it back from here to decide whether to run a synthesiser at all.
+            XCTAssertTrue(modalities == ["audio"] || modalities == ["text"], "got \(modalities)")
+            XCTAssertEqual(
+                OpenAIRealtimeMinter.characterSpeaksThroughHume(characterID: profile.id),
+                modalities == ["text"]
+            )
+        }
     }
 }

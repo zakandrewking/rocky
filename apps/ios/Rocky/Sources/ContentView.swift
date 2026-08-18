@@ -27,10 +27,12 @@ enum RobotSearchStatus {
 /// (OrbView / RockyTheme, both ported from that app's styles.css) and a small monospaced state
 /// chip pinned to the bottom corner that expands into details -- desktop's `.debug-state`.
 ///
-/// The orb is the only control. The robot connection has no manual UI at all: it is discovered
-/// and connected automatically (RobotDiscovery), the same way desktop's own plumbing is invisible.
+/// The orb is the conversation control. The small personality pill only chooses who the next
+/// conversation is with. The robot connection has no manual UI at all: it is discovered and
+/// connected automatically (RobotDiscovery), the same way desktop's own plumbing is invisible.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
+    @AppStorage(PersonalityCatalog.selectionKey) private var selectedCharacterID = PersonalityCatalog.defaultCharacterID
     /// The one robot integration: finds the board, watches what it does, and passes Rocky's
     /// intentions back. There is one payload (apps/robot/device/rocky_agent.py) and so one
     /// connection -- the older commanded-motion agent and its separate discovery are deprecated.
@@ -38,6 +40,7 @@ struct ContentView: View {
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
     @State private var showBodyPanel = false
+    @State private var showPersonalitySelector = false
     @State private var detailsOpen = false
     /// Set the instant the stone is tapped, before any awaiting, purely so the UI can respond to
     /// the touch rather than to the network.
@@ -58,6 +61,15 @@ struct ContentView: View {
             }
 
             VStack {
+                HStack {
+                    Spacer()
+                    personalityButton
+                }
+                Spacer()
+            }
+            .padding(16)
+
+            VStack {
                 Spacer()
                 HStack {
                     stateChip
@@ -68,14 +80,22 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
+            selectedCharacterID = PersonalityCatalog.resolvedID(selectedCharacterID)
             behavior.start()
         }
         .onChange(of: behavior.connected) { _, found in
             voiceSession.bodyAvailabilityChanged(found)
         }
+        .sheet(isPresented: $showPersonalitySelector) {
+            PersonalitySelectorView(
+                selection: $selectedCharacterID,
+                canChange: canChangePersonality,
+                onChange: personalityChanged
+            )
+        }
     }
 
-    // MARK: - The one control
+    // MARK: - Conversation control
 
     private var hasBakedOpenAIKey: Bool {
         !((Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String) ?? "").isEmpty
@@ -135,6 +155,60 @@ struct ContentView: View {
         .accessibilityLabel(orbLabel)
     }
 
+    // MARK: - Personality
+
+    private var selectedPersonality: PersonalityProfile? {
+        PersonalityCatalog.profile(for: selectedCharacterID)
+    }
+
+    private var canChangePersonality: Bool {
+        guard !starting else { return false }
+        switch voiceSession.state {
+        case .connected, .connecting:
+            return false
+        case .disconnected, .paused, .failed:
+            return true
+        }
+    }
+
+    private var personalityButton: some View {
+        Button {
+            showPersonalitySelector = true
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "sparkles")
+                Text(selectedPersonality?.name ?? "Personality")
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(RockyTheme.mintBright.opacity(canChangePersonality ? 0.86 : 0.38))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background {
+                Capsule()
+                    .fill(RockyTheme.ink.opacity(0.58))
+                    .overlay {
+                        Capsule().stroke(RockyTheme.mint.opacity(0.16), lineWidth: 1)
+                    }
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!canChangePersonality)
+        .accessibilityLabel("Choose personality. Current personality: \(selectedPersonality?.name ?? "unknown")")
+        .accessibilityHint(canChangePersonality ? "Opens the personality selector" : "Pause the conversation first")
+    }
+
+    private func personalityChanged(to characterID: String) {
+        if voiceSession.state == .paused {
+            voiceSession.disconnect()
+            lastStopAt = Date()
+            appendLog("voice: ended paused conversation to switch personality")
+        }
+        let name = PersonalityCatalog.profile(for: characterID)?.name ?? characterID
+        appendLog("personality: \(name)")
+    }
+
     // MARK: - State chip (desktop's `.debug-state`)
 
     private var phaseWord: String {
@@ -171,7 +245,8 @@ struct ContentView: View {
         case .paused: "paused"
         case .failed: "failed"
         }
-        return "\(bodyDescription) v:\(voice)\(hasBakedOpenAIKey ? "" : " k:missing")"
+        let personality = selectedPersonality?.id ?? "?"
+        return "p:\(personality) \(bodyDescription) v:\(voice)\(hasBakedOpenAIKey ? "" : " k:missing")"
     }
 
     private var stateChip: some View {
@@ -328,7 +403,7 @@ struct ContentView: View {
         appendLog("voice: connecting…")
         // No robot is fine and expected -- Rocky is then exactly the desktop app: a full
         // conversation, just without a body.
-        await voiceSession.connect(behavior: behavior)
+        await voiceSession.connect(behavior: behavior, characterID: selectedCharacterID)
         if case .failed(let message) = voiceSession.state {
             appendLog("voice: connect failed: \(message)")
         } else {

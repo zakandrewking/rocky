@@ -15,9 +15,10 @@ enum OpenAIRealtimeMinter {
     /// Overrides the baked-in body context when no robot is connected. The baked persona (from
     /// services/device-api/src/session.ts) promises a wheeled body with working movement tools;
     /// with no robot on the network that would be a lie, so this replaces the claim rather than
-    /// letting Rocky offer to drive somewhere she can't. Appended last, where it wins.
+    /// letting the selected character offer to drive somewhere they can't. Appended last, where
+    /// it wins.
     private static let noBodyNote = """
-        ROCKY'S BODY — NOT CONNECTED RIGHT NOW
+        YOUR BODY — NOT CONNECTED RIGHT NOW
         - This overrides anything above about embodied sensations and movement. You cannot feel or
           move your body while this connection is absent.
         - If movement becomes relevant, say once and naturally that you cannot feel your body right
@@ -25,10 +26,9 @@ enum OpenAIRealtimeMinter {
         - Your identity, agency, relationships, and conversation are unchanged.
         """
 
-    /// The session config (persona, tools, voice, model) is not baked into Swift source -- it's
-    /// dumped verbatim from services/device-api/src/session.ts at build time (see
-    /// scripts/dump-session-config.mjs) into this bundled resource, so Rocky's persona keeps
-    /// exactly one real definition in the repo.
+    /// Every registered character's session config (persona, tools, voice, model) is dumped
+    /// verbatim from services/device-api at build time. Swift only chooses one of those generated
+    /// configs; it never owns a second copy of a personality.
     ///
     /// `hasRobot` is false when discovery found no robot: the movement tools are stripped and the
     /// body context corrected, so the app is still a full voice Rocky (what apps/desktop is) even
@@ -37,9 +37,8 @@ enum OpenAIRealtimeMinter {
     /// the characters whose voice comes from Hume. The config decides this, not the app: the
     /// character owns its voice (services/device-api/src/characters), so reading it back here is
     /// what keeps a character swap from needing an app change.
-    static var characterSpeaksThroughHume: Bool {
-        guard let url = Bundle.main.url(forResource: "RealtimeSessionConfig", withExtension: "json"),
-            let data = try? Data(contentsOf: url),
+    static func characterSpeaksThroughHume(characterID: String? = nil) -> Bool {
+        guard let data = bakedSessionData(for: characterID),
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let session = root["session"] as? [String: Any],
             let modalities = session["output_modalities"] as? [String]
@@ -47,7 +46,7 @@ enum OpenAIRealtimeMinter {
         return modalities == ["text"]
     }
 
-    static func mintEphemeralSecret(hasBody: Bool) async throws -> String {
+    static func mintEphemeralSecret(hasBody: Bool, characterID: String? = nil) async throws -> String {
         guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String,
             !apiKey.isEmpty
         else {
@@ -55,10 +54,9 @@ enum OpenAIRealtimeMinter {
                 "no OpenAI API key baked into this build -- run apps/ios/scripts/generate.sh with OPENAI_API_KEY set in the repo root .env, then rebuild"
             )
         }
-        guard let configURL = Bundle.main.url(forResource: "RealtimeSessionConfig", withExtension: "json"),
-            let bakedBody = try? Data(contentsOf: configURL)
+        guard let bakedBody = bakedSessionData(for: characterID)
         else {
-            throw RockyError.commandFailed("RealtimeSessionConfig.json missing from the app bundle -- run apps/ios/scripts/generate.sh, not xcodegen generate directly")
+            throw RockyError.commandFailed("selected character config missing from the app bundle -- run apps/ios/scripts/generate.sh, not xcodegen generate directly")
         }
         // The baked config already describes the one body there is (session.ts), so a robot on the
         // network needs no edit at all. Only its absence does.
@@ -104,10 +102,8 @@ enum OpenAIRealtimeMinter {
 
     /// Changes body capabilities inside an existing Realtime session. Re-minting would throw
     /// away the paused conversation; this updates only instructions and tools, leaving it intact.
-    static func bodySessionUpdate(hasBody: Bool) -> [String: Any]? {
-        guard let configURL = Bundle.main.url(forResource: "RealtimeSessionConfig", withExtension: "json"),
-            let baked = try? Data(contentsOf: configURL)
-        else { return nil }
+    static func bodySessionUpdate(hasBody: Bool, characterID: String? = nil) -> [String: Any]? {
+        guard let baked = bakedSessionData(for: characterID) else { return nil }
         let selected = hasBody ? baked : withoutRobotBody(baked)
         guard let root = try? JSONSerialization.jsonObject(with: selected) as? [String: Any],
             let session = root["session"] as? [String: Any],
@@ -123,6 +119,22 @@ enum OpenAIRealtimeMinter {
                 "tool_choice": toolChoice,
             ],
         ]
+    }
+
+    /// Extracts one generated session from the bundled catalog. Kept internal so tests can prove
+    /// that every personality the selector shows can actually start a conversation.
+    static func bakedSessionData(for characterID: String?) -> Data? {
+        guard let configURL = Bundle.main.url(forResource: "RealtimeSessionConfig", withExtension: "json"),
+            let data = try? Data(contentsOf: configURL),
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let characters = root["characters"] as? [[String: Any]]
+        else { return nil }
+
+        let resolvedID = PersonalityCatalog.resolvedID(characterID)
+        guard let character = characters.first(where: { $0["id"] as? String == resolvedID }),
+            let session = character["session"] as? [String: Any]
+        else { return nil }
+        return try? JSONSerialization.data(withJSONObject: ["session": session])
     }
 
 }
