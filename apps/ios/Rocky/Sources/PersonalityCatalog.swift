@@ -59,6 +59,18 @@ struct PersonalityTraits: Codable, Equatable, Sendable {
         self.fantasyToReality = fantasyToReality
     }
 
+    static func randomized() -> Self {
+        Self(
+            warmth: .random(in: 0...1),
+            energy: .random(in: 0...1),
+            humor: .random(in: 0...1),
+            curiosity: .random(in: 0...1),
+            talkativeness: .random(in: 0...1),
+            earthToSky: .random(in: 0...1),
+            fantasyToReality: .random(in: 0...1)
+        )
+    }
+
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         warmth = try values.decode(Double.self, forKey: .warmth)
@@ -92,6 +104,9 @@ struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
     var voiceName: String?
     var voiceSpeed: Double
     var generatedPrompt: String?
+    /// A voice-design brief produced in the same pass as the character. Retained for the voice
+    /// design stage without mixing synthesis directions into the conversational system prompt.
+    var generatedVoiceDescriptionSeed: String?
     /// The exact slider state compiled into `generatedPrompt`. Persisting this provenance makes it
     /// impossible for a stale prompt to become selectable after an edit or relaunch.
     var generatedTraits: PersonalityTraits?
@@ -100,11 +115,12 @@ struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
         var result = source ?? Self(
             id: "",
             name: "",
-            traits: PersonalityTraits(),
+            traits: .randomized(),
             voiceID: ElevenLabsVoiceOption.choices[0].id,
             voiceName: ElevenLabsVoiceOption.choices[0].name,
             voiceSpeed: 1,
             generatedPrompt: nil,
+            generatedVoiceDescriptionSeed: nil,
             generatedTraits: nil
         )
         result.id = "custom.\(UUID().uuidString.lowercased())"
@@ -131,8 +147,12 @@ struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
         }
         voiceSpeed = voiceSpeed.clamped(to: 0.7...1.2)
         generatedPrompt = generatedPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
+        generatedVoiceDescriptionSeed = generatedVoiceDescriptionSeed?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if generatedVoiceDescriptionSeed?.isEmpty == true { generatedVoiceDescriptionSeed = nil }
         if generatedPrompt?.isEmpty == true { generatedPrompt = nil }
         if generatedPrompt == nil {
+            generatedVoiceDescriptionSeed = nil
             generatedTraits = nil
         } else {
             generatedTraits?.clamp()
@@ -147,6 +167,10 @@ struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
             && generatedTraits != nil
     }
     var generationIsCurrent: Bool { hasGeneratedArtifact && generatedTraits == traits }
+    var voiceDescriptionSeed: String? {
+        guard generationIsCurrent else { return nil }
+        return generatedVoiceDescriptionSeed
+    }
     var prompt: String? {
         guard generationIsCurrent else { return nil }
         guard let generatedPrompt = generatedPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),

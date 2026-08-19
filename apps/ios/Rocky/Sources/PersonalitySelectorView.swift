@@ -345,32 +345,58 @@ private struct PersonalityEditorView: View {
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 22) {
                         editorSection(isNew ? "1 · Personality" : "Personality") {
-                            TraitSlider(title: "Childhood", low: "guarded", high: "cherished", value: $profile.traits.warmth)
-                            TraitSlider(title: "Drive", low: "still", high: "adventurous", value: $profile.traits.energy)
-                            TraitSlider(title: "Humor", low: "earnest", high: "mischievous", value: $profile.traits.humor)
-                            TraitSlider(title: "Dream", low: "simple", high: "discovery", value: $profile.traits.curiosity)
-                            TraitSlider(title: "Voice", low: "terse", high: "expansive", value: $profile.traits.talkativeness)
+                            TraitSlider(
+                                title: "Childhood",
+                                low: "guarded",
+                                high: "cherished",
+                                quote: profile.literaryDNA[.childhood],
+                                value: $profile.traits.warmth
+                            )
+                            TraitSlider(
+                                title: "Drive",
+                                low: "still",
+                                high: "adventurous",
+                                quote: profile.literaryDNA[.drive],
+                                value: $profile.traits.energy
+                            )
+                            TraitSlider(
+                                title: "Humor",
+                                low: "earnest",
+                                high: "mischievous",
+                                quote: profile.literaryDNA[.comicLens],
+                                value: $profile.traits.humor
+                            )
+                            TraitSlider(
+                                title: "Dream",
+                                low: "simple",
+                                high: "discovery",
+                                quote: profile.literaryDNA[.dream],
+                                value: $profile.traits.curiosity
+                            )
+                            TraitSlider(
+                                title: "Voice",
+                                low: "terse",
+                                high: "expansive",
+                                quote: profile.literaryDNA[.voice],
+                                value: $profile.traits.talkativeness
+                            )
                             TraitSlider(
                                 title: "Form",
                                 low: "earth",
                                 high: "sky",
+                                quote: profile.literaryDNA[.physicalForm],
                                 value: $profile.traits.earthToSky
                             )
                             TraitSlider(
                                 title: "Origin",
                                 low: "fantasy",
                                 high: "reality",
+                                quote: profile.literaryDNA[.origin],
                                 value: $profile.traits.fantasyToReality
                             )
                         }
 
-                        editorSection(isNew ? "2 · Literary DNA" : "Literary DNA") {
-                            ForEach(profile.literaryDNA.quotes) { quote in
-                                LiteraryQuoteCard(quote: quote)
-                            }
-                        }
-
-                        editorSection(isNew ? "3 · Generate" : "Generate") {
+                        editorSection(isNew ? "2 · Generate" : "Generate") {
                             if isGeneratingIdentity {
                                 HStack(spacing: 10) {
                                     ProgressView()
@@ -385,6 +411,12 @@ private struct PersonalityEditorView: View {
                                     Text(profile.name)
                                         .font(.system(size: 22, weight: .semibold))
                                         .foregroundStyle(RockyTheme.mintBright)
+                                    if let voiceDescriptionSeed = profile.voiceDescriptionSeed {
+                                        Label(voiceDescriptionSeed, systemImage: "waveform")
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(RockyTheme.mint.opacity(0.68))
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
                                     if creationNeedsRefresh {
                                         Text("The sliders changed—generate again before saving.")
                                             .font(.system(size: 12, weight: .medium))
@@ -416,7 +448,7 @@ private struct PersonalityEditorView: View {
                             }
                         }
 
-                        editorSection(isNew ? "4 · System prompt" : "System prompt") {
+                        editorSection(isNew ? "3 · System prompt" : "System prompt") {
                             Button {
                                 showingSystemPrompt = true
                             } label: {
@@ -429,7 +461,7 @@ private struct PersonalityEditorView: View {
                             .opacity(generationIsCurrent ? 1 : 0.45)
                         }
 
-                        editorSection(isNew ? "5 · Voice" : "ElevenLabs voice") {
+                        editorSection(isNew ? "4 · Voice" : "ElevenLabs voice") {
                             NavigationLink {
                                 VoiceChooserView(
                                     voiceID: $profile.voiceID,
@@ -536,6 +568,7 @@ private struct PersonalityEditorView: View {
             let created = try await PersonalityGenerator.generate(for: requestedTraits)
             profile.name = created.name
             profile.generatedPrompt = created.systemPrompt
+            profile.generatedVoiceDescriptionSeed = created.voiceDescriptionSeed
             profile.generatedTraits = requestedTraits
             identityGenerationState = .ready
         } catch {
@@ -637,13 +670,16 @@ private struct SystemPromptPreviewView: View {
 
 private struct LiteraryQuoteCard: View {
     let quote: LiteraryQuote
+    var showsSlot = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text("\(quote.slot.rawValue) · \(quote.slot.sliderName)".uppercased())
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundStyle(RockyTheme.amberBright)
+                if showsSlot {
+                    Text("\(quote.slot.rawValue) · \(quote.slot.sliderName)".uppercased())
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(RockyTheme.amberBright)
+                }
 
                 Spacer()
 
@@ -685,7 +721,22 @@ private struct TraitSlider: View {
     let title: String
     let low: String
     let high: String
+    var quote: LiteraryQuote?
     @Binding var value: Double
+
+    init(
+        title: String,
+        low: String,
+        high: String,
+        quote: LiteraryQuote? = nil,
+        value: Binding<Double>
+    ) {
+        self.title = title
+        self.low = low
+        self.high = high
+        self.quote = quote
+        _value = value
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -701,6 +752,11 @@ private struct TraitSlider: View {
             }
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(RockyTheme.mint.opacity(0.54))
+
+            if let quote {
+                LiteraryQuoteCard(quote: quote, showsSlot: false)
+                    .padding(.top, 4)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)

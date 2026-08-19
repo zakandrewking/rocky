@@ -93,15 +93,19 @@ always the fixed default with his Hume voice. Other personalities can be created
 edited, and explicitly deleted. Seven character sliders each control exactly one kind of
 public-domain passage: warmth→childhood, energy→drive, humor→comic lens, curiosity→dream,
 talkativeness→voice, Earth↔Sky→physical form, and Fantasy↔Reality→origin. Each passage links to its
-Project Gutenberg edition. Generate makes one OpenAI Responses call that synthesizes those seven
-passages into both a playful one-word name and three to five short, koan-like character-essence
-paragraphs that preserve the character's concrete life anchors. The final prompt has two top-level sections: that generated essence first, then the
+Project Gutenberg edition and appears directly below the slider that selects it; new drafts open at
+random slider positions. Generate makes one GPT-5.6 Sol Responses call at high reasoning that
+synthesizes those seven passages into a name whose register follows the resulting life, a chronological 45–80 word miniature
+life, and a compact voice-design seed for later synthesis steps. The final prompt has two top-level sections: that generated essence first, then the
 common conduct, safety, memory, and embodiment instructions used by every character. Save and prompt
 preview remain locked until generation succeeds; moving a character slider invalidates the artifact
 until the matching settings are generated again, including across relaunches. The prompt-preview
 button follows the generated name and shows the exact final Realtime instructions for the draft and current
 connected-body/voice-only state,
 including the shared conduct and safety rules; the text is selectable and shareable. There is no text entry.
+The generated life is explicitly treated as private background that shapes the character's thoughts,
+not material to repeat in every conversation. Its source details retain their literary diction, but
+the synthesized life is contemporary rather than period pastiche.
 Speaking speed remains editable per personality.
 Selection and profiles persist across launches and supply the prompt
 and voice to the next Realtime conversation. Switching a paused conversation ends it first rather

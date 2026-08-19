@@ -9,6 +9,7 @@ final class PersonalityTests: XCTestCase {
         profile.name = name
         if generated {
             profile.generatedPrompt = "You are \(name), a fully generated character with a specific life and durable behavior."
+            profile.generatedVoiceDescriptionSeed = "A measured middle register with dry consonants and patient pauses."
             profile.generatedTraits = profile.traits
         }
         return profile
@@ -42,6 +43,7 @@ final class PersonalityTests: XCTestCase {
         XCTAssertEqual(restored.voiceID, "account-designed-voice")
         XCTAssertEqual(restored.voiceName, "Moonlight")
         XCTAssertEqual(restored.generatedPrompt, input.generatedPrompt)
+        XCTAssertEqual(restored.generatedVoiceDescriptionSeed, input.generatedVoiceDescriptionSeed)
         XCTAssertEqual(restored.generatedTraits, input.generatedTraits)
     }
 
@@ -114,6 +116,11 @@ final class PersonalityTests: XCTestCase {
             "old empty vanilla bottle",
             "seventeen steps",
             "ten miles off",
+            "Palaeontological Society",
+            "little Dancer",
+            "Potter’s knife",
+            "heartrending crash",
+            "canary-coloured cart",
         ] {
             XCTAssertTrue(corpus.contains(detail), "Missing concrete narrative anchor: \(detail)")
         }
@@ -162,8 +169,19 @@ final class PersonalityTests: XCTestCase {
 
     func testDraftNameIsGeneratedWithoutUserText() {
         let draft = EditablePersonality.draft()
+        let values = [
+            draft.traits.warmth,
+            draft.traits.energy,
+            draft.traits.humor,
+            draft.traits.curiosity,
+            draft.traits.talkativeness,
+            draft.traits.earthToSky,
+            draft.traits.fantasyToReality,
+        ]
 
         XCTAssertFalse(draft.name.isEmpty)
+        XCTAssertTrue(values.allSatisfy { (0...1).contains($0) })
+        XCTAssertNotEqual(draft.traits, PersonalityTraits())
     }
 
     func testAIGenerationRequestUsesSelectedPassagesAndStrictStructuredOutput() throws {
@@ -182,25 +200,38 @@ final class PersonalityTests: XCTestCase {
         let schema = try XCTUnwrap(format["schema"] as? [String: Any])
         let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
 
-        XCTAssertEqual(body["model"] as? String, "gpt-5.4-mini")
+        let reasoning = try XCTUnwrap(body["reasoning"] as? [String: Any])
+
+        XCTAssertEqual(body["model"] as? String, "gpt-5.6-sol")
+        XCTAssertEqual(reasoning["effort"] as? String, "high")
         for quote in LiteraryQuoteCatalog.selection(for: traits).quotes {
             XCTAssertTrue(input.contains(quote.text))
             XCTAssertFalse(input.contains(quote.author))
             XCTAssertFalse(input.contains("\(quote.author), \(quote.work)"))
         }
-        XCTAssertFalse(input.localizedCaseInsensitiveContains("rocky"))
+        XCTAssertEqual(input.components(separatedBy: "Rocky").count - 1, 1)
         XCTAssertTrue(input.contains("seven direct public-domain passages"))
         XCTAssertTrue(input.contains(PersonalityGenerator.essenceInstruction))
         XCTAssertTrue(input.contains("45–80 words"))
-        XCTAssertTrue(input.contains("concrete piece of evidence"))
+        XCTAssertTrue(input.contains("Tell a chronological story"))
+        XCTAssertTrue(input.contains("compressed biography or fable"))
+        XCTAssertTrue(input.contains("The resulting life is contemporary"))
+        XCTAssertTrue(input.contains("do not write period pastiche"))
+        XCTAssertTrue(input.contains("voice-description seed"))
+        XCTAssertTrue(input.contains("Describe audible qualities"))
+        XCTAssertTrue(input.contains("Any natural naming register is"))
+        XCTAssertFalse(input.contains("playful, memorable one-word"))
         XCTAssertTrue(input.contains("public-domain wording may be reused directly"))
         XCTAssertFalse(input.contains("Do not reproduce six consecutive source words"))
         XCTAssertEqual(text["verbosity"] as? String, "low")
         XCTAssertEqual(format["type"] as? String, "json_schema")
         XCTAssertEqual(format["strict"] as? Bool, true)
-        XCTAssertEqual(Set(properties.keys), ["name", "character_essence"])
-        XCTAssertEqual(schema["required"] as? [String], ["name", "character_essence"])
-        XCTAssertEqual(body["max_output_tokens"] as? Int, 800)
+        XCTAssertEqual(Set(properties.keys), ["name", "character_essence", "voice_description_seed"])
+        XCTAssertEqual(
+            schema["required"] as? [String],
+            ["name", "character_essence", "voice_description_seed"]
+        )
+        XCTAssertEqual(body["max_output_tokens"] as? Int, 4_000)
     }
 
     func testCreatedNameAndDenseEssenceCompileFromOneResponsesMessage() throws {
@@ -211,8 +242,9 @@ final class PersonalityTests: XCTestCase {
             """
         let identityText = try XCTUnwrap(String(
             data: JSONSerialization.data(withJSONObject: [
-                "name": "Zoodle",
+                "name": "Miss Wincey",
                 "character_essence": essence,
+                "voice_description_seed": "A low, papery contralto with measured pacing, clipped consonants, long counting pauses, and sudden bright acceleration around cherished plans.",
             ]),
             encoding: .utf8
         ))
@@ -222,10 +254,17 @@ final class PersonalityTests: XCTestCase {
 
         let identity = try PersonalityGenerator.parseResponse(response)
 
-        XCTAssertEqual(identity.name, "Zoodle")
+        XCTAssertEqual(identity.name, "Miss Wincey")
         XCTAssertTrue(identity.systemPrompt.hasPrefix(PersonalityGenerator.essenceInstruction))
-        XCTAssertTrue(identity.systemPrompt.contains("Your name is Zoodle."))
-        XCTAssertTrue(identity.systemPrompt.hasSuffix(essence.trimmingCharacters(in: .whitespacesAndNewlines)))
+        XCTAssertTrue(identity.systemPrompt.contains("Your name is Miss Wincey."))
+        XCTAssertTrue(identity.systemPrompt.contains(essence.trimmingCharacters(in: .whitespacesAndNewlines)))
+        XCTAssertTrue(identity.systemPrompt.hasSuffix(PersonalityGenerator.backgroundUseInstruction))
+        XCTAssertTrue(identity.systemPrompt.contains("not a story to recite"))
+        XCTAssertTrue(identity.systemPrompt.contains("quietly shape what you notice"))
+        XCTAssertEqual(
+            identity.voiceDescriptionSeed,
+            "A low, papery contralto with measured pacing, clipped consonants, long counting pauses, and sudden bright acceleration around cherished plans."
+        )
         XCTAssertFalse(identity.systemPrompt.localizedCaseInsensitiveContains("rocky"))
     }
 

@@ -155,22 +155,22 @@ enum LiteraryQuoteCatalog {
         ),
 
         quote(
+            "childhood.stolen-knife", .childhood,
+            "Injun Joe sprang to his feet, his eyes flaming with passion, snatched up Potter’s knife, and went creeping, catlike and stooping, round and round about the combatants, seeking an opportunity.",
+            "Mark Twain", "The Adventures of Tom Sawyer", 74,
+            .init(warmth: 0.00, energy: 0.78, humor: 0.00, curiosity: 0.48, talkativeness: 0.44), 0.00
+        ),
+        quote(
             "childhood.fire", .childhood,
             "In my joy I thrust my hand into the live embers, but quickly drew it out again with a cry of pain. How strange, I thought, that the same cause should produce such opposite effects!",
             "Mary Shelley", "Frankenstein", 84,
-            .init(warmth: 0.00, energy: 0.58, humor: 0.00, curiosity: 0.90, talkativeness: 0.56), 0.00
+            .init(warmth: 0.25, energy: 0.58, humor: 0.00, curiosity: 0.90, talkativeness: 0.56), 0.25
         ),
         quote(
             "childhood.wincey", .childhood,
             "A merchant in Hopeton last winter donated three hundred yards of wincey to the asylum. Some people said it was because he couldn’t sell it, but I’d rather believe that it was out of the kindness of his heart, wouldn’t you?",
             "L. M. Montgomery", "Anne of Green Gables", 45,
-            .init(warmth: 0.25, energy: 0.42, humor: 0.42, curiosity: 0.62, talkativeness: 0.84), 0.25
-        ),
-        quote(
-            "childhood.ran-away", .childhood,
-            "Wendy, I ran away the day I was born.",
-            "J. M. Barrie", "Peter Pan", 16,
-            .init(warmth: 0.50, energy: 0.96, humor: 0.62, curiosity: 0.44, talkativeness: 0.34), 0.50
+            .init(warmth: 0.50, energy: 0.42, humor: 0.42, curiosity: 0.62, talkativeness: 0.84), 0.50
         ),
         quote(
             "childhood.shining-waters", .childhood,
@@ -223,10 +223,10 @@ enum LiteraryQuoteCatalog {
             .init(warmth: 0.88, energy: 0.34, humor: 0.00, curiosity: 0.38, talkativeness: 0.50), 0.00
         ),
         quote(
-            "comic.seven-pounds", .comicLens,
-            "Wedlock suits you. I think, Watson, that you have put on seven and a half pounds since I saw you. Seven! Indeed, I should have thought a little more.",
-            "Arthur Conan Doyle", "The Adventures of Sherlock Holmes", 1661,
-            .init(warmth: 0.32, energy: 0.38, humor: 0.25, curiosity: 0.86, talkativeness: 0.34), 0.25
+            "comic.liniment-cake", .comicLens,
+            "Mercy on us, Anne, you’ve flavored that cake with Anodyne Liniment. I broke the liniment bottle last week and poured what was left into an old empty vanilla bottle.",
+            "L. M. Montgomery", "Anne of Green Gables", 45,
+            .init(warmth: 0.58, energy: 0.62, humor: 0.25, curiosity: 0.46, talkativeness: 0.66), 0.25
         ),
         quote(
             "comic.croquet", .comicLens,
@@ -235,10 +235,10 @@ enum LiteraryQuoteCatalog {
             .init(warmth: 0.48, energy: 0.72, humor: 0.50, curiosity: 0.82, talkativeness: 0.46), 0.50
         ),
         quote(
-            "comic.liniment-cake", .comicLens,
-            "Mercy on us, Anne, you’ve flavored that cake with Anodyne Liniment. I broke the liniment bottle last week and poured what was left into an old empty vanilla bottle.",
-            "L. M. Montgomery", "Anne of Green Gables", 45,
-            .init(warmth: 0.58, energy: 0.62, humor: 0.75, curiosity: 0.46, talkativeness: 0.66), 0.75
+            "comic.fortuitous-crash", .comicLens,
+            "It wavered an instant--then there was a heartrending crash--and the canary-coloured cart, their pride and their joy, lay on its side in the ditch, an irredeemable wreck. Toad sat straight down in the middle of the dusty road and stared fixedly in the direction of the disappearing motor-car. At intervals he faintly murmured ‘Poop-poop!’",
+            "Kenneth Grahame", "The Wind in the Willows", 289,
+            .init(warmth: 0.42, energy: 0.94, humor: 0.75, curiosity: 0.72, talkativeness: 0.64), 0.75
         ),
         quote(
             "comic.hedgehog-patient", .comicLens,
@@ -248,10 +248,10 @@ enum LiteraryQuoteCatalog {
         ),
 
         quote(
-            "dream.arabian-steeds", .dream,
-            "I’d have a stable full of Arabian steeds, rooms piled high with books, and I’d write out of a magic inkstand, so that my works should be as famous as Laurie’s music.",
-            "Louisa May Alcott", "Little Women", 514,
-            .init(warmth: 0.54, energy: 0.84, humor: 0.28, curiosity: 1.00, talkativeness: 0.64), 1.00
+            "dream.palaeontologist", .dream,
+            "Ex-President Palaeontological Society. Publications: ‘Some Observations Upon a Series of Kalmuck Skulls’; ‘Outlines of Vertebrate Evolution’; and numerous papers, including ‘The underlying fallacy of Weissmannism,’ which caused heated discussion at the Zoological Congress of Vienna. Recreations: Walking, Alpine climbing.",
+            "Arthur Conan Doyle", "The Lost World", 139,
+            .init(warmth: 0.28, energy: 0.82, humor: 0.30, curiosity: 1.00, talkativeness: 0.66), 1.00
         ),
         quote(
             "dream.thousand-roses", .dream,
@@ -260,22 +260,22 @@ enum LiteraryQuoteCatalog {
             .init(warmth: 0.72, energy: 0.76, humor: 0.24, curiosity: 0.75, talkativeness: 0.64), 0.75
         ),
         quote(
-            "dream.heart", .dream,
-            "And I am going to ask him to give me a heart",
-            "L. Frank Baum", "The Wonderful Wizard of Oz", 55,
-            .init(warmth: 0.98, energy: 0.42, humor: 0.10, curiosity: 0.00, talkativeness: 0.26), 0.00
-        ),
-        quote(
-            "dream.real", .dream,
-            "He longed to become Real, to know what it felt like; and yet the idea of growing shabby and losing his eyes and whiskers was rather sad.",
-            "Margery Williams", "The Velveteen Rabbit", 11757,
-            .init(warmth: 0.92, energy: 0.32, humor: 0.06, curiosity: 0.25, talkativeness: 0.44), 0.25
+            "dream.ballerina", .dream,
+            "Up in the little garret there stands, half-dressed, a little Dancer. She stands now on one leg, now on both. The white dress is hanging on the hook; it was washed in the teapot, and dried on the roof. She puts it on, ties a saffron-colored kerchief round her neck, and then the gown looks whiter.",
+            "Hans Christian Andersen", "The Snow Queen", 1597,
+            .init(warmth: 0.62, energy: 0.58, humor: 0.36, curiosity: 0.00, talkativeness: 0.58), 0.00
         ),
         quote(
             "dream.puffed-sleeves", .dream,
             "It would give me such a thrill, Marilla, just to wear a dress with puffed sleeves.",
             "L. M. Montgomery", "Anne of Green Gables", 45,
-            .init(warmth: 0.68, energy: 0.64, humor: 0.64, curiosity: 0.50, talkativeness: 0.62), 0.50
+            .init(warmth: 0.68, energy: 0.64, humor: 0.64, curiosity: 0.25, talkativeness: 0.62), 0.25
+        ),
+        quote(
+            "dream.magic-inkstand", .dream,
+            "I’d have a stable full of Arabian steeds, rooms piled high with books, and I’d write out of a magic inkstand, so that my works should be as famous as Laurie’s music.",
+            "Louisa May Alcott", "Little Women", 514,
+            .init(warmth: 0.54, energy: 0.84, humor: 0.28, curiosity: 0.50, talkativeness: 0.64), 0.50
         ),
 
         quote(

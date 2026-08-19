@@ -203,17 +203,24 @@ the one human imperative.
 - [x] Let the person choose who is speaking on iOS. The main-screen personality pill keeps Rocky
   as the fixed default with his Hume voice, and persists user-created profiles with editable
   warmth, energy, humor, curiosity, talkativeness, Earth↔Sky, Fantasy↔Reality, and speaking speed.
-  Each of the seven character sliders deterministically retrieves exactly one attributed Project
-  Gutenberg passage: childhood, drive, comic lens, dream, voice, physical form, or origin. Generate
-  makes one structured OpenAI call that turns only those passages into both the one-word name and
-  a 45–80 word character poem made almost entirely from concrete source evidence: quantities,
+  Each new draft starts at random slider positions. The seven character sliders deterministically
+  retrieve exactly one attributed Project Gutenberg passage apiece—childhood, drive, comic lens,
+  dream, voice, physical form, or origin—and display that passage directly beneath its controlling
+  slider. Generate makes one structured GPT-5.6 Sol call at high reasoning that turns only those
+  passages into an unconstrained-register name, a chronological 45–80 word miniature life, and a compact audible
+  voice-design seed for later synthesis steps, all in the same structured pass. The life is made almost
+  entirely from concrete source evidence: quantities,
   objects, bodily features, places, incidents, promises, and active projects. The probe corpus was
   re-audited accordingly; aphorisms were replaced by passages carrying anchors such as twenty-five
-  dollars, three hundred yards of wincey, seventeen steps, and an old tin kitchen, while the
+  dollars, three hundred yards of wincey, a stolen knife, a little dancer drying her dress on the
+  roof, a palaeontologist's Kalmuck skulls, a fortuitous motor-car crash, seventeen steps, and an old tin kitchen, while the
   compiler now preserves public-domain diction instead of paraphrasing it into trait language.
+  The source details stay old and strange where useful, but the compiled life is explicitly
+  contemporary and its connective narration avoids period pastiche.
   The final prompt presents that poetic,
   specific essence as its first top-level section and all common conduct, safety, memory, and body
-  rules as its second. Save and prompt preview require a successful generation
+  rules as its second. A fixed instruction makes the miniature life private background that shapes
+  attention and judgment, rather than a story the character continually recites. Save and prompt preview require a successful generation
   for the exact current slider state; persisted generation provenance keeps stale prompts invalid
   after relaunch. Profiles can be explicitly deleted. The editor can preview and share the exact
   final Realtime instructions, including shared rules and the current body-connectivity override,
