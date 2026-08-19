@@ -49,11 +49,63 @@ final class PersonalityTests: XCTestCase {
         var vivid = profile()
         vivid.traits = PersonalityTraits(warmth: 1, energy: 1, humor: 1, curiosity: 1, talkativeness: 1)
 
-        XCTAssertTrue(quiet.prompt.contains("reserved and unsentimental"))
+        XCTAssertEqual(quiet.literaryDNA.quotes.count, LiteraryDNASlot.allCases.count)
+        XCTAssertEqual(vivid.literaryDNA.quotes.count, LiteraryDNASlot.allCases.count)
+        XCTAssertNotEqual(quiet.literaryDNA.quotes.map(\.id), vivid.literaryDNA.quotes.map(\.id))
+        for quote in quiet.literaryDNA.quotes {
+            XCTAssertTrue(quiet.prompt.contains(quote.text))
+        }
+        for quote in vivid.literaryDNA.quotes {
+            XCTAssertTrue(vivid.prompt.contains(quote.text))
+        }
+        XCTAssertTrue(quiet.prompt.contains("LITERARY DNA"))
         XCTAssertTrue(quiet.prompt.contains("4–18 spoken words"))
-        XCTAssertTrue(vivid.prompt.contains("deeply affectionate"))
         XCTAssertTrue(vivid.prompt.contains("14–70 spoken words"))
         XCTAssertTrue(vivid.prompt.contains("never imitate Rocky"))
+        XCTAssertFalse(quiet.prompt.contains("reserved and unsentimental"))
+        XCTAssertFalse(vivid.prompt.contains("identity is deliberately underspecified"))
+    }
+
+    func testLiteraryQuoteCorpusHasCompleteAttributedPublicDomainSlots() {
+        XCTAssertEqual(Set(LiteraryQuoteCatalog.quotes.map(\.id)).count, LiteraryQuoteCatalog.quotes.count)
+
+        for slot in LiteraryDNASlot.allCases {
+            XCTAssertEqual(LiteraryQuoteCatalog.quotes.filter { $0.slot == slot }.count, 5)
+        }
+
+        for quote in LiteraryQuoteCatalog.quotes {
+            XCTAssertFalse(quote.text.isEmpty)
+            XCTAssertFalse(quote.author.isEmpty)
+            XCTAssertFalse(quote.work.isEmpty)
+            XCTAssertTrue(quote.source.hasPrefix("https://www.gutenberg.org/ebooks/"))
+            XCTAssertFalse(quote.text.localizedCaseInsensitiveContains("fat and bunchy"))
+        }
+    }
+
+    func testLiteraryQuoteSelectionIsDeterministic() {
+        let traits = PersonalityTraits(
+            warmth: 0.31,
+            energy: 0.42,
+            humor: 0.53,
+            curiosity: 0.64,
+            talkativeness: 0.75
+        )
+
+        XCTAssertEqual(
+            LiteraryQuoteCatalog.selection(for: traits),
+            LiteraryQuoteCatalog.selection(for: traits)
+        )
+    }
+
+    func testCompiledPromptUsesPassagesButDoesNotExposeTheirSources() {
+        let profile = profile(name: "Zizzle")
+        let prompt = profile.prompt
+
+        for quote in profile.literaryDNA.quotes {
+            XCTAssertTrue(prompt.contains(quote.text))
+            XCTAssertFalse(prompt.contains(quote.author))
+            XCTAssertFalse(prompt.contains(quote.work))
+        }
     }
 
     func testVoicePaletteUsesDistinctElevenLabsIDs() {

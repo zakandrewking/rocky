@@ -203,11 +203,17 @@ the one human imperative.
 - [x] Let the person choose who is speaking on iOS. The main-screen personality pill keeps Rocky
   as the fixed default with his Hume voice, and persists user-created profiles with editable
   warmth, energy, humor, curiosity, talkativeness, and speaking speed. Creation visibly orders the
-  work as sliders first, OpenAI-generated one-word name second, and built-in/account ElevenLabs
-  voice selection third. The flow contains no text input or biography, leaving each new character
-  intentionally underspecified. Custom persona text is inserted into a
+  work as sliders first, visible literary DNA second, OpenAI-generated one-word name third, and
+  built-in/account ElevenLabs voice selection fourth. Each slider position deterministically
+  retrieves exact, attributed Project Gutenberg passages for origin, physical form, childhood,
+  drive, dream, and voice; those passages compile directly into the character prompt instead of
+  asking a model to invent a biography. Custom persona text is inserted into a
   generated session template that retains the same conduct and body rules. A paused conversation
   ends before a different personality starts so identity and memory never change mid-session.
+- [ ] Evaluate the literary-DNA probe with blind first-conversation auditions against Rocky and
+  the old adjective-only Zizzle baseline. Before expanding the 30-passage corpus, decide whether
+  origin, physical form, and childhood lock when a profile is created or use slider hysteresis so
+  a tiny edit cannot rewrite a life. Keep edition links and verbatim-text tests with every addition.
 - [ ] Reintroduce ElevenLabs Voice Design only when the voice-creation flow has a clearer product
   role; for now personalities choose built-in or existing account voices.
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event

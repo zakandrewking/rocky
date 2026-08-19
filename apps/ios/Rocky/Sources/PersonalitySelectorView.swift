@@ -294,8 +294,8 @@ private struct PersonalityEditorView: View {
     }
 
     private var nameInstruction: String {
-        if nameNeedsRefresh { return "Because Step 1 changed, repeat Step 2 before Save." }
-        if isNew { return "Complete Step 1 first, then tap this button." }
+        if nameNeedsRefresh { return "Because Step 1 changed, review Step 2 and repeat Step 3 before Save." }
+        if isNew { return "Tune Step 1, review the passages in Step 2, then tap this button." }
         return "This is optional; your slider changes save without renaming."
     }
 
@@ -315,7 +315,18 @@ private struct PersonalityEditorView: View {
                             TraitSlider(title: "Talkativeness", low: "quiet", high: "expansive", value: $profile.traits.talkativeness)
                         }
 
-                        editorSection(isNew ? "2 · Name" : "Name") {
+                        editorSection(isNew ? "2 · Literary DNA" : "Literary DNA") {
+                            Text("Each slider position retrieves the closest public-domain passage for six parts of a life. These exact passages—not a generated biography—become the character's private evidence.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(RockyTheme.mint.opacity(0.66))
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            ForEach(profile.literaryDNA.quotes) { quote in
+                                LiteraryQuoteCard(quote: quote)
+                            }
+                        }
+
+                        editorSection(isNew ? "3 · Name" : "Name") {
                             VStack(alignment: .leading, spacing: 8) {
                                 if isGeneratingIdentity {
                                     HStack(spacing: 10) {
@@ -331,7 +342,7 @@ private struct PersonalityEditorView: View {
                                         .font(.system(size: 22, weight: .semibold))
                                         .foregroundStyle(RockyTheme.mintBright)
                                     if nameNeedsRefresh {
-                                        Text("Step 1 changed—update the name before saving.")
+                                        Text("Step 1 changed—review the new passages and update the name before saving.")
                                             .font(.system(size: 12, weight: .medium))
                                             .foregroundStyle(RockyTheme.amberBright)
                                     }
@@ -370,7 +381,7 @@ private struct PersonalityEditorView: View {
                             }
                         }
 
-                        editorSection(isNew ? "3 · Voice" : "ElevenLabs voice") {
+                        editorSection(isNew ? "4 · Voice" : "ElevenLabs voice") {
                             NavigationLink {
                                 VoiceChooserView(
                                     voiceID: $profile.voiceID,
@@ -475,6 +486,51 @@ private struct PersonalityEditorView: View {
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .foregroundStyle(RockyTheme.amberBright.opacity(0.78))
             content()
+        }
+    }
+}
+
+private struct LiteraryQuoteCard: View {
+    let quote: LiteraryQuote
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(quote.slot.rawValue.uppercased())
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(RockyTheme.amberBright)
+
+                Spacer()
+
+                if let sourceURL = quote.sourceURL {
+                    Link(destination: sourceURL) {
+                        Label("SOURCE", systemImage: "arrow.up.right")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(RockyTheme.mint.opacity(0.68))
+                    }
+                    .accessibilityLabel("Open \(quote.work) by \(quote.author) on Project Gutenberg")
+                }
+            }
+
+            Text("“\(quote.text)”")
+                .font(.system(size: 14, weight: .regular, design: .serif))
+                .italic()
+                .foregroundStyle(RockyTheme.mintBright)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("\(quote.author) · \(quote.work)")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(RockyTheme.mint.opacity(0.52))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .background {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(RockyTheme.ink.opacity(0.64))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(RockyTheme.mint.opacity(0.12), lineWidth: 1)
+                }
         }
     }
 }
