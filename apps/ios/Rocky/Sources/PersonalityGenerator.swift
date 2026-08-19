@@ -85,9 +85,10 @@ enum PersonalityGenerator {
             the essence immediately after this instruction:
             "\(essenceInstruction)"
 
-            Write the essence directly to the character in second person. Make it four to seven
-            compact paragraphs of dense, image-rich prose: nearly a poem or koan in compression,
-            but concrete enough to act from without interpretation. It must give the character a
+            Write the essence directly to the character in second person. Make it three to five
+            very short paragraphs of image-rich prose, compressed like a Zen koan: spare, resonant,
+            and specific rather than explanatory. Every sentence must carry character-defining
+            information. It must still give the character a
             specific physical form, place of origin, formative childhood experience, present-day
             motivation, private dream, tastes, aversions, flaws, conversational habits, and one
             tangible project or preoccupation already underway. Pull details and causal texture
@@ -108,7 +109,8 @@ enum PersonalityGenerator {
             not like an interview.
 
             The name must be 2–20 characters with no spaces and must not be Comet, Pip, Rumble,
-            George, Rachel, or Adam. The character essence should be 300–550 words. Return no prose
+            George, Rachel, or Adam. The complete character essence must be 140–220 words. Preserve
+            the required life details; cut transitions, explanation, repetition, and ornament first. Return no prose
             outside the structured fields.
             """
 
@@ -121,7 +123,7 @@ enum PersonalityGenerator {
                 ],
                 "character_essence": [
                     "type": "string",
-                    "description": "Four to seven dense paragraphs that make one specific life from all seven passages.",
+                    "description": "Three to five short, koan-like paragraphs that make one specific life from all seven passages.",
                 ],
             ],
             "required": ["name", "character_essence"],
@@ -131,6 +133,7 @@ enum PersonalityGenerator {
             "model": "gpt-5.4-mini",
             "input": brief,
             "text": [
+                "verbosity": "low",
                 "format": [
                     "type": "json_schema",
                     "name": "compiled_personality",
@@ -168,7 +171,7 @@ enum PersonalityGenerator {
         else {
             throw RockyError.commandFailed("OpenAI returned a name that did not fit the requested style.")
         }
-        guard (800...7_000).contains(essence.count),
+        guard (500...3_000).contains(essence.count),
             !essence.localizedCaseInsensitiveContains("rocky")
         else {
             throw RockyError.commandFailed("OpenAI returned an essence that did not fit the requested character.")

@@ -206,7 +206,8 @@ the one human imperative.
   Each of the seven character sliders deterministically retrieves exactly one attributed Project
   Gutenberg passage: childhood, drive, comic lens, dream, voice, physical form, or origin. Generate
   makes one structured OpenAI call that turns only those passages into both the one-word name and
-  four to seven dense, concrete character-essence paragraphs. The final prompt presents that poetic,
+  three to five short, koan-like character-essence paragraphs that retain the concrete life anchors.
+  The final prompt presents that poetic,
   specific essence as its first top-level section and all common conduct, safety, memory, and body
   rules as its second. Save and prompt preview require a successful generation
   for the exact current slider state; persisted generation provenance keeps stale prompts invalid

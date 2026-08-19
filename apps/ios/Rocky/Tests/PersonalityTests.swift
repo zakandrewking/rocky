@@ -159,6 +159,7 @@ final class PersonalityTests: XCTestCase {
         XCTAssertFalse(input.localizedCaseInsensitiveContains("rocky"))
         XCTAssertTrue(input.contains("seven direct public-domain passages"))
         XCTAssertTrue(input.contains(PersonalityGenerator.essenceInstruction))
+        XCTAssertEqual(text["verbosity"] as? String, "low")
         XCTAssertEqual(format["type"] as? String, "json_schema")
         XCTAssertEqual(format["strict"] as? Bool, true)
         XCTAssertEqual(Set(properties.keys), ["name", "character_essence"])
