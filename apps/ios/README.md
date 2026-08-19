@@ -93,11 +93,13 @@ always the fixed default with his Hume voice. Other personalities can be created
 edited, and explicitly deleted. Seven character sliders each control exactly one kind of
 public-domain passage: warmth→childhood, energy→drive, humor→comic lens, curiosity→dream,
 talkativeness→voice, Earth↔Sky→physical form, and Fantasy↔Reality→origin. Each passage links to its
-Project Gutenberg edition. Generate makes one OpenAI Responses call that compiles those seven
-passages into both a playful one-word name and a conventional standalone system prompt. Save and
-prompt preview remain locked until generation succeeds; moving a character slider invalidates the
-artifact until the matching settings are generated again, including across relaunches. A
-prompt-preview button shows the exact final Realtime instructions for the draft and current
+Project Gutenberg edition. Generate makes one OpenAI Responses call that synthesizes those seven
+passages into both a playful one-word name and four to seven dense, concrete character-essence
+paragraphs. The final prompt has two top-level sections: that generated essence first, then the
+common conduct, safety, memory, and embodiment instructions used by every character. Save and prompt
+preview remain locked until generation succeeds; moving a character slider invalidates the artifact
+until the matching settings are generated again, including across relaunches. The prompt-preview
+button follows the generated name and shows the exact final Realtime instructions for the draft and current
 connected-body/voice-only state,
 including the shared conduct and safety rules; the text is selectable and shareable. There is no text entry.
 Speaking speed remains editable per personality.

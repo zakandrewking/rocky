@@ -51,7 +51,12 @@ describe("every character", () => {
 describe("buildInstructions", () => {
   it("puts conduct after personality so it wins", () => {
     const instructions = buildInstructions(ROCKY);
+    expect(instructions.startsWith("CHARACTER ESSENCE\n\n")).toBe(true);
+    expect(instructions).toContain("COMMON INSTRUCTIONS — THE SAME FOR EVERY CHARACTER");
     expect(instructions.indexOf("You are Rocky")).toBeLessThan(instructions.indexOf("SPEECH AND CONDUCT"));
+    expect(instructions.indexOf("CHARACTER ESSENCE")).toBeLessThan(
+      instructions.indexOf("COMMON INSTRUCTIONS — THE SAME FOR EVERY CHARACTER"),
+    );
   });
 
   it("appends extra sections last", () => {

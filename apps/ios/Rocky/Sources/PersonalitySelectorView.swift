@@ -319,12 +319,6 @@ private struct PersonalityEditorView: View {
         return profile.isGenerated ? "Generate another version" : "Generate character"
     }
 
-    private var creationInstruction: String {
-        if creationNeedsRefresh { return "The sliders changed. Generate again before Save so the name and system prompt match these passages." }
-        if generationIsCurrent { return "Generation is current. You can preview the exact system prompt, choose a voice, and Save." }
-        return "Generation is required before Save. One request turns these seven passages into a name and traditional system prompt."
-    }
-
     private var personalityChoice: PersonalityChoice {
         PersonalityChoice(
             id: profile.id,
@@ -348,75 +342,42 @@ private struct PersonalityEditorView: View {
                 RockyTheme.background
                 StarField()
 
-                ScrollView {
+                ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 22) {
                         editorSection(isNew ? "1 · Personality" : "Personality") {
-                            Text("Each slider retrieves one kind of source passage. No slider secretly rewrites the other six roles.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(RockyTheme.mint.opacity(0.66))
-                                .fixedSize(horizontal: false, vertical: true)
-                            TraitSlider(title: "Warmth · childhood", low: "guarded", high: "cherished", value: $profile.traits.warmth)
-                            TraitSlider(title: "Energy · drive", low: "still", high: "adventurous", value: $profile.traits.energy)
-                            TraitSlider(title: "Humor · comic lens", low: "earnest", high: "mischievous", value: $profile.traits.humor)
-                            TraitSlider(title: "Curiosity · dream", low: "simple wish", high: "discovery", value: $profile.traits.curiosity)
-                            TraitSlider(title: "Talkativeness · voice", low: "terse", high: "expansive", value: $profile.traits.talkativeness)
+                            TraitSlider(title: "Childhood (guarded ↔ cherished)", value: $profile.traits.warmth)
+                            TraitSlider(title: "Drive (still ↔ adventurous)", value: $profile.traits.energy)
+                            TraitSlider(title: "Humor (earnest ↔ mischievous)", value: $profile.traits.humor)
+                            TraitSlider(title: "Dream (simple ↔ discovery)", value: $profile.traits.curiosity)
+                            TraitSlider(title: "Voice (terse ↔ expansive)", value: $profile.traits.talkativeness)
                             TraitSlider(
-                                title: "Earth ↔ Sky · physical form",
-                                low: "small creature",
-                                middle: "larger creature",
-                                high: "space-being",
+                                title: "Form (earth ↔ sky)",
                                 value: $profile.traits.earthToSky
                             )
                             TraitSlider(
-                                title: "Fantasy ↔ Reality · origin",
-                                low: "fantastical",
-                                middle: "myth-touched",
-                                high: "real-world",
+                                title: "Origin (fantasy ↔ reality)",
                                 value: $profile.traits.fantasyToReality
                             )
                         }
 
                         editorSection(isNew ? "2 · Literary DNA" : "Literary DNA") {
-                            Text("These seven direct public-domain passages are the complete inputs to one creation pass. Their source metadata is for you; the resulting character receives a conventional authored system prompt.")
-                                .font(.system(size: 12))
-                                .foregroundStyle(RockyTheme.mint.opacity(0.66))
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Button {
-                                showingSystemPrompt = true
-                            } label: {
-                                Label("Preview full system prompt", systemImage: "doc.text.magnifyingglass")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(RockyTheme.amberBright)
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(!generationIsCurrent)
-                            .opacity(generationIsCurrent ? 1 : 0.45)
-
-                            Text(generationIsCurrent
-                                ? "Shows the generated character plus shared speech, safety, memory, and \(hasBody ? "connected-body" : "voice-only") rules."
-                                : "Generate the character in Step 3 before previewing its final prompt.")
-                                .font(.system(size: 11))
-                                .foregroundStyle(RockyTheme.mint.opacity(0.58))
-                                .fixedSize(horizontal: false, vertical: true)
-
                             ForEach(profile.literaryDNA.quotes) { quote in
                                 LiteraryQuoteCard(quote: quote)
                             }
                         }
 
                         editorSection(isNew ? "3 · Generate" : "Generate") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                if isGeneratingIdentity {
-                                    HStack(spacing: 10) {
-                                        ProgressView()
-                                            .tint(RockyTheme.amberBright)
-                                        Text("Compiling one coherent life…")
-                                            .font(.system(size: 15, weight: .medium))
-                                            .foregroundStyle(RockyTheme.mintBright)
-                                    }
-                                    .padding(.vertical, 12)
-                                } else if profile.hasGeneratedArtifact {
+                            if isGeneratingIdentity {
+                                HStack(spacing: 10) {
+                                    ProgressView()
+                                        .tint(RockyTheme.amberBright)
+                                    Text("Compiling one coherent life…")
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundStyle(RockyTheme.mintBright)
+                                }
+                                .padding(.vertical, 12)
+                            } else if profile.hasGeneratedArtifact {
+                                VStack(alignment: .leading, spacing: 8) {
                                     Text(profile.name)
                                         .font(.system(size: 22, weight: .semibold))
                                         .foregroundStyle(RockyTheme.mintBright)
@@ -425,14 +386,10 @@ private struct PersonalityEditorView: View {
                                             .font(.system(size: 12, weight: .medium))
                                             .foregroundStyle(RockyTheme.amberBright)
                                     }
-                                } else {
-                                    Text("Adjust the sliders, inspect their passages, then generate the character.")
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundStyle(RockyTheme.mintBright)
                                 }
+                                .padding(14)
+                                .background(fieldBackground)
                             }
-                            .padding(14)
-                            .background(fieldBackground)
 
                             Button {
                                 Task { await startGeneratingIdentity() }
@@ -447,11 +404,6 @@ private struct PersonalityEditorView: View {
                             .buttonStyle(.plain)
                             .disabled(isGeneratingIdentity)
 
-                            Text(creationInstruction)
-                                .font(.system(size: 11))
-                                .foregroundStyle(RockyTheme.mint.opacity(0.58))
-                                .fixedSize(horizontal: false, vertical: true)
-
                             if let generationError {
                                 Text(generationError)
                                     .font(.system(size: 12))
@@ -460,7 +412,20 @@ private struct PersonalityEditorView: View {
                             }
                         }
 
-                        editorSection(isNew ? "4 · Voice" : "ElevenLabs voice") {
+                        editorSection(isNew ? "4 · System prompt" : "System prompt") {
+                            Button {
+                                showingSystemPrompt = true
+                            } label: {
+                                Label("Preview full system prompt", systemImage: "doc.text.magnifyingglass")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(RockyTheme.amberBright)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!generationIsCurrent)
+                            .opacity(generationIsCurrent ? 1 : 0.45)
+                        }
+
+                        editorSection(isNew ? "5 · Voice" : "ElevenLabs voice") {
                             NavigationLink {
                                 VoiceChooserView(
                                     voiceID: $profile.voiceID,
@@ -474,9 +439,6 @@ private struct PersonalityEditorView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(profile.voiceName ?? ElevenLabsVoiceOption.resolved(profile.voiceID).name)
                                             .foregroundStyle(RockyTheme.mintBright)
-                                        Text("Choose an ElevenLabs voice")
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(RockyTheme.mint.opacity(0.66))
                                     }
                                     Spacer()
                                     Image(systemName: "chevron.right")
@@ -488,9 +450,7 @@ private struct PersonalityEditorView: View {
                             .buttonStyle(.plain)
 
                             TraitSlider(
-                                title: "Speaking speed",
-                                low: "slow",
-                                high: "quick",
+                                title: "Speed (slow ↔ quick)",
                                 value: Binding(
                                     get: { (profile.voiceSpeed - 0.7) / 0.5 },
                                     set: { profile.voiceSpeed = 0.7 + $0 * 0.5 }
@@ -510,8 +470,10 @@ private struct PersonalityEditorView: View {
                             }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(20)
                 }
+                .clipped()
             }
             .navigationTitle(isNew ? "New personality" : "Edit \(profile.name)")
             .navigationBarTitleDisplayMode(.inline)
@@ -595,6 +557,7 @@ private struct PersonalityEditorView: View {
                 .foregroundStyle(RockyTheme.amberBright.opacity(0.78))
             content()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -628,6 +591,7 @@ private struct SystemPromptPreviewView: View {
                             .foregroundStyle(RockyTheme.mintBright)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(14)
                             .background {
                                 RoundedRectangle(cornerRadius: 12)
@@ -638,8 +602,10 @@ private struct SystemPromptPreviewView: View {
                                     }
                             }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(20)
                 }
+                .clipped()
             }
             .navigationTitle("Full system prompt")
             .navigationBarTitleDisplayMode(.inline)
@@ -696,6 +662,7 @@ private struct LiteraryQuoteCard: View {
                 .foregroundStyle(RockyTheme.mint.opacity(0.52))
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background {
             RoundedRectangle(cornerRadius: 12)
@@ -710,50 +677,17 @@ private struct LiteraryQuoteCard: View {
 
 private struct TraitSlider: View {
     let title: String
-    let low: String
-    let middle: String?
-    let high: String
     @Binding var value: Double
-
-    init(
-        title: String,
-        low: String,
-        middle: String? = nil,
-        high: String,
-        value: Binding<Double>
-    ) {
-        self.title = title
-        self.low = low
-        self.middle = middle
-        self.high = high
-        _value = value
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(RockyTheme.mintBright)
-                Spacer()
-                Text("\(Int(value * 100))")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(RockyTheme.amberBright.opacity(0.72))
-            }
+            Text(title)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(RockyTheme.mintBright)
             Slider(value: $value, in: 0...1)
                 .tint(RockyTheme.amber)
-            HStack {
-                Text(low)
-                Spacer()
-                if let middle {
-                    Text(middle)
-                    Spacer()
-                }
-                Text(high)
-            }
-            .font(.system(size: 10, design: .monospaced))
-            .foregroundStyle(RockyTheme.mint.opacity(0.54))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background {
             RoundedRectangle(cornerRadius: 12)

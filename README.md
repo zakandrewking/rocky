@@ -258,9 +258,10 @@ those values first when listening feedback is about Rocky's pace or verbosity. A
 personalities and their ElevenLabs voices are created and edited on the phone. Seven one-to-one
 sliders retrieve visible public-domain passages for origin, physical form, childhood, drive, comic
 lens, dream, and voice. Earth↔Sky selects a form from small terrestrial creature through larger
-creature to space-being; Fantasy↔Reality selects the kind of origin. One Generate action compiles
-the seven passages into a playful name and a conventional standalone system prompt. Save remains
-locked until that exact slider state has been generated, and there is no text-entry step. The deprecated
+creature to space-being; Fantasy↔Reality selects the kind of origin. One Generate action synthesizes
+the seven passages into a playful name and a dense, concrete character essence, then places that
+above the common conduct, safety, memory, and embodiment instructions. Save remains locked until
+that exact slider state has been generated, and there is no text-entry step. The deprecated
 desktop app keeps its own frozen copy and is not the source of truth.
 
 ### Experimental cloned voice

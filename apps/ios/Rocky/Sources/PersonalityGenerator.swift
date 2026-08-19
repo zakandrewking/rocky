@@ -1,21 +1,29 @@
 import Foundation
 
-struct GeneratedPersonality: Decodable, Equatable, Sendable {
+struct GeneratedPersonality: Equatable, Sendable {
     let name: String
     let systemPrompt: String
-
-    private enum CodingKeys: String, CodingKey {
-        case name
-        case systemPrompt = "system_prompt"
-    }
 }
 
-/// Compiles the selected public-domain passages into one durable, conventional persona prompt and
-/// a matching name in a single creation call. This intentionally uses the same personal-device
+/// Synthesizes the selected public-domain passages into one dense character essence and a matching
+/// name in a single creation call, then wraps that creative result in deterministic instructions.
+/// This intentionally uses the same personal-device
 /// OpenAI key as Realtime session minting: there is no user-authored
 /// prompt and no laptop service in the on-device flow.
 enum PersonalityGenerator {
     private static let endpoint = URL(string: "https://api.openai.com/v1/responses")!
+    static let essenceInstruction =
+        "You are a character whose essence derives from the following; embody it in all that you say and do."
+
+    private struct GeneratedPayload: Decodable {
+        let name: String
+        let characterEssence: String
+
+        private enum CodingKeys: String, CodingKey {
+            case name
+            case characterEssence = "character_essence"
+        }
+    }
 
     private struct ResponsesEnvelope: Decodable {
         struct Output: Decodable {
@@ -73,26 +81,34 @@ enum PersonalityGenerator {
             SOURCE PASSAGES
             \(passages)
 
-            Return a playful, memorable one-word name and a traditional standalone system prompt.
-            The system prompt must begin exactly "You are <the generated name>" and directly state
-            a specific physical form, place of origin, formative childhood experience, present-day
-            motivation, private dream, preferences, flaws, conversational behavior, and one concrete
-            project or preoccupation already underway. Make those facts mutually consistent.
+            Return a playful, memorable one-word name and a character essence. The app will place
+            the essence immediately after this instruction:
+            "\(essenceInstruction)"
 
-            Write the system prompt as durable acting direction, not as literary analysis or a
-            generated biography. Never mention passages, books, authors, sources, sliders, dials,
-            compilation, profiles, AI, assistants, or settings. Do not inherit an original speaker's
-            proper name, relationships, historical era, or plot. Do not reproduce six consecutive
-            source words. Avoid adjective inventories and generic labels such as chatty, warm,
-            mischievous, curious, companion, or helper; express disposition through behavior.
+            Write the essence directly to the character in second person. Make it four to seven
+            compact paragraphs of dense, image-rich prose: nearly a poem or koan in compression,
+            but concrete enough to act from without interpretation. It must give the character a
+            specific physical form, place of origin, formative childhood experience, present-day
+            motivation, private dream, tastes, aversions, flaws, conversational habits, and one
+            tangible project or preoccupation already underway. Pull details and causal texture
+            from all seven passages. Invent only the connective tissue needed to turn their
+            implications into one mutually consistent life.
 
-            Derive cadence and reply length from the VOICE passage. Ask at most one question per
-            reply and often none. Conversation is mutual rather than an interview.
-            For the first response, say the character's name once and reveal the ongoing concrete
-            preoccupation; never list capabilities or ask how to help.
+            Do not write a trait inventory, literary analysis, generic biography, heading, or
+            policy section. Do not repeat the generated name; the app introduces it separately.
+            Never mention passages, books, authors, sources, sliders, dials, compilation, profiles,
+            AI, assistants, or settings. Do not inherit an original speaker's proper name,
+            relationships, historical era, or plot. Do not reproduce six consecutive source words.
+            Avoid generic labels such as chatty, warm, mischievous, curious, companion, or helper;
+            make disposition visible through remembered scenes, choices, rituals, and speech.
+
+            Derive cadence and reply length from the VOICE passage. Give the essence a first-response
+            instinct that says the character's name once and reveals the ongoing preoccupation,
+            without listing capabilities or asking how to help. Conversation should feel mutual,
+            not like an interview.
 
             The name must be 2–20 characters with no spaces and must not be Comet, Pip, Rumble,
-            George, Rachel, or Adam. The system prompt should be 350–700 words. Return no prose
+            George, Rachel, or Adam. The character essence should be 300–550 words. Return no prose
             outside the structured fields.
             """
 
@@ -103,12 +119,12 @@ enum PersonalityGenerator {
                     "type": "string",
                     "description": "A playful one-word character nickname, 2–20 characters.",
                 ],
-                "system_prompt": [
+                "character_essence": [
                     "type": "string",
-                    "description": "The complete traditional system prompt for acting as the character.",
+                    "description": "Four to seven dense paragraphs that make one specific life from all seven passages.",
                 ],
             ],
-            "required": ["name", "system_prompt"],
+            "required": ["name", "character_essence"],
             "additionalProperties": false,
         ]
         let body: [String: Any] = [
@@ -141,9 +157,9 @@ enum PersonalityGenerator {
             throw RockyError.commandFailed("OpenAI returned no compiled personality.")
         }
 
-        let generated = try JSONDecoder().decode(GeneratedPersonality.self, from: json)
+        let generated = try JSONDecoder().decode(GeneratedPayload.self, from: json)
         let name = generated.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let systemPrompt = generated.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let essence = generated.characterEssence.trimmingCharacters(in: .whitespacesAndNewlines)
         let forbidden = Set(["comet", "pip", "rumble", "george", "rachel", "adam"])
 
         guard (2...20).contains(name.count),
@@ -152,18 +168,30 @@ enum PersonalityGenerator {
         else {
             throw RockyError.commandFailed("OpenAI returned a name that did not fit the requested style.")
         }
-        guard (300...8_000).contains(systemPrompt.count),
-            systemPrompt.lowercased().hasPrefix("you are \(name.lowercased())"),
-            !systemPrompt.localizedCaseInsensitiveContains("rocky")
+        guard (800...7_000).contains(essence.count),
+            !essence.localizedCaseInsensitiveContains("rocky")
         else {
-            throw RockyError.commandFailed("OpenAI returned a system prompt that did not fit the requested character.")
+            throw RockyError.commandFailed("OpenAI returned an essence that did not fit the requested character.")
         }
         if let literaryDNA,
-            literaryDNA.quotes.contains(where: { sharesSixWordRun(systemPrompt, with: $0.text) })
+            literaryDNA.quotes.contains(where: { sharesSixWordRun(essence, with: $0.text) })
         {
-            throw RockyError.commandFailed("OpenAI copied too much source text into the system prompt.")
+            throw RockyError.commandFailed("OpenAI copied too much source text into the character essence.")
         }
-        return GeneratedPersonality(name: name, systemPrompt: systemPrompt)
+        return GeneratedPersonality(
+            name: name,
+            systemPrompt: compileSystemPrompt(name: name, essence: essence)
+        )
+    }
+
+    static func compileSystemPrompt(name: String, essence: String) -> String {
+        """
+        \(essenceInstruction)
+
+        Your name is \(name).
+
+        \(essence.trimmingCharacters(in: .whitespacesAndNewlines))
+        """
     }
 
     private static func sharesSixWordRun(_ prompt: String, with source: String) -> Bool {

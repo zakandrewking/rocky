@@ -95,6 +95,8 @@ final class RealtimeSessionConfigTests: XCTestCase {
         XCTAssertFalse(instructions.contains("__ROCKY_CUSTOM_PERSONA__"))
         XCTAssertFalse(instructions.localizedCaseInsensitiveContains("rocky"))
         XCTAssertFalse(instructions.contains("SELF-DIRECTED ALIEN"))
+        XCTAssertTrue(instructions.hasPrefix("CHARACTER ESSENCE\n\n"))
+        XCTAssertTrue(instructions.contains("COMMON INSTRUCTIONS — THE SAME FOR EVERY CHARACTER"))
         XCTAssertTrue(instructions.contains("SELF-DIRECTED CREATURE"))
         XCTAssertTrue(instructions.contains("Never tell a child to smell"))
         XCTAssertTrue(instructions.contains("BODY LANGUAGE IS SILENT"))

@@ -158,20 +158,22 @@ final class PersonalityTests: XCTestCase {
         }
         XCTAssertFalse(input.localizedCaseInsensitiveContains("rocky"))
         XCTAssertTrue(input.contains("seven direct public-domain passages"))
+        XCTAssertTrue(input.contains(PersonalityGenerator.essenceInstruction))
         XCTAssertEqual(format["type"] as? String, "json_schema")
         XCTAssertEqual(format["strict"] as? Bool, true)
-        XCTAssertEqual(Set(properties.keys), ["name", "system_prompt"])
-        XCTAssertEqual(schema["required"] as? [String], ["name", "system_prompt"])
+        XCTAssertEqual(Set(properties.keys), ["name", "character_essence"])
+        XCTAssertEqual(schema["required"] as? [String], ["name", "character_essence"])
         XCTAssertEqual(body["max_output_tokens"] as? Int, 1_600)
     }
 
-    func testCreatedNameAndTraditionalPromptParseFromOneResponsesMessage() throws {
-        let prompt = "You are Zoodle, a small but exacting night gardener. "
-            + String(repeating: "You tend one silver seed, dislike careless promises, and speak from concrete experience. ", count: 8)
+    func testCreatedNameAndDenseEssenceCompileFromOneResponsesMessage() throws {
+        let paragraph = "You are a small but exacting night gardener who tends one silver seed, distrusts careless promises, and keeps moonlit soil beneath each claw. "
+            + "A flooded burrow taught you to store every precious thing above the waterline, so even your jokes arrive with a practical knot tied inside them. "
+        let essence = Array(repeating: paragraph, count: 5).joined(separator: "\n\n")
         let identityText = try XCTUnwrap(String(
             data: JSONSerialization.data(withJSONObject: [
                 "name": "Zoodle",
-                "system_prompt": prompt,
+                "character_essence": essence,
             ]),
             encoding: .utf8
         ))
@@ -182,7 +184,9 @@ final class PersonalityTests: XCTestCase {
         let identity = try PersonalityGenerator.parseResponse(response)
 
         XCTAssertEqual(identity.name, "Zoodle")
-        XCTAssertEqual(identity.systemPrompt, prompt.trimmingCharacters(in: .whitespacesAndNewlines))
+        XCTAssertTrue(identity.systemPrompt.hasPrefix(PersonalityGenerator.essenceInstruction))
+        XCTAssertTrue(identity.systemPrompt.contains("Your name is Zoodle."))
+        XCTAssertTrue(identity.systemPrompt.hasSuffix(essence.trimmingCharacters(in: .whitespacesAndNewlines)))
         XCTAssertFalse(identity.systemPrompt.localizedCaseInsensitiveContains("rocky"))
     }
 

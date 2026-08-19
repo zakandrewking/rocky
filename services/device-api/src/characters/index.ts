@@ -35,5 +35,9 @@ export function activeCharacter(env: NodeJS.ProcessEnv = process.env): Character
  * last so it wins any argument with personality.
  */
 export function buildInstructions(character: Character, extraSections: readonly string[] = []): string {
-  return [character.persona, SHARED_BEHAVIOUR, ...extraSections].filter((section) => section.trim()).join("\n\n");
+  const common = [SHARED_BEHAVIOUR, ...extraSections].filter((section) => section.trim()).join("\n\n");
+  return [
+    `CHARACTER ESSENCE\n\n${character.persona}`,
+    `COMMON INSTRUCTIONS — THE SAME FOR EVERY CHARACTER\n\n${common}`,
+  ].join("\n\n");
 }

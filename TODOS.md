@@ -205,8 +205,10 @@ the one human imperative.
   warmth, energy, humor, curiosity, talkativeness, Earth↔Sky, Fantasy↔Reality, and speaking speed.
   Each of the seven character sliders deterministically retrieves exactly one attributed Project
   Gutenberg passage: childhood, drive, comic lens, dream, voice, physical form, or origin. Generate
-  makes one structured OpenAI call that turns only those passages into both the one-word name and a
-  conventional standalone system prompt. Save and prompt preview require a successful generation
+  makes one structured OpenAI call that turns only those passages into both the one-word name and
+  four to seven dense, concrete character-essence paragraphs. The final prompt presents that poetic,
+  specific essence as its first top-level section and all common conduct, safety, memory, and body
+  rules as its second. Save and prompt preview require a successful generation
   for the exact current slider state; persisted generation provenance keeps stale prompts invalid
   after relaunch. Profiles can be explicitly deleted. The editor can preview and share the exact
   final Realtime instructions, including shared rules and the current body-connectivity override,
@@ -215,8 +217,8 @@ the one human imperative.
   rules. A paused conversation ends before a different personality starts so identity and memory
   never change mid-session.
 - [ ] Evaluate the literary-DNA probe with blind first-conversation auditions against Rocky and
-  the old adjective-only Zizzle baseline. Compare the conventional compiled prompt with the former
-  runtime quote scaffold, and test whether five anchors per slider are enough before expanding the
+  the old adjective-only Zizzle baseline. Compare the dense essence compiler with the former runtime
+  quote scaffold, and test whether five anchors per slider are enough before expanding the
   35-passage corpus. Keep edition links and verbatim-text tests with every addition.
 - [ ] Reintroduce ElevenLabs Voice Design only when the voice-creation flow has a clearer product
   role; for now personalities choose built-in or existing account voices.
