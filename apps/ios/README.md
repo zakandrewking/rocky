@@ -39,7 +39,7 @@ apps/ios/
 │   │   ├── ContentView.swift     — orb, personality entry point, and debug state
 │   │   ├── PersonalityCatalog.swift — fixed Rocky + persisted custom profiles and trait prompts
 │   │   ├── PersonalitySelectorView.swift — personality cards and slider editor
-│   │   ├── VoiceChooserView.swift — account voice picker and Voice Design audition flow
+│   │   ├── VoiceChooserView.swift — built-in and account ElevenLabs voice picker
 │   │   ├── ElevenLabsSpeech.swift — streaming custom-personality speech
 │   │   ├── RealtimeWebRTCClient.swift — peer connection, data channel, SDP exchange with OpenAI
 │   │   ├── RealtimeEvents.swift  — typed slice of the data-channel event schema (tool calls)
@@ -90,12 +90,11 @@ infrastructure the same way it is on desktop.
 The circular stone (`orb` in `ContentView.swift`) starts and pauses conversation. A small
 personality button in the top-right opens Rocky and the profiles created on that phone. Rocky is
 always the fixed default with his Hume voice. Other personalities can be created, duplicated,
-edited with warmth/energy/humor/curiosity/talkativeness sliders, and deleted. Names, biographies,
-and prompts are generated—there is no text entry. OpenAI turns the current sliders into a playful
-one-word name and a short identity paragraph when a profile is created or regenerated. Each chooses any voice available to the
-configured ElevenLabs account, or uses presentation/accent/age/pitch/texture/expression controls
-to generate the Voice Design prompt, audition three candidates, and save one. Voice consistency
-and speaking speed remain editable per personality. Selection and profiles persist across launches and supply the prompt
+edited with warmth/energy/humor/curiosity/talkativeness sliders, and deleted. Creation is an
+explicit three-step flow: tune the sliders, ask OpenAI to invent a playful one-word name, then
+choose a built-in or account ElevenLabs voice. There is no text entry and no generated biography;
+the character stays deliberately underspecified. Speaking speed remains editable per personality.
+Selection and profiles persist across launches and supply the prompt
 and voice to the next Realtime conversation. Switching a paused conversation ends it first rather
 than changing identity and memory mid-thought. A tappable status row below the orb expands into a detail area (mirroring
 desktop's debug chip) with connection status, warnings, the last tool call, the CyberPi

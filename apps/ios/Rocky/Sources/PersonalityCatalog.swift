@@ -49,81 +49,44 @@ struct PersonalityTraits: Codable, Equatable, Sendable {
 struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
     var id: String
     var name: String
-    var concept: String
     var traits: PersonalityTraits
     var voiceID: String
     var voiceName: String?
-    var voiceStability: Double
     var voiceSpeed: Double
 
     static func draft(copying source: Self? = nil) -> Self {
         var result = source ?? Self(
             id: "",
             name: "",
-            concept: "",
             traits: PersonalityTraits(),
             voiceID: ElevenLabsVoiceOption.choices[0].id,
             voiceName: ElevenLabsVoiceOption.choices[0].name,
-            voiceStability: 0.5,
             voiceSpeed: 1
         )
         result.id = "custom.\(UUID().uuidString.lowercased())"
-        if source == nil { result.regenerateIdentity() }
+        if source == nil { result.regenerateName() }
         return result
     }
 
-    mutating func regenerateIdentity() {
+    mutating func regenerateName() {
         let names = [
             "Aster", "Bramble", "Cinder", "Dovey", "Echo", "Fable", "Glim", "Hollis",
             "Ibis", "Juniper", "Kestrel", "Lumen", "Mallow", "Nim", "Oriel", "Pipkin",
             "Quill", "Rook", "Solace", "Tansy", "Umber", "Vesper", "Wren", "Zinnia",
         ]
-        let homes = [
-            "a town built inside an ancient observatory",
-            "a drifting island where rain falls upward",
-            "the night train that circles a moonlit continent",
-            "a lighthouse at the edge of an inland desert",
-            "a quiet orbital garden above a violet planet",
-            "a library whose rooms rearrange themselves each dawn",
-        ]
-        let callings = [
-            "maps places that only exist for an hour",
-            "repairs musical instruments no one remembers inventing",
-            "collects tiny mysteries and refuses to call them trivia",
-            "studies the etiquette of storms",
-            "designs celebrations for discoveries that nearly went unnoticed",
-            "keeps a field guide to impossible animals",
-        ]
-        let convictions = [
-            "They believe a good conversation should leave both people slightly changed.",
-            "They have strong opinions about small beauties and revise big opinions carefully.",
-            "They treat curiosity as hospitality and silence as part of the conversation.",
-            "They notice overlooked details, then connect them to unexpectedly large ideas.",
-            "They collect favorite moments rather than achievements.",
-            "They distrust tidy morals but adore a precise, surprising truth.",
-        ]
-
         name = names.randomElement()!
-        concept = "From \(homes.randomElement()!), \(name) \(callings.randomElement()!). \(convictions.randomElement()!)"
     }
 
     mutating func normalize() {
         name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(32))
-        concept = String(concept.trimmingCharacters(in: .whitespacesAndNewlines).prefix(800))
-        if name.isEmpty || concept.isEmpty { regenerateIdentity() }
+        if name.isEmpty { regenerateName() }
         traits.clamp()
         if voiceID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             voiceID = ElevenLabsVoiceOption.choices[0].id
             voiceName = ElevenLabsVoiceOption.choices[0].name
         }
-        voiceStability = voiceStability.clamped(to: 0...1)
         voiceSpeed = voiceSpeed.clamped(to: 0.7...1.2)
         if !id.hasPrefix("custom.") { id = "custom.\(UUID().uuidString.lowercased())" }
-    }
-
-    var summary: String {
-        let oneLine = concept.replacingOccurrences(of: "\n", with: " ")
-        return oneLine.count <= 116 ? oneLine : String(oneLine.prefix(113)) + "…"
     }
 
     var prompt: String { PersonalityPromptBuilder.build(self) }
@@ -151,25 +114,23 @@ enum PersonalityPromptBuilder {
             "reserved and unsentimental", "measured but kind", "openly warm", "deeply affectionate",
         ])
         let energy = description(profile.traits.energy, [
-            "very still and deliberate", "calm and unhurried", "lively and quick", "brightly exuberant",
+            "very calm and deliberate", "calm and unhurried", "lively and quick", "brightly exuberant",
         ])
         let humor = description(profile.traits.humor, [
             "mostly earnest", "dryly amusing", "playful", "mischievously funny without being cruel",
         ])
         let curiosity = description(profile.traits.curiosity, [
-            "self-contained", "selectively curious", "genuinely inquisitive", "intensely curious",
+            "apathetic", "selectively curious", "genuinely inquisitive", "intensely curious",
         ])
         let minimumWords = Int(4 + profile.traits.talkativeness * 10)
         let maximumWords = Int(18 + profile.traits.talkativeness * 52)
         let name = profile.name.replacingOccurrences(of: "\n", with: " ")
 
         return """
-            You are \(name), an original character and a real conversational companion. You have
-            your own life, preferences, memories within this conversation, and point of view. You
-            are not Rocky and never imitate Rocky's alien grammar, catchphrases, or biography.
-
-            WHO YOU ARE
-            \(profile.concept)
+            You are \(name), an original conversational companion. Your identity is deliberately
+            underspecified beyond your name and the acting directions below. Develop preferences
+            naturally in conversation without inventing a fixed biography. You are not Rocky and
+            never imitate Rocky's alien grammar, catchphrases, or biography.
 
             PERSONALITY DIALS
             - Warmth: \(warmth).
@@ -187,9 +148,8 @@ enum PersonalityPromptBuilder {
             turn every reply into advice, a question, a slogan, or a tidy lesson.
 
             FIRST RESPONSE
-            Introduce yourself as \(name) in two or three short spoken sentences. Reveal one
-            specific detail from your identity and offer one natural opening into a shared moment.
-            Never list capabilities or ask "how can I help".
+            Introduce yourself as \(name) in one or two short spoken sentences, then respond
+            naturally to the person. Never list capabilities or ask "how can I help".
             """
     }
 
@@ -215,12 +175,14 @@ enum PersonalityCatalog {
     }()
 
     static let defaultCharacterID = "rocky"
-    static let rockyProfile = baked?.characters.first(where: { $0.id == defaultCharacterID })
-        ?? PersonalityProfile(
-            id: defaultCharacterID,
-            name: "Rocky",
-            summary: "An Eridian engineer visiting Earth. Broken grammar, literal, warm, base six."
+    static let rockyProfile: PersonalityProfile = {
+        let bakedRocky = baked?.characters.first(where: { $0.id == defaultCharacterID })
+        return PersonalityProfile(
+            id: bakedRocky?.id ?? defaultCharacterID,
+            name: bakedRocky?.name ?? "Rocky",
+            summary: "An Eridian engineer visiting Earth"
         )
+    }()
 
     static var rockyChoice: PersonalityChoice {
         PersonalityChoice(
@@ -273,11 +235,11 @@ final class PersonalityStore: ObservableObject {
         return PersonalityChoice(
             id: custom.id,
             name: custom.name,
-            summary: custom.summary,
+            summary: "",
             customPrompt: custom.prompt,
             speech: .elevenLabs(
                 voiceID: custom.voiceID,
-                stability: custom.voiceStability,
+                stability: 0.5,
                 speed: custom.voiceSpeed
             )
         )

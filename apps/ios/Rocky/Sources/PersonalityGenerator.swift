@@ -1,11 +1,10 @@
 import Foundation
 
-struct GeneratedPersonalityIdentity: Decodable, Equatable, Sendable {
+struct GeneratedPersonalityName: Decodable, Equatable, Sendable {
     let name: String
-    let concept: String
 }
 
-/// Turns the personality dials into a name and compact character biography. This intentionally
+/// Turns the personality dials into a playful name. This intentionally
 /// uses the same personal-device OpenAI key as Realtime session minting: there is no user-authored
 /// prompt and no laptop service in the on-device flow.
 enum PersonalityGenerator {
@@ -24,7 +23,7 @@ enum PersonalityGenerator {
         let output: [Output]
     }
 
-    static func generate(for traits: PersonalityTraits) async throws -> GeneratedPersonalityIdentity {
+    static func generate(for traits: PersonalityTraits) async throws -> GeneratedPersonalityName {
         guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String,
             !apiKey.isEmpty
         else {
@@ -60,13 +59,10 @@ enum PersonalityGenerator {
             warmth \(score(traits.warmth)), energy \(score(traits.energy)), humor \(score(traits.humor)),
             curiosity \(score(traits.curiosity)), talkativeness \(score(traits.talkativeness)).
 
-            Return a fun, memorable, one-word nickname in the spirit of Rocky, Comet, Pip, or
-            Rumble—but do not use those names. Never use an ordinary human name such as George,
-            Rachel, or Adam. Write one vivid 45–75 word paragraph establishing where the character
-            comes from, an unusual pursuit or obsession, a distinct worldview, and one endearing
-            quirk. Make the dials felt through the writing without mentioning dials, scores,
-            settings, prompts, assistants, or AI. Keep it original, warm enough for all ages, and
-            do not use headings or a list.
+            Return only a fun, memorable, one-word nickname in the spirit of Rocky, Comet, Pip, or
+            Rumble—but do not use those names. Let the sound of the name subtly fit the dials.
+            Never use an ordinary human name such as George, Rachel, or Adam. Do not invent or
+            return a biography, description, backstory, title, heading, or any other text.
             """
 
         let schema: [String: Any] = [
@@ -76,12 +72,8 @@ enum PersonalityGenerator {
                     "type": "string",
                     "description": "A playful one-word character nickname, 2–20 characters.",
                 ],
-                "concept": [
-                    "type": "string",
-                    "description": "One vivid personality paragraph of 45–75 words.",
-                ],
             ],
-            "required": ["name", "concept"],
+            "required": ["name"],
             "additionalProperties": false,
         ]
         let body: [String: Any] = [
@@ -90,17 +82,17 @@ enum PersonalityGenerator {
             "text": [
                 "format": [
                     "type": "json_schema",
-                    "name": "personality_identity",
+                    "name": "personality_name",
                     "strict": true,
                     "schema": schema,
                 ],
             ],
-            "max_output_tokens": 300,
+            "max_output_tokens": 80,
         ]
         return try JSONSerialization.data(withJSONObject: body)
     }
 
-    static func parseResponse(_ data: Data) throws -> GeneratedPersonalityIdentity {
+    static func parseResponse(_ data: Data) throws -> GeneratedPersonalityName {
         let response = try JSONDecoder().decode(ResponsesEnvelope.self, from: data)
         guard let text = response.output
             .compactMap(\.content)
@@ -108,23 +100,20 @@ enum PersonalityGenerator {
             .first(where: { $0.type == "output_text" })?.text,
             let json = text.data(using: .utf8)
         else {
-            throw RockyError.commandFailed("OpenAI returned no personality text.")
+            throw RockyError.commandFailed("OpenAI returned no personality name.")
         }
 
-        let generated = try JSONDecoder().decode(GeneratedPersonalityIdentity.self, from: json)
+        let generated = try JSONDecoder().decode(GeneratedPersonalityName.self, from: json)
         let name = generated.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let concept = generated.concept.trimmingCharacters(in: .whitespacesAndNewlines)
         let forbidden = Set(["rocky", "comet", "pip", "rumble", "george", "rachel", "adam"])
-        let wordCount = concept.split(whereSeparator: \.isWhitespace).count
 
         guard (2...20).contains(name.count),
             !name.contains(where: \.isWhitespace),
-            !forbidden.contains(name.lowercased()),
-            (35...90).contains(wordCount)
+            !forbidden.contains(name.lowercased())
         else {
-            throw RockyError.commandFailed("OpenAI returned an identity that did not fit the requested style.")
+            throw RockyError.commandFailed("OpenAI returned a name that did not fit the requested style.")
         }
-        return GeneratedPersonalityIdentity(name: name, concept: concept)
+        return GeneratedPersonalityName(name: name)
     }
 
     private static func score(_ value: Double) -> Int {

@@ -19,11 +19,6 @@ struct PersonalitySelectorView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("Rocky stays Rocky. Make other personalities here, tune their character, and give each one an ElevenLabs voice.")
-                            .font(.system(size: 15))
-                            .foregroundStyle(RockyTheme.mintBright.opacity(0.72))
-                            .fixedSize(horizontal: false, vertical: true)
-
                         if !hasElevenLabsKey {
                             Text("ElevenLabs is not configured in this build. You can create personalities now, but they need ELEVENLABS_API_KEY before they can speak.")
                                 .font(.system(size: 12, design: .monospaced))
@@ -121,7 +116,7 @@ struct PersonalitySelectorView: View {
         return card(
             name: profile.name,
             summary: profile.summary,
-            detail: "Default · fixed · Hume voice",
+            detail: "Default",
             selected: selection == profile.id,
             editable: false,
             select: { select(profile.id) },
@@ -133,7 +128,7 @@ struct PersonalitySelectorView: View {
         let voiceName = profile.voiceName ?? ElevenLabsVoiceOption.resolved(profile.voiceID).name
         return card(
             name: profile.name,
-            summary: profile.summary,
+            summary: "",
             detail: "ElevenLabs · \(voiceName)",
             selected: selection == profile.id,
             editable: true,
@@ -194,13 +189,17 @@ struct PersonalitySelectorView: View {
                         Text(name)
                             .font(.system(size: 20, weight: .semibold))
                             .foregroundStyle(RockyTheme.mintBright)
-                        Text(summary)
-                            .font(.system(size: 14))
-                            .foregroundStyle(RockyTheme.mint.opacity(0.72))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(detail)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(RockyTheme.amberBright.opacity(0.62))
+                        if !summary.isEmpty {
+                            Text(summary)
+                                .font(.system(size: 14))
+                                .foregroundStyle(RockyTheme.mint.opacity(0.72))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if !detail.isEmpty {
+                            Text(detail)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(RockyTheme.amberBright.opacity(0.62))
+                        }
                     }
                     Spacer(minLength: 2)
                 }
@@ -260,6 +259,7 @@ private struct PersonalityEditorView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var identityGenerationState = IdentityGenerationState.initial
+    @State private var namedTraits: PersonalityTraits?
     @State private var generationError: String?
 
     init(
@@ -274,11 +274,29 @@ private struct PersonalityEditorView: View {
 
     private var isGeneratingIdentity: Bool {
         identityGenerationState == .loading
-            || (isNew && identityGenerationState == .initial)
     }
 
     private var identityIsReady: Bool {
+        !isNew || (identityGenerationState == .ready && namedTraits == profile.traits)
+    }
+
+    private var hasInventedName: Bool {
         !isNew || identityGenerationState == .ready
+    }
+
+    private var nameNeedsRefresh: Bool {
+        isNew && identityGenerationState == .ready && namedTraits != profile.traits
+    }
+
+    private var nameActionTitle: String {
+        if nameNeedsRefresh { return "Update name from changed sliders" }
+        return hasInventedName ? "Invent another name from sliders" : "Invent name from sliders"
+    }
+
+    private var nameInstruction: String {
+        if nameNeedsRefresh { return "Because Step 1 changed, repeat Step 2 before Save." }
+        if isNew { return "Complete Step 1 first, then tap this button." }
+        return "This is optional; your slider changes save without renaming."
     }
 
     var body: some View {
@@ -289,7 +307,15 @@ private struct PersonalityEditorView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
-                        editorSection("Identity") {
+                        editorSection(isNew ? "1 · Personality" : "Personality") {
+                            TraitSlider(title: "Warmth", low: "reserved", high: "affectionate", value: $profile.traits.warmth)
+                            TraitSlider(title: "Energy", low: "calm", high: "exuberant", value: $profile.traits.energy)
+                            TraitSlider(title: "Humor", low: "earnest", high: "mischievous", value: $profile.traits.humor)
+                            TraitSlider(title: "Curiosity", low: "apathetic", high: "inquisitive", value: $profile.traits.curiosity)
+                            TraitSlider(title: "Talkativeness", low: "quiet", high: "expansive", value: $profile.traits.talkativeness)
+                        }
+
+                        editorSection(isNew ? "2 · Name" : "Name") {
                             VStack(alignment: .leading, spacing: 8) {
                                 if isGeneratingIdentity {
                                     HStack(spacing: 10) {
@@ -300,20 +326,17 @@ private struct PersonalityEditorView: View {
                                             .foregroundStyle(RockyTheme.mintBright)
                                     }
                                     .padding(.vertical, 12)
-                                    .task {
-                                        guard isNew, identityGenerationState == .initial else { return }
-                                        await performGeneration()
-                                    }
-                                } else if identityIsReady || !isNew {
+                                } else if hasInventedName {
                                     Text(profile.name)
                                         .font(.system(size: 22, weight: .semibold))
                                         .foregroundStyle(RockyTheme.mintBright)
-                                    Text(profile.concept)
-                                        .font(.system(size: 15))
-                                        .foregroundStyle(RockyTheme.mint.opacity(0.78))
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    if nameNeedsRefresh {
+                                        Text("Step 1 changed—update the name before saving.")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(RockyTheme.amberBright)
+                                    }
                                 } else {
-                                    Text("No identity yet")
+                                    Text("Adjust the sliders above, then invent a name.")
                                         .font(.system(size: 15, weight: .medium))
                                         .foregroundStyle(RockyTheme.mintBright)
                                 }
@@ -324,14 +347,17 @@ private struct PersonalityEditorView: View {
                             Button {
                                 Task { await startGeneratingIdentity() }
                             } label: {
-                                Label("AI-generate from sliders", systemImage: "sparkles")
+                                Label(
+                                    nameActionTitle,
+                                    systemImage: "sparkles"
+                                )
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(RockyTheme.amberBright)
                             }
                             .buttonStyle(.plain)
                             .disabled(isGeneratingIdentity)
 
-                            Text("Move the sliders, then regenerate to weave those traits into a new name and paragraph.")
+                            Text(nameInstruction)
                                 .font(.system(size: 11))
                                 .foregroundStyle(RockyTheme.mint.opacity(0.58))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -344,21 +370,11 @@ private struct PersonalityEditorView: View {
                             }
                         }
 
-                        editorSection("Personality") {
-                            TraitSlider(title: "Warmth", low: "reserved", high: "affectionate", value: $profile.traits.warmth)
-                            TraitSlider(title: "Energy", low: "still", high: "exuberant", value: $profile.traits.energy)
-                            TraitSlider(title: "Humor", low: "earnest", high: "mischievous", value: $profile.traits.humor)
-                            TraitSlider(title: "Curiosity", low: "self-contained", high: "inquisitive", value: $profile.traits.curiosity)
-                            TraitSlider(title: "Talkativeness", low: "compact", high: "expansive", value: $profile.traits.talkativeness)
-                        }
-
-                        editorSection("ElevenLabs voice") {
+                        editorSection(isNew ? "3 · Voice" : "ElevenLabs voice") {
                             NavigationLink {
                                 VoiceChooserView(
                                     voiceID: $profile.voiceID,
-                                    voiceName: $profile.voiceName,
-                                    personalityName: profile.name,
-                                    traits: profile.traits
+                                    voiceName: $profile.voiceName
                                 )
                             } label: {
                                 HStack(spacing: 12) {
@@ -368,7 +384,7 @@ private struct PersonalityEditorView: View {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(profile.voiceName ?? ElevenLabsVoiceOption.resolved(profile.voiceID).name)
                                             .foregroundStyle(RockyTheme.mintBright)
-                                        Text("Choose from your voices or create a new one")
+                                        Text("Choose an ElevenLabs voice")
                                             .font(.system(size: 12))
                                             .foregroundStyle(RockyTheme.mint.opacity(0.66))
                                     }
@@ -381,12 +397,6 @@ private struct PersonalityEditorView: View {
                             }
                             .buttonStyle(.plain)
 
-                            TraitSlider(
-                                title: "Voice consistency",
-                                low: "expressive",
-                                high: "steady",
-                                value: $profile.voiceStability
-                            )
                             TraitSlider(
                                 title: "Speaking speed",
                                 low: "slow",
@@ -435,10 +445,11 @@ private struct PersonalityEditorView: View {
     private func performGeneration() async {
         identityGenerationState = .loading
         generationError = nil
+        let requestedTraits = profile.traits
         do {
-            let identity = try await PersonalityGenerator.generate(for: profile.traits)
+            let identity = try await PersonalityGenerator.generate(for: requestedTraits)
             profile.name = identity.name
-            profile.concept = identity.concept
+            namedTraits = requestedTraits
             identityGenerationState = .ready
         } catch {
             generationError = "Couldn’t generate that one. Check the connection and tap the sparkle button to retry."

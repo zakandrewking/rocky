@@ -256,7 +256,7 @@ Rocky's fixed cadence knobs live with his source in `services/device-api/src/cha
 normal reply length, sentence cap, greeting length, question cap, and emphasis repetition. Tune
 those values first when listening feedback is about Rocky's pace or verbosity. Additional iOS
 personalities and their ElevenLabs voices are created and edited on the phone; OpenAI turns their
-slider settings into a playful name and compact character paragraph, with no text-entry step. The deprecated
+slider settings into a playful name, with no biography or text-entry step. The deprecated
 desktop app keeps its own frozen copy and is not the source of truth.
 
 ### Experimental cloned voice

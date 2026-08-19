@@ -202,14 +202,14 @@ the one human imperative.
 
 - [x] Let the person choose who is speaking on iOS. The main-screen personality pill keeps Rocky
   as the fixed default with his Hume voice, and persists user-created profiles with editable
-  warmth, energy, humor, curiosity, talkativeness, voice consistency, and speed. A profile can
-  choose any voice in the configured ElevenLabs account or design three new candidates from
-  presentation/accent/age/pitch/texture/expression controls, audition them, and save the chosen
-  voice. OpenAI generates a playful one-word name and short identity paragraph from the current
-  personality sliders; acting prompts, voice names, and voice-design descriptions are generated
-  too, so the flow contains no text input. Custom persona text is inserted into a
+  warmth, energy, humor, curiosity, talkativeness, and speaking speed. Creation visibly orders the
+  work as sliders first, OpenAI-generated one-word name second, and built-in/account ElevenLabs
+  voice selection third. The flow contains no text input or biography, leaving each new character
+  intentionally underspecified. Custom persona text is inserted into a
   generated session template that retains the same conduct and body rules. A paused conversation
   ends before a different personality starts so identity and memory never change mid-session.
+- [ ] Reintroduce ElevenLabs Voice Design only when the voice-creation flow has a clearer product
+  role; for now personalities choose built-in or existing account voices.
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
   stream on 8768, UDP beacon under a different service name so the motion-agent discovery ignores
   it.

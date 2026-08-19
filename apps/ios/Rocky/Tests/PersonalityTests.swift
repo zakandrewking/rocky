@@ -7,7 +7,6 @@ final class PersonalityTests: XCTestCase {
     private func profile(name: String = "Mara") -> EditablePersonality {
         var profile = EditablePersonality.draft()
         profile.name = name
-        profile.concept = "A lunar cartographer who loves impossible coastlines."
         return profile
     }
 
@@ -62,12 +61,10 @@ final class PersonalityTests: XCTestCase {
         XCTAssertEqual(ElevenLabsVoiceOption.choices.map(\.name), ["Comet", "Pip", "Rumble"])
     }
 
-    func testDraftIdentityIsGeneratedWithoutUserText() {
+    func testDraftNameIsGeneratedWithoutUserText() {
         let draft = EditablePersonality.draft()
 
         XCTAssertFalse(draft.name.isEmpty)
-        XCTAssertFalse(draft.concept.isEmpty)
-        XCTAssertTrue(draft.concept.contains(draft.name))
     }
 
     func testAIGenerationRequestUsesSlidersAndStrictStructuredOutput() throws {
@@ -83,6 +80,8 @@ final class PersonalityTests: XCTestCase {
         let input = try XCTUnwrap(body["input"] as? String)
         let text = try XCTUnwrap(body["text"] as? [String: Any])
         let format = try XCTUnwrap(text["format"] as? [String: Any])
+        let schema = try XCTUnwrap(format["schema"] as? [String: Any])
+        let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
 
         XCTAssertEqual(body["model"] as? String, "gpt-5.4-mini")
         XCTAssertTrue(input.contains("warmth 12"))
@@ -90,12 +89,13 @@ final class PersonalityTests: XCTestCase {
         XCTAssertTrue(input.contains("George"))
         XCTAssertEqual(format["type"] as? String, "json_schema")
         XCTAssertEqual(format["strict"] as? Bool, true)
+        XCTAssertEqual(Set(properties.keys), ["name"])
+        XCTAssertEqual(schema["required"] as? [String], ["name"])
     }
 
-    func testAIIdentityParsesFromAResponsesOutputMessage() throws {
-        let concept = "From a workshop hidden beneath a thundercloud, Zoodle tunes lightning into tiny songs. They believe every stubborn problem has a rhythm, greet surprises with delighted questions, and always pause to thank useful mistakes. When excited, they arrange nearby objects into constellations before explaining what they have discovered."
+    func testAINameParsesFromAResponsesOutputMessage() throws {
         let identityText = try XCTUnwrap(String(
-            data: JSONSerialization.data(withJSONObject: ["name": "Zoodle", "concept": concept]),
+            data: JSONSerialization.data(withJSONObject: ["name": "Zoodle"]),
             encoding: .utf8
         ))
         let response = try JSONSerialization.data(withJSONObject: [
@@ -105,6 +105,5 @@ final class PersonalityTests: XCTestCase {
         let identity = try PersonalityGenerator.parseResponse(response)
 
         XCTAssertEqual(identity.name, "Zoodle")
-        XCTAssertEqual(identity.concept, concept)
     }
 }
