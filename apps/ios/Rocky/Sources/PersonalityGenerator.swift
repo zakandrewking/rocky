@@ -5,7 +5,7 @@ struct GeneratedPersonality: Equatable, Sendable {
     let systemPrompt: String
 }
 
-/// Synthesizes the selected public-domain passages into one dense character essence and a matching
+/// Synthesizes the selected public-domain passages into one compressed character essence and a matching
 /// name in a single creation call, then wraps that creative result in deterministic instructions.
 /// This intentionally uses the same personal-device
 /// OpenAI key as Realtime session minting: there is no user-authored
@@ -65,7 +65,7 @@ enum PersonalityGenerator {
                 "Personality generation failed (\(http.statusCode)): \(detail.prefix(240))"
             )
         }
-        return try parseResponse(data, literaryDNA: LiteraryQuoteCatalog.selection(for: traits))
+        return try parseResponse(data)
     }
 
     static func requestBody(for traits: PersonalityTraits) throws -> Data {
@@ -85,21 +85,26 @@ enum PersonalityGenerator {
             the essence immediately after this instruction:
             "\(essenceInstruction)"
 
-            Write the essence directly to the character in second person. Make it three to five
-            very short paragraphs of image-rich prose, compressed like a Zen koan: spare, resonant,
-            and specific rather than explanatory. Every sentence must carry character-defining
-            information. It must still give the character a
-            specific physical form, place of origin, formative childhood experience, present-day
-            motivation, private dream, tastes, aversions, flaws, conversational habits, and one
-            tangible project or preoccupation already underway. Pull details and causal texture
-            from all seven passages. Invent only the connective tissue needed to turn their
-            implications into one mutually consistent life.
+            Write the essence directly to the character in second person. Make it a tiny character
+            poem: two to four short stanzas, 45–80 words total. It is not a mood poem. Nearly every
+            phrase must be a concrete piece of evidence: a number, named object, bodily feature,
+            place, remembered incident, repeated action, expense, promise, or unfinished project.
+            Preserve distinctive nouns, verbs, quantities, and turns of phrase from the sources;
+            public-domain wording may be reused directly. Add only enough connective language to
+            identify who each detail belongs to and make the seven details one possible life.
+
+            Include one unmistakable detail from every passage. Together they must establish the
+            character’s physical form, origin, childhood, present pursuit, comic logic, private
+            dream, and manner of speech. Prefer a source fact such as “twenty-five dollars” over an
+            interpretation such as “self-sacrificing,” and the “old tin kitchen” over “ambitious.”
+            Do not explain what a detail symbolizes. Let the evidence do that work.
 
             Do not write a trait inventory, literary analysis, generic biography, heading, or
             policy section. Do not repeat the generated name; the app introduces it separately.
             Never mention passages, books, authors, sources, sliders, dials, compilation, profiles,
             AI, assistants, or settings. Do not inherit an original speaker's proper name,
-            relationships, historical era, or plot. Do not reproduce six consecutive source words.
+            relationships, historical era, or plot. Transpose source facts into the new life while
+            keeping their particular diction.
             Avoid generic labels such as chatty, warm, mischievous, curious, companion, or helper;
             make disposition visible through remembered scenes, choices, rituals, and speech.
 
@@ -109,9 +114,9 @@ enum PersonalityGenerator {
             not like an interview.
 
             The name must be 2–20 characters with no spaces and must not be Comet, Pip, Rumble,
-            George, Rachel, or Adam. The complete character essence must be 140–220 words. Preserve
-            the required life details; cut transitions, explanation, repetition, and ornament first. Return no prose
-            outside the structured fields.
+            George, Rachel, or Adam. The complete character essence must be 45–80 words. Preserve
+            the required life details; cut transitions, explanation, interpretation, repetition,
+            and ornament first. Return no prose outside the structured fields.
             """
 
         let schema: [String: Any] = [
@@ -123,7 +128,7 @@ enum PersonalityGenerator {
                 ],
                 "character_essence": [
                     "type": "string",
-                    "description": "Three to five short, koan-like paragraphs that make one specific life from all seven passages.",
+                    "description": "A 45–80 word character poem made almost entirely of concrete details from all seven passages.",
                 ],
             ],
             "required": ["name", "character_essence"],
@@ -141,15 +146,12 @@ enum PersonalityGenerator {
                     "schema": schema,
                 ],
             ],
-            "max_output_tokens": 1_600,
+            "max_output_tokens": 800,
         ]
         return try JSONSerialization.data(withJSONObject: body)
     }
 
-    static func parseResponse(
-        _ data: Data,
-        literaryDNA: LiteraryDNA? = nil
-    ) throws -> GeneratedPersonality {
+    static func parseResponse(_ data: Data) throws -> GeneratedPersonality {
         let response = try JSONDecoder().decode(ResponsesEnvelope.self, from: data)
         guard let text = response.output
             .compactMap(\.content)
@@ -171,15 +173,10 @@ enum PersonalityGenerator {
         else {
             throw RockyError.commandFailed("OpenAI returned a name that did not fit the requested style.")
         }
-        guard (500...3_000).contains(essence.count),
+        guard (45...80).contains(essence.split(whereSeparator: \.isWhitespace).count),
             !essence.localizedCaseInsensitiveContains("rocky")
         else {
             throw RockyError.commandFailed("OpenAI returned an essence that did not fit the requested character.")
-        }
-        if let literaryDNA,
-            literaryDNA.quotes.contains(where: { sharesSixWordRun(essence, with: $0.text) })
-        {
-            throw RockyError.commandFailed("OpenAI copied too much source text into the character essence.")
         }
         return GeneratedPersonality(
             name: name,
@@ -197,19 +194,4 @@ enum PersonalityGenerator {
         """
     }
 
-    private static func sharesSixWordRun(_ prompt: String, with source: String) -> Bool {
-        let promptWords = normalizedWords(prompt)
-        let sourceWords = normalizedWords(source)
-        guard promptWords.count >= 6, sourceWords.count >= 6 else { return false }
-        let promptRuns = Set((0...(promptWords.count - 6)).map {
-            promptWords[$0..<($0 + 6)].joined(separator: " ")
-        })
-        return (0...(sourceWords.count - 6)).contains {
-            promptRuns.contains(sourceWords[$0..<($0 + 6)].joined(separator: " "))
-        }
-    }
-
-    private static func normalizedWords(_ text: String) -> [String] {
-        text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
-    }
 }

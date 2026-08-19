@@ -206,7 +206,11 @@ the one human imperative.
   Each of the seven character sliders deterministically retrieves exactly one attributed Project
   Gutenberg passage: childhood, drive, comic lens, dream, voice, physical form, or origin. Generate
   makes one structured OpenAI call that turns only those passages into both the one-word name and
-  three to five short, koan-like character-essence paragraphs that retain the concrete life anchors.
+  a 45–80 word character poem made almost entirely from concrete source evidence: quantities,
+  objects, bodily features, places, incidents, promises, and active projects. The probe corpus was
+  re-audited accordingly; aphorisms were replaced by passages carrying anchors such as twenty-five
+  dollars, three hundred yards of wincey, seventeen steps, and an old tin kitchen, while the
+  compiler now preserves public-domain diction instead of paraphrasing it into trait language.
   The final prompt presents that poetic,
   specific essence as its first top-level section and all common conduct, safety, memory, and body
   rules as its second. Save and prompt preview require a successful generation

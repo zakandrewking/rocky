@@ -93,10 +93,22 @@ enum LiteraryQuoteCatalog {
     /// and bunchy" Velveteen Rabbit description is intentionally absent.
     static let quotes: [LiteraryQuote] = [
         quote(
-            "origin.wild-wood", .origin,
-            "Beyond the Wild Wood comes the Wide World",
-            "Kenneth Grahame", "The Wind in the Willows", 289,
-            .init(warmth: 0.62, energy: 0.45, humor: 0.38, curiosity: 0.55, talkativeness: 0.24), 0.50
+            "origin.caverns", .origin,
+            "These mountains were full of hollow places underneath; huge caverns, and winding ways, some with water running through them, and some shining with all colours of the rainbow when a light was taken in.",
+            "George MacDonald", "The Princess and the Goblin", 708,
+            .init(warmth: 0.48, energy: 0.46, humor: 0.12, curiosity: 0.92, talkativeness: 0.58), 0.00
+        ),
+        quote(
+            "origin.white-house", .origin,
+            "The White House was on the edge of a hill, with a wood behind it--and the chalk-quarry on one side and the gravel-pit on the other.",
+            "E. Nesbit", "Five Children and It", 778,
+            .init(warmth: 0.62, energy: 0.52, humor: 0.48, curiosity: 0.78, talkativeness: 0.48), 0.25
+        ),
+        quote(
+            "origin.flatland", .origin,
+            "I call our world Flatland, not because we call it so, but to make its nature clearer to you, my happy readers, who are privileged to live in Space.",
+            "Edwin A. Abbott", "Flatland", 201,
+            .init(warmth: 0.42, energy: 0.38, humor: 0.50, curiosity: 0.78, talkativeness: 0.82), 0.50
         ),
         quote(
             "origin.gray-prairie", .origin,
@@ -110,24 +122,12 @@ enum LiteraryQuoteCatalog {
             "Mary Shelley", "Frankenstein", 84,
             .init(warmth: 0.24, energy: 0.30, humor: 0.04, curiosity: 0.46, talkativeness: 0.62), 1.00
         ),
-        quote(
-            "origin.neverland", .origin,
-            "Second to the right, and straight on till morning.",
-            "J. M. Barrie", "Peter Pan", 16,
-            .init(warmth: 0.50, energy: 0.92, humor: 0.68, curiosity: 0.82, talkativeness: 0.22), 0.00
-        ),
-        quote(
-            "origin.flatland", .origin,
-            "I call our world Flatland, not because we call it so, but to make its nature clearer to you, my happy readers, who are privileged to live in Space.",
-            "Edwin A. Abbott", "Flatland", 201,
-            .init(warmth: 0.42, energy: 0.38, humor: 0.50, curiosity: 0.78, talkativeness: 0.82), 0.25
-        ),
 
         quote(
-            "form.mole", .physicalForm,
-            "The Mole had been working very hard all the morning, spring-cleaning his little home.",
-            "Kenneth Grahame", "The Wind in the Willows", 289,
-            .init(warmth: 0.60, energy: 0.35, humor: 0.40, curiosity: 0.45, talkativeness: 0.30), 0.00
+            "form.sand-fairy", .physicalForm,
+            "the spider-shaped brown hairy body, long arms and legs, bat’s ears and snail’s eyes of the Sand-fairy himself.",
+            "E. Nesbit", "Five Children and It", 778,
+            .init(warmth: 0.44, energy: 0.36, humor: 0.76, curiosity: 0.84, talkativeness: 0.48), 0.00
         ),
         quote(
             "form.white-rabbit", .physicalForm,
@@ -155,158 +155,158 @@ enum LiteraryQuoteCatalog {
         ),
 
         quote(
-            "childhood.asylum", .childhood,
-            "I’ve never belonged to anybody--not really. But the asylum was the worst.",
-            "L. M. Montgomery", "Anne of Green Gables", 45,
-            .init(warmth: 0.86, energy: 0.52, humor: 0.18, curiosity: 0.72, talkativeness: 0.66)
+            "childhood.fire", .childhood,
+            "In my joy I thrust my hand into the live embers, but quickly drew it out again with a cry of pain. How strange, I thought, that the same cause should produce such opposite effects!",
+            "Mary Shelley", "Frankenstein", 84,
+            .init(warmth: 0.00, energy: 0.58, humor: 0.00, curiosity: 0.90, talkativeness: 0.56), 0.00
         ),
         quote(
-            "childhood.discord", .childhood,
-            "I was a discord in Gateshead Hall: I was like nobody there; I had nothing in harmony with Mrs. Reed or her children, or her chosen vassalage.",
-            "Charlotte Brontë", "Jane Eyre", 1260,
-            .init(warmth: 0.18, energy: 0.28, humor: 0.08, curiosity: 0.54, talkativeness: 0.44)
+            "childhood.wincey", .childhood,
+            "A merchant in Hopeton last winter donated three hundred yards of wincey to the asylum. Some people said it was because he couldn’t sell it, but I’d rather believe that it was out of the kindness of his heart, wouldn’t you?",
+            "L. M. Montgomery", "Anne of Green Gables", 45,
+            .init(warmth: 0.25, energy: 0.42, humor: 0.42, curiosity: 0.62, talkativeness: 0.84), 0.25
         ),
         quote(
             "childhood.ran-away", .childhood,
             "Wendy, I ran away the day I was born.",
             "J. M. Barrie", "Peter Pan", 16,
-            .init(warmth: 0.38, energy: 0.96, humor: 0.62, curiosity: 0.44, talkativeness: 0.34)
+            .init(warmth: 0.50, energy: 0.96, humor: 0.62, curiosity: 0.44, talkativeness: 0.34), 0.50
         ),
         quote(
-            "childhood.idol", .childhood,
-            "My mother’s tender caresses and my father’s smile of benevolent pleasure while regarding me are my first recollections.",
-            "Mary Shelley", "Frankenstein", 84,
-            .init(warmth: 0.92, energy: 0.28, humor: 0.04, curiosity: 0.42, talkativeness: 0.76)
-        ),
-        quote(
-            "childhood.princess", .childhood,
-            "I pretend I am a princess, so that I can try and behave like one.",
-            "Frances Hodgson Burnett", "A Little Princess", 146,
-            .init(warmth: 0.74, energy: 0.34, humor: 0.28, curiosity: 0.62, talkativeness: 0.40)
-        ),
-
-        quote(
-            "drive.remote", .drive,
-            "I am tormented with an everlasting itch for things remote.",
-            "Herman Melville", "Moby-Dick", 2701,
-            .init(warmth: 0.34, energy: 0.76, humor: 0.18, curiosity: 0.98, talkativeness: 0.38)
-        ),
-        quote(
-            "drive.free", .drive,
-            "I am no bird; and no net ensnares me; I am a free human being with an independent will, which I now exert to leave you.",
-            "Charlotte Brontë", "Jane Eyre", 1260,
-            .init(warmth: 0.38, energy: 0.66, humor: 0.06, curiosity: 0.58, talkativeness: 0.46)
-        ),
-        quote(
-            "drive.data", .drive,
-            "It is a capital mistake to theorise before one has data.",
-            "Arthur Conan Doyle", "The Adventures of Sherlock Holmes", 1661,
-            .init(warmth: 0.24, energy: 0.48, humor: 0.20, curiosity: 0.98, talkativeness: 0.22)
-        ),
-        quote(
-            "drive.enjoy", .drive,
-            "It’s been my experience that you can nearly always enjoy things if you make up your mind firmly that you will.",
+            "childhood.shining-waters", .childhood,
+            "That’s Barry’s pond. Oh, I don’t like that name, either. I shall call it--let me see--the Lake of Shining Waters. Yes, that is the right name for it. I know because of the thrill.",
             "L. M. Montgomery", "Anne of Green Gables", 45,
-            .init(warmth: 0.88, energy: 0.54, humor: 0.38, curiosity: 0.78, talkativeness: 0.74)
+            .init(warmth: 0.75, energy: 0.62, humor: 0.46, curiosity: 0.82, talkativeness: 0.78), 0.75
         ),
         quote(
-            "drive.adventure", .drive,
-            "Take the Adventure, heed the call, now ere the irrevocable moment passes!",
-            "Kenneth Grahame", "The Wind in the Willows", 289,
-            .init(warmth: 0.58, energy: 0.98, humor: 0.54, curiosity: 0.82, talkativeness: 0.56)
-        ),
-
-        quote(
-            "comic.forgive", .comicLens,
-            "Life appears to me too short to be spent in nursing animosity or registering wrongs.",
-            "Charlotte Brontë", "Jane Eyre", 1260,
-            .init(warmth: 0.74, energy: 0.30, humor: 0.00, curiosity: 0.50, talkativeness: 0.55)
-        ),
-        quote(
-            "comic.obvious", .comicLens,
-            "There is nothing more deceptive than an obvious fact",
-            "Arthur Conan Doyle", "The Adventures of Sherlock Holmes", 1661,
-            .init(warmth: 0.25, energy: 0.35, humor: 0.25, curiosity: 0.85, talkativeness: 0.25)
-        ),
-        quote(
-            "comic.moonshine", .comicLens,
-            "Well, moonshine is a brighter thing than fog",
-            "Arthur Conan Doyle", "The Adventures of Sherlock Holmes", 1661,
-            .init(warmth: 0.45, energy: 0.50, humor: 0.50, curiosity: 0.65, talkativeness: 0.35)
-        ),
-        quote(
-            "comic.truth", .comicLens,
-            "The truth is rarely pure and never simple.",
-            "Oscar Wilde", "The Importance of Being Earnest", 844,
-            .init(warmth: 0.30, energy: 0.55, humor: 0.75, curiosity: 0.65, talkativeness: 0.35)
-        ),
-        quote(
-            "comic.diary", .comicLens,
-            "I never travel without my diary. One should always have something sensational to read in the train.",
-            "Oscar Wilde", "The Importance of Being Earnest", 844,
-            .init(warmth: 0.40, energy: 0.65, humor: 1.00, curiosity: 0.60, talkativeness: 0.65)
-        ),
-
-        quote(
-            "dream.splendid", .dream,
-            "I want to do something splendid before I go into my castle, something heroic or wonderful that won’t be forgotten after I’m dead.",
+            "childhood.christmas-breakfast", .childhood,
+            "Six children are huddled into one bed to keep from freezing, for they have no fire. There is nothing to eat over there, and the oldest boy came to tell me they were suffering hunger and cold. My girls, will you give them your breakfast as a Christmas present?",
             "Louisa May Alcott", "Little Women", 514,
-            .init(warmth: 0.54, energy: 0.84, humor: 0.28, curiosity: 0.70, talkativeness: 0.64)
+            .init(warmth: 1.00, energy: 0.64, humor: 0.06, curiosity: 0.42, talkativeness: 0.60), 1.00
+        ),
+
+        quote(
+            "drive.spring-cleaning", .drive,
+            "The Mole had been working very hard all the morning, spring-cleaning his little home.",
+            "Kenneth Grahame", "The Wind in the Willows", 289,
+            .init(warmth: 0.60, energy: 0.00, humor: 0.40, curiosity: 0.45, talkativeness: 0.30), 0.00
         ),
         quote(
-            "dream.discoveries", .dream,
-            "I shall find out thousands and thousands of things. I shall find out about people and creatures and everything that grows--like Dickon--and I shall never stop making Magic.",
+            "drive.sold-piano", .drive,
+            "Then he sold his piano, and let the mice live in a bureau-drawer. But the money he got for that too began to go, so he sold the brown suit he wore on Sundays and went on becoming poorer and poorer.",
+            "Hugh Lofting", "The Story of Doctor Dolittle", 501,
+            .init(warmth: 0.82, energy: 0.25, humor: 0.54, curiosity: 0.54, talkativeness: 0.48), 0.25
+        ),
+        quote(
+            "drive.twenty-five-dollars", .drive,
+            "My dear, where did you get it? Twenty-five dollars! Jo, I hope you haven’t done anything rash? No, it’s mine honestly. I didn’t beg, borrow, or steal it. I earned it, and I don’t think you’ll blame me, for I only sold what was my own.",
+            "Louisa May Alcott", "Little Women", 514,
+            .init(warmth: 0.78, energy: 0.50, humor: 0.18, curiosity: 0.48, talkativeness: 0.60), 0.50
+        ),
+        quote(
+            "drive.tin-kitchen", .drive,
+            "As long as The Spread Eagle paid her a dollar a column for her ‘rubbish,’ as she called it, Jo felt herself a woman of means, and spun her little romances diligently. But great plans fermented in her busy brain and ambitious mind, and the old tin kitchen in the garret held a slowly increasing pile of blotted manuscript.",
+            "Louisa May Alcott", "Little Women", 514,
+            .init(warmth: 0.52, energy: 0.75, humor: 0.34, curiosity: 0.86, talkativeness: 0.66), 0.75
+        ),
+        quote(
+            "drive.eight-feet", .drive,
+            "I resolved, contrary to my first intention, to make the being of a gigantic stature, that is to say, about eight feet in height, and proportionably large. After having formed this determination and having spent some months in successfully collecting and arranging my materials, I began.",
+            "Mary Shelley", "Frankenstein", 84,
+            .init(warmth: 0.08, energy: 1.00, humor: 0.00, curiosity: 0.96, talkativeness: 0.60), 1.00
+        ),
+
+        quote(
+            "comic.no-fire", .comicLens,
+            "A poor, bare, miserable room it was, with broken windows, no fire, ragged bedclothes, a sick mother, wailing baby, and a group of pale, hungry children cuddled under one old quilt, trying to keep warm.",
+            "Louisa May Alcott", "Little Women", 514,
+            .init(warmth: 0.88, energy: 0.34, humor: 0.00, curiosity: 0.38, talkativeness: 0.50), 0.00
+        ),
+        quote(
+            "comic.seven-pounds", .comicLens,
+            "Wedlock suits you. I think, Watson, that you have put on seven and a half pounds since I saw you. Seven! Indeed, I should have thought a little more.",
+            "Arthur Conan Doyle", "The Adventures of Sherlock Holmes", 1661,
+            .init(warmth: 0.32, energy: 0.38, humor: 0.25, curiosity: 0.86, talkativeness: 0.34), 0.25
+        ),
+        quote(
+            "comic.croquet", .comicLens,
+            "The balls were live hedgehogs, the mallets live flamingoes, and the soldiers had to double themselves up and to stand on their hands and feet, to make the arches.",
+            "Lewis Carroll", "Alice’s Adventures in Wonderland", 11,
+            .init(warmth: 0.48, energy: 0.72, humor: 0.50, curiosity: 0.82, talkativeness: 0.46), 0.50
+        ),
+        quote(
+            "comic.liniment-cake", .comicLens,
+            "Mercy on us, Anne, you’ve flavored that cake with Anodyne Liniment. I broke the liniment bottle last week and poured what was left into an old empty vanilla bottle.",
+            "L. M. Montgomery", "Anne of Green Gables", 45,
+            .init(warmth: 0.58, energy: 0.62, humor: 0.75, curiosity: 0.46, talkativeness: 0.66), 0.75
+        ),
+        quote(
+            "comic.hedgehog-patient", .comicLens,
+            "One day when an old lady with rheumatism came to see the Doctor, she sat on the hedgehog who was sleeping on the sofa and never came to see him any more, but drove every Saturday all the way to Oxenthorpe, another town ten miles off, to see a different doctor.",
+            "Hugh Lofting", "The Story of Doctor Dolittle", 501,
+            .init(warmth: 0.46, energy: 0.58, humor: 1.00, curiosity: 0.48, talkativeness: 0.72), 1.00
+        ),
+
+        quote(
+            "dream.arabian-steeds", .dream,
+            "I’d have a stable full of Arabian steeds, rooms piled high with books, and I’d write out of a magic inkstand, so that my works should be as famous as Laurie’s music.",
+            "Louisa May Alcott", "Little Women", 514,
+            .init(warmth: 0.54, energy: 0.84, humor: 0.28, curiosity: 1.00, talkativeness: 0.64), 1.00
+        ),
+        quote(
+            "dream.thousand-roses", .dream,
+            "She did not want it to be a quite dead garden. If it were a quite alive garden, how wonderful it would be, and what thousands of roses would grow on every side!",
             "Frances Hodgson Burnett", "The Secret Garden", 17396,
-            .init(warmth: 0.72, energy: 0.76, humor: 0.24, curiosity: 1.00, talkativeness: 0.76)
+            .init(warmth: 0.72, energy: 0.76, humor: 0.24, curiosity: 0.75, talkativeness: 0.64), 0.75
         ),
         quote(
             "dream.heart", .dream,
             "And I am going to ask him to give me a heart",
             "L. Frank Baum", "The Wonderful Wizard of Oz", 55,
-            .init(warmth: 0.98, energy: 0.42, humor: 0.10, curiosity: 0.52, talkativeness: 0.26)
+            .init(warmth: 0.98, energy: 0.42, humor: 0.10, curiosity: 0.00, talkativeness: 0.26), 0.00
         ),
         quote(
             "dream.real", .dream,
             "He longed to become Real, to know what it felt like; and yet the idea of growing shabby and losing his eyes and whiskers was rather sad.",
             "Margery Williams", "The Velveteen Rabbit", 11757,
-            .init(warmth: 0.92, energy: 0.32, humor: 0.06, curiosity: 0.66, talkativeness: 0.44)
+            .init(warmth: 0.92, energy: 0.32, humor: 0.06, curiosity: 0.25, talkativeness: 0.44), 0.25
         ),
         quote(
             "dream.puffed-sleeves", .dream,
             "It would give me such a thrill, Marilla, just to wear a dress with puffed sleeves.",
             "L. M. Montgomery", "Anne of Green Gables", 45,
-            .init(warmth: 0.68, energy: 0.64, humor: 0.64, curiosity: 0.54, talkativeness: 0.62)
+            .init(warmth: 0.68, energy: 0.64, humor: 0.64, curiosity: 0.50, talkativeness: 0.62), 0.50
         ),
 
         quote(
-            "voice.curiouser", .voice,
-            "Curiouser and curiouser!",
-            "Lewis Carroll", "Alice's Adventures in Wonderland", 11,
-            .init(warmth: 0.58, energy: 0.88, humor: 0.76, curiosity: 0.94, talkativeness: 0.08)
-        ),
-        quote(
-            "voice.opinion", .voice,
-            "My good opinion once lost is lost for ever.",
-            "Jane Austen", "Pride and Prejudice", 1342,
-            .init(warmth: 0.28, energy: 0.52, humor: 0.45, curiosity: 0.55, talkativeness: 0.30)
-        ),
-        quote(
-            "voice.observe", .voice,
-            "You see, but you do not observe. The distinction is clear.",
+            "voice.seventeen-steps", .voice,
+            "Now, I know that there are seventeen steps, because I have both seen and observed.",
             "Arthur Conan Doyle", "The Adventures of Sherlock Holmes", 1661,
-            .init(warmth: 0.22, energy: 0.38, humor: 0.30, curiosity: 1.00, talkativeness: 0.18)
+            .init(warmth: 0.22, energy: 0.38, humor: 0.30, curiosity: 1.00, talkativeness: 0.00), 0.00
         ),
         quote(
-            "voice.boats", .voice,
-            "Nothing seems really to matter, that’s the charm of it. Whether you get away, or whether you don’t; whether you arrive at your destination or whether you reach somewhere else, or whether you never get anywhere at all, you’re always busy, and you never do anything in particular; and when you’ve done it there’s always something else to do, and you can do it if you like, but you’d much better not.",
-            "Kenneth Grahame", "The Wind in the Willows", 289,
-            .init(warmth: 0.72, energy: 0.52, humor: 0.56, curiosity: 0.68, talkativeness: 1.00)
-        ),
-        quote(
-            "voice.stubborn", .voice,
-            "There is a stubbornness about me that never can bear to be frightened at the will of others.",
+            "voice.netherfield", .voice,
+            "Why, my dear, you must know, Mrs. Long says that Netherfield is taken by a young man of large fortune from the north of England; that he came down on Monday in a chaise and four to see the place.",
             "Jane Austen", "Pride and Prejudice", 1342,
-            .init(warmth: 0.24, energy: 0.72, humor: 0.58, curiosity: 0.48, talkativeness: 0.56)
+            .init(warmth: 0.46, energy: 0.56, humor: 0.48, curiosity: 0.58, talkativeness: 0.25), 0.25
+        ),
+        quote(
+            "voice.animal-doors", .voice,
+            "He wrote ‘HORSES’ over the front door, ‘COWS’ over the side door, and ‘SHEEP’ on the kitchen door. Each kind of animal had a separate door--even the mice had a tiny tunnel made for them into the cellar, where they waited patiently in rows.",
+            "Hugh Lofting", "The Story of Doctor Dolittle", 501,
+            .init(warmth: 0.68, energy: 0.48, humor: 0.48, curiosity: 0.68, talkativeness: 0.50), 0.50
+        ),
+        quote(
+            "voice.motor-car-vow", .voice,
+            "On the contrary, I faithfully promise that the very first motor-car I see, poop-poop! off I go in it!",
+            "Kenneth Grahame", "The Wind in the Willows", 289,
+            .init(warmth: 0.42, energy: 0.98, humor: 0.78, curiosity: 0.58, talkativeness: 0.75), 0.75
+        ),
+        quote(
+            "voice.river", .voice,
+            "By it and with it and on it and in it. It’s brother and sister to me, and aunts, and company, and food and drink, and washing. It’s my world, and I don’t want any other. When the floods are on in February, my cellars and basement are brimming with drink that’s no good to me.",
+            "Kenneth Grahame", "The Wind in the Willows", 289,
+            .init(warmth: 0.72, energy: 0.52, humor: 0.56, curiosity: 0.68, talkativeness: 1.00), 1.00
         ),
     ]
 

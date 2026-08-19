@@ -94,6 +94,38 @@ final class PersonalityTests: XCTestCase {
             XCTAssertTrue(quote.source.hasPrefix("https://www.gutenberg.org/ebooks/"))
             XCTAssertFalse(quote.text.localizedCaseInsensitiveContains("fat and bunchy"))
         }
+
+        for slot in LiteraryDNASlot.allCases {
+            XCTAssertEqual(
+                Set(LiteraryQuoteCatalog.quotes.filter { $0.slot == slot }.map(\.axisPosition)),
+                Set([0, 0.25, 0.5, 0.75, 1])
+            )
+        }
+    }
+
+    func testLiteraryQuoteCorpusCarriesNarrativeFacts() {
+        let corpus = LiteraryQuoteCatalog.quotes.map(\.text).joined(separator: "\n")
+
+        for detail in [
+            "three hundred yards of wincey",
+            "Twenty-five dollars",
+            "a dollar a column",
+            "about eight feet in height",
+            "old empty vanilla bottle",
+            "seventeen steps",
+            "ten miles off",
+        ] {
+            XCTAssertTrue(corpus.contains(detail), "Missing concrete narrative anchor: \(detail)")
+        }
+
+        for retiredAphorism in [
+            "everlasting itch for things remote",
+            "nothing more deceptive than an obvious fact",
+            "truth is rarely pure and never simple",
+            "good opinion once lost",
+        ] {
+            XCTAssertFalse(corpus.localizedCaseInsensitiveContains(retiredAphorism))
+        }
     }
 
     func testLiteraryQuoteSelectionIsDeterministic() {
@@ -154,23 +186,29 @@ final class PersonalityTests: XCTestCase {
         for quote in LiteraryQuoteCatalog.selection(for: traits).quotes {
             XCTAssertTrue(input.contains(quote.text))
             XCTAssertFalse(input.contains(quote.author))
-            XCTAssertFalse(input.contains(quote.work))
+            XCTAssertFalse(input.contains("\(quote.author), \(quote.work)"))
         }
         XCTAssertFalse(input.localizedCaseInsensitiveContains("rocky"))
         XCTAssertTrue(input.contains("seven direct public-domain passages"))
         XCTAssertTrue(input.contains(PersonalityGenerator.essenceInstruction))
+        XCTAssertTrue(input.contains("45–80 words"))
+        XCTAssertTrue(input.contains("concrete piece of evidence"))
+        XCTAssertTrue(input.contains("public-domain wording may be reused directly"))
+        XCTAssertFalse(input.contains("Do not reproduce six consecutive source words"))
         XCTAssertEqual(text["verbosity"] as? String, "low")
         XCTAssertEqual(format["type"] as? String, "json_schema")
         XCTAssertEqual(format["strict"] as? Bool, true)
         XCTAssertEqual(Set(properties.keys), ["name", "character_essence"])
         XCTAssertEqual(schema["required"] as? [String], ["name", "character_essence"])
-        XCTAssertEqual(body["max_output_tokens"] as? Int, 1_600)
+        XCTAssertEqual(body["max_output_tokens"] as? Int, 800)
     }
 
     func testCreatedNameAndDenseEssenceCompileFromOneResponsesMessage() throws {
-        let paragraph = "You are a small but exacting night gardener who tends one silver seed, distrusts careless promises, and keeps moonlit soil beneath each claw. "
-            + "A flooded burrow taught you to store every precious thing above the waterline, so even your jokes arrive with a practical knot tied inside them. "
-        let essence = Array(repeating: paragraph, count: 5).joined(separator: "\n\n")
+        let essence = """
+            You have pink eyes and three claws browned by the great gray prairie. At eleven, you slept beneath one old quilt with six hungry children.
+
+            Your old tin kitchen holds blotted maps; each earns a dollar a column. You keep twenty-five dollars under the flour jar. One day: Arabian steeds, rooms of books, a magic inkstand. You count seventeen steps before speaking.
+            """
         let identityText = try XCTUnwrap(String(
             data: JSONSerialization.data(withJSONObject: [
                 "name": "Zoodle",
