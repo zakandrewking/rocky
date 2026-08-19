@@ -95,7 +95,9 @@ explicit four-step flow: tune the sliders, review the six public-domain passages
 ask OpenAI to invent a playful one-word name, then choose a built-in or account ElevenLabs voice.
 The visible "literary DNA" covers origin, physical form, childhood, drive, dream, and voice, with
 each passage linked to its Project Gutenberg edition. Those exact passages compile directly into
-the acting prompt; OpenAI does not write an intermediate biography. There is no text entry.
+the acting prompt; OpenAI does not write an intermediate biography. A prompt-preview button shows
+the exact final Realtime instructions for the draft and current connected-body/voice-only state,
+including the shared conduct and safety rules; the text is selectable and shareable. There is no text entry.
 Speaking speed remains editable per personality.
 Selection and profiles persist across launches and supply the prompt
 and voice to the next Realtime conversation. Switching a paused conversation ends it first rather

@@ -44,13 +44,10 @@ enum OpenAIRealtimeMinter {
                 "no OpenAI API key baked into this build -- run apps/ios/scripts/generate.sh with OPENAI_API_KEY set in the repo root .env, then rebuild"
             )
         }
-        guard let bakedBody = bakedSessionData(for: personality)
+        guard let requestBody = sessionData(hasBody: hasBody, personality: personality)
         else {
             throw RockyError.commandFailed("selected personality config missing from the app bundle -- run apps/ios/scripts/generate.sh, not xcodegen generate directly")
         }
-        // The baked config already describes the one body there is (session.ts), so a robot on the
-        // network needs no edit at all. Only its absence does.
-        let requestBody = hasBody ? bakedBody : Self.withoutRobotBody(bakedBody)
 
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/realtime/client_secrets")!)
         request.httpMethod = "POST"
@@ -112,6 +109,28 @@ enum OpenAIRealtimeMinter {
                 "tool_choice": toolChoice,
             ],
         ]
+    }
+
+    /// The exact instruction string sent for the selected character in the current body state.
+    /// The editor uses this instead of reimplementing template substitution, so its preview cannot
+    /// drift from session creation. Function-tool schemas are separate Realtime session fields,
+    /// not part of the system prompt.
+    static func systemInstructions(
+        hasBody: Bool,
+        personality: PersonalityChoice = PersonalityCatalog.rockyChoice
+    ) -> String? {
+        guard let data = sessionData(hasBody: hasBody, personality: personality),
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let session = root["session"] as? [String: Any]
+        else { return nil }
+        return session["instructions"] as? String
+    }
+
+    private static func sessionData(hasBody: Bool, personality: PersonalityChoice) -> Data? {
+        guard let baked = bakedSessionData(for: personality) else { return nil }
+        // The baked config already describes the one body there is (session.ts), so a robot on the
+        // network needs no edit at all. Only its absence does.
+        return hasBody ? baked : withoutRobotBody(baked)
     }
 
     /// Extracts one generated session from the bundled catalog. Kept internal so tests can prove

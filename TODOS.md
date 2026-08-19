@@ -207,7 +207,9 @@ the one human imperative.
   built-in/account ElevenLabs voice selection fourth. Each slider position deterministically
   retrieves exact, attributed Project Gutenberg passages for origin, physical form, childhood,
   drive, dream, and voice; those passages compile directly into the character prompt instead of
-  asking a model to invent a biography. Custom persona text is inserted into a
+  asking a model to invent a biography. The editor can preview and share the exact final Realtime
+  instructions, including shared rules and the current body-connectivity override, using the same
+  session-construction code as minting rather than a second approximation. Custom persona text is inserted into a
   generated session template that retains the same conduct and body rules. A paused conversation
   ends before a different personality starts so identity and memory never change mid-session.
 - [ ] Evaluate the literary-DNA probe with blind first-conversation auditions against Rocky and

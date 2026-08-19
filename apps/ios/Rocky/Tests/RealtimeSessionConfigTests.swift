@@ -103,4 +103,27 @@ final class RealtimeSessionConfigTests: XCTestCase {
             "robot_routine", "robot_performance", "resume_robot_performance",
         ])
     }
+
+    func testSystemPromptPreviewUsesTheActualSessionPathAndCurrentBodyState() throws {
+        let choice = PersonalityChoice(
+            id: "custom.preview",
+            name: "Quill",
+            summary: "test",
+            customPrompt: "You are Quill. This sentence proves the compiled persona arrived.",
+            speech: .elevenLabs(voiceID: "voice", stability: 0.5, speed: 1)
+        )
+
+        let connected = try XCTUnwrap(
+            OpenAIRealtimeMinter.systemInstructions(hasBody: true, personality: choice)
+        )
+        let voiceOnly = try XCTUnwrap(
+            OpenAIRealtimeMinter.systemInstructions(hasBody: false, personality: choice)
+        )
+
+        XCTAssertTrue(connected.contains("This sentence proves the compiled persona arrived."))
+        XCTAssertTrue(connected.contains("BODY LANGUAGE IS SILENT"))
+        XCTAssertFalse(connected.contains("NOT CONNECTED RIGHT NOW"))
+        XCTAssertTrue(voiceOnly.hasPrefix(connected))
+        XCTAssertTrue(voiceOnly.contains("NOT CONNECTED RIGHT NOW"))
+    }
 }

@@ -4,6 +4,7 @@ struct PersonalitySelectorView: View {
     @ObservedObject var store: PersonalityStore
     @Binding var selection: String
     let canChange: Bool
+    let hasBody: Bool
     let onChange: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -73,7 +74,7 @@ struct PersonalitySelectorView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(item: $editorDraft) { profile in
-            PersonalityEditorView(profile: profile, isNew: creatingProfile) { saved in
+            PersonalityEditorView(profile: profile, isNew: creatingProfile, hasBody: hasBody) { saved in
                 store.save(saved)
                 if creatingProfile || selection == saved.id {
                     selection = saved.id
@@ -255,20 +256,24 @@ private struct PersonalityEditorView: View {
 
     @State var profile: EditablePersonality
     let isNew: Bool
+    let hasBody: Bool
     let onSave: (EditablePersonality) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var identityGenerationState = IdentityGenerationState.initial
     @State private var namedTraits: PersonalityTraits?
     @State private var generationError: String?
+    @State private var showingSystemPrompt = false
 
     init(
         profile: EditablePersonality,
         isNew: Bool,
+        hasBody: Bool,
         onSave: @escaping (EditablePersonality) -> Void
     ) {
         _profile = State(initialValue: profile)
         self.isNew = isNew
+        self.hasBody = hasBody
         self.onSave = onSave
     }
 
@@ -299,6 +304,23 @@ private struct PersonalityEditorView: View {
         return "This is optional; your slider changes save without renaming."
     }
 
+    private var personalityChoice: PersonalityChoice {
+        PersonalityChoice(
+            id: profile.id,
+            name: profile.name,
+            summary: "",
+            customPrompt: profile.prompt,
+            speech: .elevenLabs(voiceID: profile.voiceID, stability: 0.5, speed: profile.voiceSpeed)
+        )
+    }
+
+    private var fullSystemPrompt: String {
+        OpenAIRealtimeMinter.systemInstructions(
+            hasBody: hasBody,
+            personality: personalityChoice
+        ) ?? profile.prompt
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -319,6 +341,20 @@ private struct PersonalityEditorView: View {
                             Text("Each slider position retrieves the closest public-domain passage for six parts of a life. These exact passages—not a generated biography—become the character's private evidence.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(RockyTheme.mint.opacity(0.66))
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Button {
+                                showingSystemPrompt = true
+                            } label: {
+                                Label("Preview full system prompt", systemImage: "doc.text.magnifyingglass")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(RockyTheme.amberBright)
+                            }
+                            .buttonStyle(.plain)
+
+                            Text("Shows the compiled character plus the shared speech, safety, memory, and \(hasBody ? "connected-body" : "voice-only") rules that Realtime would receive now.")
+                                .font(.system(size: 11))
+                                .foregroundStyle(RockyTheme.mint.opacity(0.58))
                                 .fixedSize(horizontal: false, vertical: true)
 
                             ForEach(profile.literaryDNA.quotes) { quote in
@@ -445,6 +481,9 @@ private struct PersonalityEditorView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showingSystemPrompt) {
+            SystemPromptPreviewView(prompt: fullSystemPrompt, hasBody: hasBody)
+        }
     }
 
     private func startGeneratingIdentity() async {
@@ -487,6 +526,71 @@ private struct PersonalityEditorView: View {
                 .foregroundStyle(RockyTheme.amberBright.opacity(0.78))
             content()
         }
+    }
+}
+
+private struct SystemPromptPreviewView: View {
+    let prompt: String
+    let hasBody: Bool
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                RockyTheme.background
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label(
+                            hasBody ? "ROBOT BODY CONNECTED" : "VOICE ONLY · NO ROBOT BODY",
+                            systemImage: hasBody ? "sensor.fill" : "waveform"
+                        )
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(RockyTheme.amberBright)
+
+                        Text("This is the exact instructions field sent to OpenAI Realtime for the current draft. Tool schemas are separate session fields.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(RockyTheme.mint.opacity(0.66))
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text(prompt)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(RockyTheme.mintBright)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(14)
+                            .background {
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(RockyTheme.ink.opacity(0.76))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(RockyTheme.mint.opacity(0.14), lineWidth: 1)
+                                    }
+                            }
+                    }
+                    .padding(20)
+                }
+            }
+            .navigationTitle("Full system prompt")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(RockyTheme.ink.opacity(0.94), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    ShareLink(item: prompt) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .foregroundStyle(RockyTheme.amberBright)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(RockyTheme.amberBright)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -575,6 +679,7 @@ private struct TraitSlider: View {
         store: PersonalityStore(),
         selection: .constant("rocky"),
         canChange: true,
+        hasBody: false,
         onChange: { _ in }
     )
 }

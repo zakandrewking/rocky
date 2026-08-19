@@ -92,6 +92,7 @@ struct ContentView: View {
                 store: personalityStore,
                 selection: $selectedCharacterID,
                 canChange: canChangePersonality,
+                hasBody: behavior.connected,
                 onChange: personalityChanged
             )
         }
