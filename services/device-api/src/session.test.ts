@@ -219,7 +219,7 @@ describe("createDeviceSessionConfig", () => {
     for (const gone of ["drive_cm", "rotate_degrees", "read_distance", "set_face", "set_lights"]) {
       expect(names).not.toContain(gone);
     }
-    expect(config.instructions).toContain("YOU ARE A SELF-DIRECTED ALIEN");
+    expect(config.instructions).toContain("YOU ARE A SELF-DIRECTED CREATURE");
     expect(config.instructions).toContain("A friend is a companion");
     expect(config.instructions).toContain("operator. Their words are part of a relationship");
     expect(config.instructions).toContain("Movement is your own body language");

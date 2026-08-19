@@ -74,14 +74,23 @@ struct PersonalitySelectorView: View {
         }
         .preferredColorScheme(.dark)
         .sheet(item: $editorDraft) { profile in
-            PersonalityEditorView(profile: profile, isNew: creatingProfile, hasBody: hasBody) { saved in
-                store.save(saved)
-                if creatingProfile || selection == saved.id {
-                    selection = saved.id
-                    onChange(saved.id)
+            PersonalityEditorView(
+                profile: profile,
+                isNew: creatingProfile,
+                hasBody: hasBody,
+                onSave: { saved in
+                    store.save(saved)
+                    if creatingProfile || selection == saved.id {
+                        selection = saved.id
+                        onChange(saved.id)
+                    }
+                    editorDraft = nil
+                },
+                onDelete: creatingProfile ? nil : {
+                    delete(profile)
+                    editorDraft = nil
                 }
-                editorDraft = nil
-            }
+            )
             .id(profile.id)
         }
         .confirmationDialog(
@@ -94,13 +103,8 @@ struct PersonalitySelectorView: View {
         ) {
             Button("Delete", role: .destructive) {
                 guard let pendingDelete else { return }
-                let wasSelected = selection == pendingDelete.id
-                store.delete(id: pendingDelete.id)
+                delete(pendingDelete)
                 self.pendingDelete = nil
-                if wasSelected {
-                    selection = PersonalityCatalog.defaultCharacterID
-                    onChange(selection)
-                }
             }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: {
@@ -130,10 +134,17 @@ struct PersonalitySelectorView: View {
         return card(
             name: profile.name,
             summary: "",
-            detail: "ElevenLabs · \(voiceName)",
+            detail: profile.isGenerated ? "ElevenLabs · \(voiceName)" : "Creation required",
             selected: selection == profile.id,
             editable: true,
-            select: { select(profile.id) },
+            select: {
+                if profile.isGenerated {
+                    select(profile.id)
+                } else {
+                    creatingProfile = false
+                    editorDraft = profile
+                }
+            },
             edit: {
                 creatingProfile = false
                 editorDraft = profile
@@ -153,6 +164,7 @@ struct PersonalitySelectorView: View {
             } label: {
                 Label("Duplicate", systemImage: "plus.square.on.square")
             }
+            .disabled(!profile.isGenerated)
             Button(role: .destructive) { pendingDelete = profile } label: {
                 Label("Delete", systemImage: "trash")
             }
@@ -163,6 +175,15 @@ struct PersonalitySelectorView: View {
         guard canChange, selection != id else { return }
         selection = id
         onChange(id)
+    }
+
+    private func delete(_ profile: EditablePersonality) {
+        let wasSelected = selection == profile.id
+        store.delete(id: profile.id)
+        if wasSelected {
+            selection = PersonalityCatalog.defaultCharacterID
+            onChange(selection)
+        }
     }
 
     private func card(
@@ -258,50 +279,50 @@ private struct PersonalityEditorView: View {
     let isNew: Bool
     let hasBody: Bool
     let onSave: (EditablePersonality) -> Void
+    let onDelete: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
-    @State private var identityGenerationState = IdentityGenerationState.initial
-    @State private var namedTraits: PersonalityTraits?
+    @State private var identityGenerationState: IdentityGenerationState
     @State private var generationError: String?
     @State private var showingSystemPrompt = false
+    @State private var confirmingDelete = false
 
     init(
         profile: EditablePersonality,
         isNew: Bool,
         hasBody: Bool,
-        onSave: @escaping (EditablePersonality) -> Void
+        onSave: @escaping (EditablePersonality) -> Void,
+        onDelete: (() -> Void)?
     ) {
         _profile = State(initialValue: profile)
+        _identityGenerationState = State(initialValue: profile.isGenerated ? .ready : .initial)
         self.isNew = isNew
         self.hasBody = hasBody
         self.onSave = onSave
+        self.onDelete = onDelete
     }
 
     private var isGeneratingIdentity: Bool {
         identityGenerationState == .loading
     }
 
-    private var identityIsReady: Bool {
-        !isNew || (identityGenerationState == .ready && namedTraits == profile.traits)
+    private var generationIsCurrent: Bool {
+        profile.generationIsCurrent
     }
 
-    private var hasInventedName: Bool {
-        !isNew || identityGenerationState == .ready
+    private var creationNeedsRefresh: Bool {
+        profile.hasGeneratedArtifact && !profile.generationIsCurrent
     }
 
-    private var nameNeedsRefresh: Bool {
-        isNew && identityGenerationState == .ready && namedTraits != profile.traits
+    private var creationActionTitle: String {
+        if creationNeedsRefresh { return "Regenerate from changed sliders" }
+        return profile.isGenerated ? "Generate another version" : "Generate character"
     }
 
-    private var nameActionTitle: String {
-        if nameNeedsRefresh { return "Update name from changed sliders" }
-        return hasInventedName ? "Invent another name from sliders" : "Invent name from sliders"
-    }
-
-    private var nameInstruction: String {
-        if nameNeedsRefresh { return "Because Step 1 changed, review Step 2 and repeat Step 3 before Save." }
-        if isNew { return "Tune Step 1, review the passages in Step 2, then tap this button." }
-        return "This is optional; your slider changes save without renaming."
+    private var creationInstruction: String {
+        if creationNeedsRefresh { return "The sliders changed. Generate again before Save so the name and system prompt match these passages." }
+        if generationIsCurrent { return "Generation is current. You can preview the exact system prompt, choose a voice, and Save." }
+        return "Generation is required before Save. One request turns these seven passages into a name and traditional system prompt."
     }
 
     private var personalityChoice: PersonalityChoice {
@@ -318,7 +339,7 @@ private struct PersonalityEditorView: View {
         OpenAIRealtimeMinter.systemInstructions(
             hasBody: hasBody,
             personality: personalityChoice
-        ) ?? profile.prompt
+        ) ?? profile.prompt ?? "Generate the character before previewing its system prompt."
     }
 
     var body: some View {
@@ -330,15 +351,33 @@ private struct PersonalityEditorView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 22) {
                         editorSection(isNew ? "1 · Personality" : "Personality") {
-                            TraitSlider(title: "Warmth", low: "reserved", high: "affectionate", value: $profile.traits.warmth)
-                            TraitSlider(title: "Energy", low: "calm", high: "exuberant", value: $profile.traits.energy)
-                            TraitSlider(title: "Humor", low: "earnest", high: "mischievous", value: $profile.traits.humor)
-                            TraitSlider(title: "Curiosity", low: "apathetic", high: "inquisitive", value: $profile.traits.curiosity)
-                            TraitSlider(title: "Talkativeness", low: "quiet", high: "expansive", value: $profile.traits.talkativeness)
+                            Text("Each slider retrieves one kind of source passage. No slider secretly rewrites the other six roles.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(RockyTheme.mint.opacity(0.66))
+                                .fixedSize(horizontal: false, vertical: true)
+                            TraitSlider(title: "Warmth · childhood", low: "guarded", high: "cherished", value: $profile.traits.warmth)
+                            TraitSlider(title: "Energy · drive", low: "still", high: "adventurous", value: $profile.traits.energy)
+                            TraitSlider(title: "Humor · comic lens", low: "earnest", high: "mischievous", value: $profile.traits.humor)
+                            TraitSlider(title: "Curiosity · dream", low: "simple wish", high: "discovery", value: $profile.traits.curiosity)
+                            TraitSlider(title: "Talkativeness · voice", low: "terse", high: "expansive", value: $profile.traits.talkativeness)
+                            TraitSlider(
+                                title: "Earth ↔ Sky · physical form",
+                                low: "small creature",
+                                middle: "larger creature",
+                                high: "space-being",
+                                value: $profile.traits.earthToSky
+                            )
+                            TraitSlider(
+                                title: "Fantasy ↔ Reality · origin",
+                                low: "fantastical",
+                                middle: "myth-touched",
+                                high: "real-world",
+                                value: $profile.traits.fantasyToReality
+                            )
                         }
 
                         editorSection(isNew ? "2 · Literary DNA" : "Literary DNA") {
-                            Text("Each slider position retrieves the closest public-domain passage for six parts of a life. These exact passages—not a generated biography—become the character's private evidence.")
+                            Text("These seven direct public-domain passages are the complete inputs to one creation pass. Their source metadata is for you; the resulting character receives a conventional authored system prompt.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(RockyTheme.mint.opacity(0.66))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -351,8 +390,12 @@ private struct PersonalityEditorView: View {
                                     .foregroundStyle(RockyTheme.amberBright)
                             }
                             .buttonStyle(.plain)
+                            .disabled(!generationIsCurrent)
+                            .opacity(generationIsCurrent ? 1 : 0.45)
 
-                            Text("Shows the compiled character plus the shared speech, safety, memory, and \(hasBody ? "connected-body" : "voice-only") rules that Realtime would receive now.")
+                            Text(generationIsCurrent
+                                ? "Shows the generated character plus shared speech, safety, memory, and \(hasBody ? "connected-body" : "voice-only") rules."
+                                : "Generate the character in Step 3 before previewing its final prompt.")
                                 .font(.system(size: 11))
                                 .foregroundStyle(RockyTheme.mint.opacity(0.58))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -362,28 +405,28 @@ private struct PersonalityEditorView: View {
                             }
                         }
 
-                        editorSection(isNew ? "3 · Name" : "Name") {
+                        editorSection(isNew ? "3 · Generate" : "Generate") {
                             VStack(alignment: .leading, spacing: 8) {
                                 if isGeneratingIdentity {
                                     HStack(spacing: 10) {
                                         ProgressView()
                                             .tint(RockyTheme.amberBright)
-                                        Text("Dreaming up someone new…")
+                                        Text("Compiling one coherent life…")
                                             .font(.system(size: 15, weight: .medium))
                                             .foregroundStyle(RockyTheme.mintBright)
                                     }
                                     .padding(.vertical, 12)
-                                } else if hasInventedName {
+                                } else if profile.hasGeneratedArtifact {
                                     Text(profile.name)
                                         .font(.system(size: 22, weight: .semibold))
                                         .foregroundStyle(RockyTheme.mintBright)
-                                    if nameNeedsRefresh {
-                                        Text("Step 1 changed—review the new passages and update the name before saving.")
+                                    if creationNeedsRefresh {
+                                        Text("The sliders changed—generate again before saving.")
                                             .font(.system(size: 12, weight: .medium))
                                             .foregroundStyle(RockyTheme.amberBright)
                                     }
                                 } else {
-                                    Text("Adjust the sliders above, then invent a name.")
+                                    Text("Adjust the sliders, inspect their passages, then generate the character.")
                                         .font(.system(size: 15, weight: .medium))
                                         .foregroundStyle(RockyTheme.mintBright)
                                 }
@@ -395,7 +438,7 @@ private struct PersonalityEditorView: View {
                                 Task { await startGeneratingIdentity() }
                             } label: {
                                 Label(
-                                    nameActionTitle,
+                                    creationActionTitle,
                                     systemImage: "sparkles"
                                 )
                                     .font(.system(size: 14, weight: .semibold))
@@ -404,7 +447,7 @@ private struct PersonalityEditorView: View {
                             .buttonStyle(.plain)
                             .disabled(isGeneratingIdentity)
 
-                            Text(nameInstruction)
+                            Text(creationInstruction)
                                 .font(.system(size: 11))
                                 .foregroundStyle(RockyTheme.mint.opacity(0.58))
                                 .fixedSize(horizontal: false, vertical: true)
@@ -454,6 +497,18 @@ private struct PersonalityEditorView: View {
                                 )
                             )
                         }
+
+                        if onDelete != nil {
+                            editorSection("Delete") {
+                                Button(role: .destructive) {
+                                    confirmingDelete = true
+                                } label: {
+                                    Label("Delete \(profile.name)", systemImage: "trash")
+                                        .font(.system(size: 14, weight: .semibold))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
                     .padding(20)
                 }
@@ -476,13 +531,26 @@ private struct PersonalityEditorView: View {
                     }
                     .fontWeight(.semibold)
                     .foregroundStyle(RockyTheme.amberBright)
-                    .disabled(isGeneratingIdentity || (isNew && !identityIsReady))
+                    .disabled(isGeneratingIdentity || !generationIsCurrent)
                 }
             }
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $showingSystemPrompt) {
             SystemPromptPreviewView(prompt: fullSystemPrompt, hasBody: hasBody)
+        }
+        .confirmationDialog(
+            "Delete \(profile.name)?",
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                onDelete?()
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes the personality from this phone.")
         }
     }
 
@@ -497,12 +565,13 @@ private struct PersonalityEditorView: View {
         generationError = nil
         let requestedTraits = profile.traits
         do {
-            let identity = try await PersonalityGenerator.generate(for: requestedTraits)
-            profile.name = identity.name
-            namedTraits = requestedTraits
+            let created = try await PersonalityGenerator.generate(for: requestedTraits)
+            profile.name = created.name
+            profile.generatedPrompt = created.systemPrompt
+            profile.generatedTraits = requestedTraits
             identityGenerationState = .ready
         } catch {
-            generationError = "Couldn’t generate that one. Check the connection and tap the sparkle button to retry."
+            generationError = "Couldn’t generate that one. The previous valid version, if any, is unchanged. Check the connection and retry."
             identityGenerationState = .failed
         }
     }
@@ -600,7 +669,7 @@ private struct LiteraryQuoteCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(quote.slot.rawValue.uppercased())
+                Text("\(quote.slot.rawValue) · \(quote.slot.sliderName)".uppercased())
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundStyle(RockyTheme.amberBright)
 
@@ -642,8 +711,23 @@ private struct LiteraryQuoteCard: View {
 private struct TraitSlider: View {
     let title: String
     let low: String
+    let middle: String?
     let high: String
     @Binding var value: Double
+
+    init(
+        title: String,
+        low: String,
+        middle: String? = nil,
+        high: String,
+        value: Binding<Double>
+    ) {
+        self.title = title
+        self.low = low
+        self.middle = middle
+        self.high = high
+        _value = value
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -661,6 +745,10 @@ private struct TraitSlider: View {
             HStack {
                 Text(low)
                 Spacer()
+                if let middle {
+                    Text(middle)
+                    Spacer()
+                }
                 Text(high)
             }
             .font(.system(size: 10, design: .monospaced))

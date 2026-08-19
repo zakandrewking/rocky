@@ -93,6 +93,9 @@ final class RealtimeSessionConfigTests: XCTestCase {
 
         XCTAssertTrue(instructions.contains("You are Mara, a careful cartographer."))
         XCTAssertFalse(instructions.contains("__ROCKY_CUSTOM_PERSONA__"))
+        XCTAssertFalse(instructions.localizedCaseInsensitiveContains("rocky"))
+        XCTAssertFalse(instructions.contains("SELF-DIRECTED ALIEN"))
+        XCTAssertTrue(instructions.contains("SELF-DIRECTED CREATURE"))
         XCTAssertTrue(instructions.contains("Never tell a child to smell"))
         XCTAssertTrue(instructions.contains("BODY LANGUAGE IS SILENT"))
         XCTAssertEqual(baked["output_modalities"] as? [String], ["text"])

@@ -90,13 +90,15 @@ infrastructure the same way it is on desktop.
 The circular stone (`orb` in `ContentView.swift`) starts and pauses conversation. A small
 personality button in the top-right opens Rocky and the profiles created on that phone. Rocky is
 always the fixed default with his Hume voice. Other personalities can be created, duplicated,
-edited with warmth/energy/humor/curiosity/talkativeness sliders, and deleted. Creation is an
-explicit four-step flow: tune the sliders, review the six public-domain passages they retrieve,
-ask OpenAI to invent a playful one-word name, then choose a built-in or account ElevenLabs voice.
-The visible "literary DNA" covers origin, physical form, childhood, drive, dream, and voice, with
-each passage linked to its Project Gutenberg edition. Those exact passages compile directly into
-the acting prompt; OpenAI does not write an intermediate biography. A prompt-preview button shows
-the exact final Realtime instructions for the draft and current connected-body/voice-only state,
+edited, and explicitly deleted. Seven character sliders each control exactly one kind of
+public-domain passage: warmth→childhood, energy→drive, humor→comic lens, curiosity→dream,
+talkativeness→voice, Earth↔Sky→physical form, and Fantasy↔Reality→origin. Each passage links to its
+Project Gutenberg edition. Generate makes one OpenAI Responses call that compiles those seven
+passages into both a playful one-word name and a conventional standalone system prompt. Save and
+prompt preview remain locked until generation succeeds; moving a character slider invalidates the
+artifact until the matching settings are generated again, including across relaunches. A
+prompt-preview button shows the exact final Realtime instructions for the draft and current
+connected-body/voice-only state,
 including the shared conduct and safety rules; the text is selectable and shareable. There is no text entry.
 Speaking speed remains editable per personality.
 Selection and profiles persist across launches and supply the prompt

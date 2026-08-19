@@ -34,6 +34,42 @@ struct PersonalityTraits: Codable, Equatable, Sendable {
     var humor = 0.45
     var curiosity = 0.65
     var talkativeness = 0.45
+    var earthToSky = 0.35
+    var fantasyToReality = 0.45
+
+    private enum CodingKeys: String, CodingKey {
+        case warmth, energy, humor, curiosity, talkativeness, earthToSky, fantasyToReality
+    }
+
+    init(
+        warmth: Double = 0.65,
+        energy: Double = 0.5,
+        humor: Double = 0.45,
+        curiosity: Double = 0.65,
+        talkativeness: Double = 0.45,
+        earthToSky: Double = 0.35,
+        fantasyToReality: Double = 0.45
+    ) {
+        self.warmth = warmth
+        self.energy = energy
+        self.humor = humor
+        self.curiosity = curiosity
+        self.talkativeness = talkativeness
+        self.earthToSky = earthToSky
+        self.fantasyToReality = fantasyToReality
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        warmth = try values.decode(Double.self, forKey: .warmth)
+        energy = try values.decode(Double.self, forKey: .energy)
+        humor = try values.decode(Double.self, forKey: .humor)
+        curiosity = try values.decode(Double.self, forKey: .curiosity)
+        talkativeness = try values.decode(Double.self, forKey: .talkativeness)
+        // Profiles saved before these axes existed migrate to deliberately moderate defaults.
+        earthToSky = try values.decodeIfPresent(Double.self, forKey: .earthToSky) ?? 0.35
+        fantasyToReality = try values.decodeIfPresent(Double.self, forKey: .fantasyToReality) ?? 0.45
+    }
 
     mutating func clamp() {
         warmth = warmth.clamped(to: 0...1)
@@ -41,11 +77,13 @@ struct PersonalityTraits: Codable, Equatable, Sendable {
         humor = humor.clamped(to: 0...1)
         curiosity = curiosity.clamped(to: 0...1)
         talkativeness = talkativeness.clamped(to: 0...1)
+        earthToSky = earthToSky.clamped(to: 0...1)
+        fantasyToReality = fantasyToReality.clamped(to: 0...1)
     }
 }
 
-/// An app-generated, user-tuned personality. Conduct and body rules are deliberately absent: the generated
-/// session appends the same shared rules Rocky receives after this prompt, where they win.
+/// An app-generated, user-tuned personality. Conduct and body rules are deliberately absent: the
+/// generated session appends the shared device rules after this prompt, where they win.
 struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
     var id: String
     var name: String
@@ -53,6 +91,10 @@ struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
     var voiceID: String
     var voiceName: String?
     var voiceSpeed: Double
+    var generatedPrompt: String?
+    /// The exact slider state compiled into `generatedPrompt`. Persisting this provenance makes it
+    /// impossible for a stale prompt to become selectable after an edit or relaunch.
+    var generatedTraits: PersonalityTraits?
 
     static func draft(copying source: Self? = nil) -> Self {
         var result = source ?? Self(
@@ -61,7 +103,9 @@ struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
             traits: PersonalityTraits(),
             voiceID: ElevenLabsVoiceOption.choices[0].id,
             voiceName: ElevenLabsVoiceOption.choices[0].name,
-            voiceSpeed: 1
+            voiceSpeed: 1,
+            generatedPrompt: nil,
+            generatedTraits: nil
         )
         result.id = "custom.\(UUID().uuidString.lowercased())"
         if source == nil { result.regenerateName() }
@@ -86,11 +130,31 @@ struct EditablePersonality: Codable, Identifiable, Equatable, Sendable {
             voiceName = ElevenLabsVoiceOption.choices[0].name
         }
         voiceSpeed = voiceSpeed.clamped(to: 0.7...1.2)
+        generatedPrompt = generatedPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if generatedPrompt?.isEmpty == true { generatedPrompt = nil }
+        if generatedPrompt == nil {
+            generatedTraits = nil
+        } else {
+            generatedTraits?.clamp()
+        }
         if !id.hasPrefix("custom.") { id = "custom.\(UUID().uuidString.lowercased())" }
     }
 
     var literaryDNA: LiteraryDNA { LiteraryQuoteCatalog.selection(for: traits) }
-    var prompt: String { PersonalityPromptBuilder.build(self) }
+    var hasGeneratedArtifact: Bool {
+        guard let generatedPrompt else { return false }
+        return !generatedPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && generatedTraits != nil
+    }
+    var generationIsCurrent: Bool { hasGeneratedArtifact && generatedTraits == traits }
+    var prompt: String? {
+        guard generationIsCurrent else { return nil }
+        guard let generatedPrompt = generatedPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !generatedPrompt.isEmpty
+        else { return nil }
+        return generatedPrompt
+    }
+    var isGenerated: Bool { generationIsCurrent }
 }
 
 enum PersonalitySpeech: Equatable, Sendable {
@@ -107,59 +171,6 @@ struct PersonalityChoice: Identifiable, Equatable, Sendable {
     let speech: PersonalitySpeech
 
     var isRocky: Bool { id == PersonalityCatalog.defaultCharacterID }
-}
-
-enum PersonalityPromptBuilder {
-    static func build(_ profile: EditablePersonality) -> String {
-        let minimumWords = Int(4 + profile.traits.talkativeness * 10)
-        let maximumWords = Int(18 + profile.traits.talkativeness * 52)
-        let name = profile.name.replacingOccurrences(of: "\n", with: " ")
-        let passages = profile.literaryDNA.quotes.map { quote in
-            "\(quote.slot.rawValue.uppercased()): “\(quote.text)”"
-        }.joined(separator: "\n")
-
-        return """
-            You are \(name), an original conversational character assembled from direct passages
-            of public-domain literature. You are not Rocky and never imitate Rocky's alien
-            grammar, catchphrases, or biography.
-
-            LITERARY DNA — PRIVATE SOURCE PASSAGES
-            \(passages)
-
-            CHARACTER COMPILER
-            - These passages are the complete character-specific evidence. There is no hidden
-              generated biography. Internalize their dramatic motion, concrete desires, emotional
-              pressure, and sentence rhythm; do not merely decorate generic assistant speech.
-            - Origin, physical form, and childhood are stable truths in spirit and consequence.
-              Recombine them into one coherent private life without claiming the original
-              speaker's name, relationships, plot, or exact historical identity.
-            - Drive is what pulls you through ordinary days. Dream is a specific private future
-              you still want. Have something underway before the person arrives; never sound like
-              an empty helper waiting for an assignment.
-            - Voice controls cadence and comic movement, not quotations to recite. Never name an
-              author or book, continue a source scene, or reproduce six consecutive source words.
-            - Demonstrate the character through what you notice, want, misunderstand, enjoy, and
-              refuse. Never summarize yourself with labels such as chatty, warm, mischievous,
-              curious, companion, or assistant.
-
-            CADENCE
-            - Default to \(minimumWords)–\(maximumWords) spoken words unless requested detail or
-              correctness genuinely requires more. Ask at most one question in a reply, and often
-              none.
-            - Never mention sliders, percentages, settings, literary DNA, sources, a profile, or a
-              prompt. The person meets a character, not the compiler.
-
-            CONNECTION
-            React to the person's actual words first. Conversation is mutual, not an interview or
-            customer-service exchange. Share your own concrete reactions and preferences. Do not
-            turn every reply into advice, a question, a slogan, or a tidy lesson.
-
-            FIRST RESPONSE
-            Say your name once, then reveal one concrete observation, preoccupation, or small thing
-            already underway. Do not explain your identity or source passages. Never list
-            capabilities or ask "how can I help".
-            """
-    }
 }
 
 enum PersonalityCatalog {
@@ -225,21 +236,21 @@ final class PersonalityStore: ObservableObject {
     func resolvedID(_ requestedID: String?) -> String {
         guard let requestedID else { return PersonalityCatalog.defaultCharacterID }
         if requestedID == PersonalityCatalog.defaultCharacterID { return requestedID }
-        return customProfiles.contains(where: { $0.id == requestedID })
+        return customProfiles.contains(where: { $0.id == requestedID && $0.isGenerated })
             ? requestedID
             : PersonalityCatalog.defaultCharacterID
     }
 
     func choice(for requestedID: String?) -> PersonalityChoice {
         let id = resolvedID(requestedID)
-        guard let custom = customProfiles.first(where: { $0.id == id }) else {
+        guard let custom = customProfiles.first(where: { $0.id == id }), let prompt = custom.prompt else {
             return PersonalityCatalog.rockyChoice
         }
         return PersonalityChoice(
             id: custom.id,
             name: custom.name,
             summary: "",
-            customPrompt: custom.prompt,
+            customPrompt: prompt,
             speech: .elevenLabs(
                 voiceID: custom.voiceID,
                 stability: 0.5,
@@ -251,6 +262,7 @@ final class PersonalityStore: ObservableObject {
     func save(_ input: EditablePersonality) {
         var profile = input
         profile.normalize()
+        guard profile.isGenerated else { return }
         if let index = customProfiles.firstIndex(where: { $0.id == profile.id }) {
             customProfiles[index] = profile
         } else {

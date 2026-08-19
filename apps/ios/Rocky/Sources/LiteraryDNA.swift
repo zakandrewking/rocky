@@ -8,14 +8,26 @@ enum LiteraryDNASlot: String, CaseIterable, Codable, Sendable {
     case physicalForm = "physical form"
     case childhood
     case drive
+    case comicLens = "comic lens"
     case dream
     case voice
+
+    var sliderName: String {
+        switch self {
+        case .origin: "fantasy ↔ reality"
+        case .physicalForm: "earth ↔ sky"
+        case .childhood: "warmth"
+        case .drive: "energy"
+        case .comicLens: "humor"
+        case .dream: "curiosity"
+        case .voice: "talkativeness"
+        }
+    }
 }
 
-/// The same five-dimensional point edited by the existing sliders. Each quotation is a control
-/// point in that space; the compiler selects the nearest quotation independently within every
-/// identity slot. Keeping the source text itself as the character input is the experiment -- no
-/// model-generated biography sits between the person's slider choice and the acting model.
+/// Source-corpus metadata retained in its compact five-axis form. Selection is intentionally
+/// one-dimensional: each slot reads exactly one matching slider, so moving warmth cannot silently
+/// replace origin, form, dream, and voice at the same time.
 struct LiteraryCoordinates: Equatable, Sendable {
     let warmth: Double
     let energy: Double
@@ -37,22 +49,15 @@ struct LiteraryCoordinates: Equatable, Sendable {
         self.talkativeness = talkativeness
     }
 
-    init(_ traits: PersonalityTraits) {
-        self.init(
-            warmth: traits.warmth,
-            energy: traits.energy,
-            humor: traits.humor,
-            curiosity: traits.curiosity,
-            talkativeness: traits.talkativeness
-        )
-    }
-
-    func squaredDistance(to other: Self) -> Double {
-        pow(warmth - other.warmth, 2)
-            + pow(energy - other.energy, 2)
-            + pow(humor - other.humor, 2)
-            + pow(curiosity - other.curiosity, 2)
-            + pow(talkativeness - other.talkativeness, 2)
+    func value(for slot: LiteraryDNASlot) -> Double {
+        switch slot {
+        case .childhood: warmth
+        case .drive: energy
+        case .comicLens: humor
+        case .dream: curiosity
+        case .voice: talkativeness
+        case .origin, .physicalForm: 0.5
+        }
     }
 }
 
@@ -64,7 +69,8 @@ struct LiteraryQuote: Identifiable, Equatable, Sendable {
     let author: String
     let work: String
     let source: String
-    let coordinates: LiteraryCoordinates
+    /// Position on the one slider assigned to this quote's slot.
+    let axisPosition: Double
 
     var sourceURL: URL? { URL(string: source) }
 }
@@ -82,75 +88,75 @@ enum LiteraryQuoteCatalog {
     /// exact Project Gutenberg edition it was checked against, which marks the text public domain
     /// in the USA. Modern translations and random quotation sites are intentionally absent.
     ///
-    /// Physical-form passages describe materials, dimensionality, visibility, or constraints.
-    /// The discarded "fat and bunchy" Velveteen Rabbit description does not belong here: body
-    /// shape as a joke is neither necessary nor useful to the modern character this app wants.
+    /// Every slot is controlled by exactly one slider. Physical form runs from small earth creature
+    /// to large creature to space-being; origin runs from fantasy to reality. The discarded "fat
+    /// and bunchy" Velveteen Rabbit description is intentionally absent.
     static let quotes: [LiteraryQuote] = [
         quote(
             "origin.wild-wood", .origin,
             "Beyond the Wild Wood comes the Wide World",
             "Kenneth Grahame", "The Wind in the Willows", 289,
-            .init(warmth: 0.62, energy: 0.45, humor: 0.38, curiosity: 0.55, talkativeness: 0.24)
+            .init(warmth: 0.62, energy: 0.45, humor: 0.38, curiosity: 0.55, talkativeness: 0.24), 0.50
         ),
         quote(
             "origin.gray-prairie", .origin,
             "When Dorothy stood in the doorway and looked around, she could see nothing but the great gray prairie on every side.",
             "L. Frank Baum", "The Wonderful Wizard of Oz", 55,
-            .init(warmth: 0.46, energy: 0.18, humor: 0.08, curiosity: 0.36, talkativeness: 0.54)
+            .init(warmth: 0.46, energy: 0.18, humor: 0.08, curiosity: 0.36, talkativeness: 0.54), 0.75
         ),
         quote(
             "origin.geneva", .origin,
             "I am by birth a Genevese, and my family is one of the most distinguished of that republic.",
             "Mary Shelley", "Frankenstein", 84,
-            .init(warmth: 0.24, energy: 0.30, humor: 0.04, curiosity: 0.46, talkativeness: 0.62)
+            .init(warmth: 0.24, energy: 0.30, humor: 0.04, curiosity: 0.46, talkativeness: 0.62), 1.00
         ),
         quote(
             "origin.neverland", .origin,
             "Second to the right, and straight on till morning.",
             "J. M. Barrie", "Peter Pan", 16,
-            .init(warmth: 0.50, energy: 0.92, humor: 0.68, curiosity: 0.82, talkativeness: 0.22)
+            .init(warmth: 0.50, energy: 0.92, humor: 0.68, curiosity: 0.82, talkativeness: 0.22), 0.00
         ),
         quote(
             "origin.flatland", .origin,
             "I call our world Flatland, not because we call it so, but to make its nature clearer to you, my happy readers, who are privileged to live in Space.",
             "Edwin A. Abbott", "Flatland", 201,
-            .init(warmth: 0.42, energy: 0.38, humor: 0.50, curiosity: 0.78, talkativeness: 0.82)
+            .init(warmth: 0.42, energy: 0.38, humor: 0.50, curiosity: 0.78, talkativeness: 0.82), 0.25
         ),
 
         quote(
-            "form.invisible", .physicalForm,
-            "I'm an invisible man.",
-            "H. G. Wells", "The Invisible Man", 5230,
-            .init(warmth: 0.22, energy: 0.28, humor: 0.48, curiosity: 0.42, talkativeness: 0.12)
+            "form.mole", .physicalForm,
+            "The Mole had been working very hard all the morning, spring-cleaning his little home.",
+            "Kenneth Grahame", "The Wind in the Willows", 289,
+            .init(warmth: 0.60, energy: 0.35, humor: 0.40, curiosity: 0.45, talkativeness: 0.30), 0.00
         ),
         quote(
-            "form.tin", .physicalForm,
-            "I am a Woodman, and made of tin.",
+            "form.white-rabbit", .physicalForm,
+            "a White Rabbit with pink eyes ran close by her",
+            "Lewis Carroll", "Alice's Adventures in Wonderland", 11,
+            .init(warmth: 0.45, energy: 0.75, humor: 0.65, curiosity: 0.70, talkativeness: 0.30), 0.25
+        ),
+        quote(
+            "form.lion", .physicalForm,
+            "the next moment a great Lion bounded into the road.",
             "L. Frank Baum", "The Wonderful Wizard of Oz", 55,
-            .init(warmth: 0.48, energy: 0.44, humor: 0.34, curiosity: 0.54, talkativeness: 0.20)
+            .init(warmth: 0.45, energy: 0.80, humor: 0.25, curiosity: 0.45, talkativeness: 0.35), 0.50
         ),
         quote(
-            "form.living-wood", .physicalForm,
-            "Once upon a time there was a piece of wood. It was not an expensive piece of wood. Far from it. Just a common block of firewood, one of those thick, solid logs that are put on the fire in winter to make cold rooms cozy and warm.",
-            "Carlo Collodi", "The Adventures of Pinocchio", 500,
-            .init(warmth: 0.64, energy: 0.70, humor: 0.72, curiosity: 0.76, talkativeness: 0.58)
+            "form.thark", .physicalForm,
+            "The man himself, for such I may call him, was fully fifteen feet in height and, on Earth, would have weighed some four hundred pounds.",
+            "Edgar Rice Burroughs", "A Princess of Mars", 62,
+            .init(warmth: 0.20, energy: 0.75, humor: 0.10, curiosity: 0.65, talkativeness: 0.45), 0.75
         ),
         quote(
-            "form.skeleton-leaves", .physicalForm,
-            "He was a lovely boy, clad in skeleton leaves and the juices that ooze out of trees but the most entrancing thing about him was that he had all his first teeth.",
-            "J. M. Barrie", "Peter Pan", 16,
-            .init(warmth: 0.58, energy: 0.86, humor: 0.58, curiosity: 0.78, talkativeness: 0.50)
-        ),
-        quote(
-            "form.assembled", .physicalForm,
-            "His limbs were in proportion, and I had selected his features as beautiful.",
-            "Mary Shelley", "Frankenstein", 84,
-            .init(warmth: 0.16, energy: 0.52, humor: 0.02, curiosity: 0.84, talkativeness: 0.70)
+            "form.martian", .physicalForm,
+            "Two large dark-coloured eyes were regarding me steadfastly. The mass that framed them, the head of the thing, was rounded, and had, one might say, a face.",
+            "H. G. Wells", "The War of the Worlds", 36,
+            .init(warmth: 0.10, energy: 0.40, humor: 0.05, curiosity: 0.85, talkativeness: 0.30), 1.00
         ),
 
         quote(
             "childhood.asylum", .childhood,
-            "I've never belonged to anybody—not really. But the asylum was the worst.",
+            "I’ve never belonged to anybody--not really. But the asylum was the worst.",
             "L. M. Montgomery", "Anne of Green Gables", 45,
             .init(warmth: 0.86, energy: 0.52, humor: 0.18, curiosity: 0.72, talkativeness: 0.66)
         ),
@@ -168,7 +174,7 @@ enum LiteraryQuoteCatalog {
         ),
         quote(
             "childhood.idol", .childhood,
-            "My mother's tender caresses and my father's smile of benevolent pleasure while regarding me are my first recollections.",
+            "My mother’s tender caresses and my father’s smile of benevolent pleasure while regarding me are my first recollections.",
             "Mary Shelley", "Frankenstein", 84,
             .init(warmth: 0.92, energy: 0.28, humor: 0.04, curiosity: 0.42, talkativeness: 0.76)
         ),
@@ -199,7 +205,7 @@ enum LiteraryQuoteCatalog {
         ),
         quote(
             "drive.enjoy", .drive,
-            "It's been my experience that you can nearly always enjoy things if you make up your mind firmly that you will.",
+            "It’s been my experience that you can nearly always enjoy things if you make up your mind firmly that you will.",
             "L. M. Montgomery", "Anne of Green Gables", 45,
             .init(warmth: 0.88, energy: 0.54, humor: 0.38, curiosity: 0.78, talkativeness: 0.74)
         ),
@@ -211,14 +217,45 @@ enum LiteraryQuoteCatalog {
         ),
 
         quote(
+            "comic.forgive", .comicLens,
+            "Life appears to me too short to be spent in nursing animosity or registering wrongs.",
+            "Charlotte Brontë", "Jane Eyre", 1260,
+            .init(warmth: 0.74, energy: 0.30, humor: 0.00, curiosity: 0.50, talkativeness: 0.55)
+        ),
+        quote(
+            "comic.obvious", .comicLens,
+            "There is nothing more deceptive than an obvious fact",
+            "Arthur Conan Doyle", "The Adventures of Sherlock Holmes", 1661,
+            .init(warmth: 0.25, energy: 0.35, humor: 0.25, curiosity: 0.85, talkativeness: 0.25)
+        ),
+        quote(
+            "comic.moonshine", .comicLens,
+            "Well, moonshine is a brighter thing than fog",
+            "Arthur Conan Doyle", "The Adventures of Sherlock Holmes", 1661,
+            .init(warmth: 0.45, energy: 0.50, humor: 0.50, curiosity: 0.65, talkativeness: 0.35)
+        ),
+        quote(
+            "comic.truth", .comicLens,
+            "The truth is rarely pure and never simple.",
+            "Oscar Wilde", "The Importance of Being Earnest", 844,
+            .init(warmth: 0.30, energy: 0.55, humor: 0.75, curiosity: 0.65, talkativeness: 0.35)
+        ),
+        quote(
+            "comic.diary", .comicLens,
+            "I never travel without my diary. One should always have something sensational to read in the train.",
+            "Oscar Wilde", "The Importance of Being Earnest", 844,
+            .init(warmth: 0.40, energy: 0.65, humor: 1.00, curiosity: 0.60, talkativeness: 0.65)
+        ),
+
+        quote(
             "dream.splendid", .dream,
-            "I want to do something splendid before I go into my castle, something heroic or wonderful that won't be forgotten after I'm dead.",
+            "I want to do something splendid before I go into my castle, something heroic or wonderful that won’t be forgotten after I’m dead.",
             "Louisa May Alcott", "Little Women", 514,
             .init(warmth: 0.54, energy: 0.84, humor: 0.28, curiosity: 0.70, talkativeness: 0.64)
         ),
         quote(
             "dream.discoveries", .dream,
-            "I shall find out thousands and thousands of things. I shall find out about people and creatures and everything that grows—like Dickon—and I shall never stop making Magic.",
+            "I shall find out thousands and thousands of things. I shall find out about people and creatures and everything that grows--like Dickon--and I shall never stop making Magic.",
             "Frances Hodgson Burnett", "The Secret Garden", 17396,
             .init(warmth: 0.72, energy: 0.76, humor: 0.24, curiosity: 1.00, talkativeness: 0.76)
         ),
@@ -248,10 +285,10 @@ enum LiteraryQuoteCatalog {
             .init(warmth: 0.58, energy: 0.88, humor: 0.76, curiosity: 0.94, talkativeness: 0.08)
         ),
         quote(
-            "voice.truth", .voice,
-            "The truth is rarely pure and never simple.",
-            "Oscar Wilde", "The Importance of Being Earnest", 844,
-            .init(warmth: 0.28, energy: 0.52, humor: 1.00, curiosity: 0.68, talkativeness: 0.30)
+            "voice.opinion", .voice,
+            "My good opinion once lost is lost for ever.",
+            "Jane Austen", "Pride and Prejudice", 1342,
+            .init(warmth: 0.28, energy: 0.52, humor: 0.45, curiosity: 0.55, talkativeness: 0.30)
         ),
         quote(
             "voice.observe", .voice,
@@ -261,7 +298,7 @@ enum LiteraryQuoteCatalog {
         ),
         quote(
             "voice.boats", .voice,
-            "Nothing seems really to matter, that's the charm of it. Whether you get away, or whether you don't; whether you arrive at your destination or whether you reach somewhere else, or whether you never get anywhere at all, you're always busy, and you never do anything in particular; and when you've done it there's always something else to do, and you can do it if you like, but you'd much better not.",
+            "Nothing seems really to matter, that’s the charm of it. Whether you get away, or whether you don’t; whether you arrive at your destination or whether you reach somewhere else, or whether you never get anywhere at all, you’re always busy, and you never do anything in particular; and when you’ve done it there’s always something else to do, and you can do it if you like, but you’d much better not.",
             "Kenneth Grahame", "The Wind in the Willows", 289,
             .init(warmth: 0.72, energy: 0.52, humor: 0.56, curiosity: 0.68, talkativeness: 1.00)
         ),
@@ -274,18 +311,30 @@ enum LiteraryQuoteCatalog {
     ]
 
     static func selection(for traits: PersonalityTraits) -> LiteraryDNA {
-        let target = LiteraryCoordinates(traits)
         let selected = LiteraryDNASlot.allCases.compactMap { slot in
-            quotes
+            let target = targetValue(for: slot, traits: traits)
+            return quotes
                 .filter { $0.slot == slot }
                 .min { lhs, rhs in
-                    let left = lhs.coordinates.squaredDistance(to: target)
-                    let right = rhs.coordinates.squaredDistance(to: target)
+                    let left = abs(lhs.axisPosition - target)
+                    let right = abs(rhs.axisPosition - target)
                     if left == right { return lhs.id < rhs.id }
                     return left < right
                 }
         }
         return LiteraryDNA(quotes: selected)
+    }
+
+    private static func targetValue(for slot: LiteraryDNASlot, traits: PersonalityTraits) -> Double {
+        switch slot {
+        case .origin: traits.fantasyToReality
+        case .physicalForm: traits.earthToSky
+        case .childhood: traits.warmth
+        case .drive: traits.energy
+        case .comicLens: traits.humor
+        case .dream: traits.curiosity
+        case .voice: traits.talkativeness
+        }
     }
 
     private static func quote(
@@ -295,7 +344,8 @@ enum LiteraryQuoteCatalog {
         _ author: String,
         _ work: String,
         _ ebook: Int,
-        _ coordinates: LiteraryCoordinates
+        _ coordinates: LiteraryCoordinates,
+        _ axisPosition: Double? = nil
     ) -> LiteraryQuote {
         LiteraryQuote(
             id: id,
@@ -304,7 +354,7 @@ enum LiteraryQuoteCatalog {
             author: author,
             work: work,
             source: "https://www.gutenberg.org/ebooks/\(ebook)",
-            coordinates: coordinates
+            axisPosition: axisPosition ?? coordinates.value(for: slot)
         )
     }
 }

@@ -202,20 +202,22 @@ the one human imperative.
 
 - [x] Let the person choose who is speaking on iOS. The main-screen personality pill keeps Rocky
   as the fixed default with his Hume voice, and persists user-created profiles with editable
-  warmth, energy, humor, curiosity, talkativeness, and speaking speed. Creation visibly orders the
-  work as sliders first, visible literary DNA second, OpenAI-generated one-word name third, and
-  built-in/account ElevenLabs voice selection fourth. Each slider position deterministically
-  retrieves exact, attributed Project Gutenberg passages for origin, physical form, childhood,
-  drive, dream, and voice; those passages compile directly into the character prompt instead of
-  asking a model to invent a biography. The editor can preview and share the exact final Realtime
-  instructions, including shared rules and the current body-connectivity override, using the same
-  session-construction code as minting rather than a second approximation. Custom persona text is inserted into a
-  generated session template that retains the same conduct and body rules. A paused conversation
-  ends before a different personality starts so identity and memory never change mid-session.
+  warmth, energy, humor, curiosity, talkativeness, Earth↔Sky, Fantasy↔Reality, and speaking speed.
+  Each of the seven character sliders deterministically retrieves exactly one attributed Project
+  Gutenberg passage: childhood, drive, comic lens, dream, voice, physical form, or origin. Generate
+  makes one structured OpenAI call that turns only those passages into both the one-word name and a
+  conventional standalone system prompt. Save and prompt preview require a successful generation
+  for the exact current slider state; persisted generation provenance keeps stale prompts invalid
+  after relaunch. Profiles can be explicitly deleted. The editor can preview and share the exact
+  final Realtime instructions, including shared rules and the current body-connectivity override,
+  using the same session-construction code as minting rather than a second approximation. Custom
+  persona text is inserted into a generated session template that retains the same conduct and body
+  rules. A paused conversation ends before a different personality starts so identity and memory
+  never change mid-session.
 - [ ] Evaluate the literary-DNA probe with blind first-conversation auditions against Rocky and
-  the old adjective-only Zizzle baseline. Before expanding the 30-passage corpus, decide whether
-  origin, physical form, and childhood lock when a profile is created or use slider hysteresis so
-  a tiny edit cannot rewrite a life. Keep edition links and verbatim-text tests with every addition.
+  the old adjective-only Zizzle baseline. Compare the conventional compiled prompt with the former
+  runtime quote scaffold, and test whether five anchors per slider are enough before expanding the
+  35-passage corpus. Keep edition links and verbatim-text tests with every addition.
 - [ ] Reintroduce ElevenLabs Voice Design only when the voice-creation flow has a clearer product
   role; for now personalities choose built-in or existing account voices.
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
