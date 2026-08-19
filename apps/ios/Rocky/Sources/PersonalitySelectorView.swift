@@ -345,17 +345,21 @@ private struct PersonalityEditorView: View {
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 22) {
                         editorSection(isNew ? "1 · Personality" : "Personality") {
-                            TraitSlider(title: "Childhood (guarded ↔ cherished)", value: $profile.traits.warmth)
-                            TraitSlider(title: "Drive (still ↔ adventurous)", value: $profile.traits.energy)
-                            TraitSlider(title: "Humor (earnest ↔ mischievous)", value: $profile.traits.humor)
-                            TraitSlider(title: "Dream (simple ↔ discovery)", value: $profile.traits.curiosity)
-                            TraitSlider(title: "Voice (terse ↔ expansive)", value: $profile.traits.talkativeness)
+                            TraitSlider(title: "Childhood", low: "guarded", high: "cherished", value: $profile.traits.warmth)
+                            TraitSlider(title: "Drive", low: "still", high: "adventurous", value: $profile.traits.energy)
+                            TraitSlider(title: "Humor", low: "earnest", high: "mischievous", value: $profile.traits.humor)
+                            TraitSlider(title: "Dream", low: "simple", high: "discovery", value: $profile.traits.curiosity)
+                            TraitSlider(title: "Voice", low: "terse", high: "expansive", value: $profile.traits.talkativeness)
                             TraitSlider(
-                                title: "Form (earth ↔ sky)",
+                                title: "Form",
+                                low: "earth",
+                                high: "sky",
                                 value: $profile.traits.earthToSky
                             )
                             TraitSlider(
-                                title: "Origin (fantasy ↔ reality)",
+                                title: "Origin",
+                                low: "fantasy",
+                                high: "reality",
                                 value: $profile.traits.fantasyToReality
                             )
                         }
@@ -450,7 +454,9 @@ private struct PersonalityEditorView: View {
                             .buttonStyle(.plain)
 
                             TraitSlider(
-                                title: "Speed (slow ↔ quick)",
+                                title: "Speed",
+                                low: "slow",
+                                high: "quick",
                                 value: Binding(
                                     get: { (profile.voiceSpeed - 0.7) / 0.5 },
                                     set: { profile.voiceSpeed = 0.7 + $0 * 0.5 }
@@ -677,6 +683,8 @@ private struct LiteraryQuoteCard: View {
 
 private struct TraitSlider: View {
     let title: String
+    let low: String
+    let high: String
     @Binding var value: Double
 
     var body: some View {
@@ -686,6 +694,13 @@ private struct TraitSlider: View {
                 .foregroundStyle(RockyTheme.mintBright)
             Slider(value: $value, in: 0...1)
                 .tint(RockyTheme.amber)
+            HStack {
+                Text(low)
+                Spacer()
+                Text(high)
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(RockyTheme.mint.opacity(0.54))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
