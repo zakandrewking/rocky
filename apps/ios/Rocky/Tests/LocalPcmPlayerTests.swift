@@ -2,17 +2,17 @@ import XCTest
 
 @testable import Rocky
 
-/// Covers Hume's wire format. The playback timeline itself needs real audio hardware to exercise,
+/// Covers the local providers' PCM wire format. Playback itself needs real audio hardware,
 /// so the regression that mattered most there -- `stop()` leaving a stale sample cursor, which
 /// scheduled the next reply tens of seconds into the future and read as Rocky ignoring you -- is
-/// guarded by the comments in HumePcmPlayer rather than by a test.
-final class HumePcmPlayerTests: XCTestCase {
+/// guarded by the comments in LocalPcmPlayer rather than by a test.
+final class LocalPcmPlayerTests: XCTestCase {
     func testDecodesSigned16BitLittleEndian() throws {
         // 0, 32767, -32768, -1 as little-endian int16.
         let bytes: [UInt8] = [0x00, 0x00, 0xFF, 0x7F, 0x00, 0x80, 0xFF, 0xFF]
         let base64 = Data(bytes).base64EncodedString()
 
-        let samples = try XCTUnwrap(HumePcmPlayer.decodePCM16LE(base64))
+        let samples = try XCTUnwrap(LocalPcmPlayer.decodePCM16LE(base64))
 
         XCTAssertEqual(samples.count, 4)
         XCTAssertEqual(samples[0], 0)
@@ -22,10 +22,20 @@ final class HumePcmPlayerTests: XCTestCase {
     }
 
     func testRejectsSomethingThatIsNotBase64() {
-        XCTAssertNil(HumePcmPlayer.decodePCM16LE("not base64!!"))
+        XCTAssertNil(LocalPcmPlayer.decodePCM16LE("not base64!!"))
     }
 
     func testAnEmptyPayloadDecodesToNoSamples() {
-        XCTAssertEqual(HumePcmPlayer.decodePCM16LE("")?.count, 0)
+        XCTAssertEqual(LocalPcmPlayer.decodePCM16LE("")?.count, 0)
+    }
+
+    func testResamplesElevenLabs24kPCMForThe48kAudioEngine() {
+        let result = LocalPcmPlayer.resample([0, 1, 0], from: 24_000, to: 48_000)
+
+        XCTAssertEqual(result.count, 6)
+        XCTAssertEqual(result[0], 0, accuracy: 0.001)
+        XCTAssertEqual(result[1], 0.5, accuracy: 0.001)
+        XCTAssertEqual(result[2], 1, accuracy: 0.001)
+        XCTAssertEqual(result[3], 0.5, accuracy: 0.001)
     }
 }

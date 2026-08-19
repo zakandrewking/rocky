@@ -70,54 +70,37 @@ final class RealtimeSessionConfigTests: XCTestCase {
         )
     }
 
-    func testTheBakedCatalogContainsEverySelectablePersonality() throws {
-        XCTAssertEqual(Set(PersonalityCatalog.profiles.map(\.id)), ["rocky", "fathom"])
-        XCTAssertEqual(PersonalityCatalog.resolvedID("not-a-character"), PersonalityCatalog.defaultCharacterID)
+    func testTheBakedCatalogKeepsRockyAsItsOnlyFixedPersonality() throws {
+        let data = try XCTUnwrap(OpenAIRealtimeMinter.bakedSessionData())
+        let instructions = session(of: data)["instructions"] as? String
 
-        for profile in PersonalityCatalog.profiles {
-            XCTAssertNotNil(
-                OpenAIRealtimeMinter.bakedSessionData(for: profile.id),
-                "selector shows \(profile.id), but it has no session config"
-            )
-        }
+        XCTAssertTrue(instructions?.contains("You are Rocky") == true)
     }
 
     /// The configs the app actually ships are generated at build time, so a change to session.ts
     /// or the generate script that broke one character would otherwise only show up on a device.
-    func testEveryBakedConfigHasItsPersonaAndRobotTools() throws {
-        for profile in PersonalityCatalog.profiles {
-            let data = try XCTUnwrap(OpenAIRealtimeMinter.bakedSessionData(for: profile.id))
-            let baked = session(of: data)
+    func testCustomPersonalityReplacesOnlyThePersonaInsideTheSharedSession() throws {
+        let choice = PersonalityChoice(
+            id: "custom.test",
+            name: "Mara",
+            summary: "test",
+            customPrompt: "You are Mara, a careful cartographer.",
+            speech: .elevenLabs(voiceID: "voice", stability: 0.5, speed: 1)
+        )
+        let data = try XCTUnwrap(OpenAIRealtimeMinter.bakedSessionData(for: choice))
+        let baked = session(of: data)
+        let instructions = baked["instructions"] as! String
 
-            let instructions = baked["instructions"] as! String
-            XCTAssertTrue(instructions.contains("You are \(profile.name)"))
-            // Conduct is shared across characters; a build missing it would be a real safety gap.
-            XCTAssertTrue(instructions.contains("Never tell a child to smell"))
+        XCTAssertTrue(instructions.contains("You are Mara, a careful cartographer."))
+        XCTAssertFalse(instructions.contains("__ROCKY_CUSTOM_PERSONA__"))
+        XCTAssertTrue(instructions.contains("Never tell a child to smell"))
+        XCTAssertTrue(instructions.contains("BODY LANGUAGE IS SILENT"))
+        XCTAssertEqual(baked["output_modalities"] as? [String], ["text"])
 
-            // Five expressive controls reach the board directly. Interleaved performances need
-            // local Hume playback and therefore only belong to text-output characters.
-            let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
-            var expected = [
-                "stop_robot", "get_robot_state", "set_robot_mood", "robot_light", "robot_gesture",
-                "robot_routine",
-            ]
-            let modalities = baked["output_modalities"] as! [String]
-            if modalities == ["text"] {
-                expected += ["robot_performance", "resume_robot_performance"]
-            }
-            XCTAssertEqual(names, expected)
-
-            let routine = (baked["tools"] as! [[String: Any]]).first { $0["name"] as? String == "robot_routine" }
-            XCTAssertNotNil(routine)
-            XCTAssertTrue(instructions.contains("BODY LANGUAGE IS SILENT"))
-
-            // Whether the model speaks or only writes is the character's choice, and the app reads
-            // it back from here to decide whether to run a synthesiser at all.
-            XCTAssertTrue(modalities == ["audio"] || modalities == ["text"], "got \(modalities)")
-            XCTAssertEqual(
-                OpenAIRealtimeMinter.characterSpeaksThroughHume(characterID: profile.id),
-                modalities == ["text"]
-            )
-        }
+        let names = (baked["tools"] as! [[String: Any]]).map { $0["name"] as! String }
+        XCTAssertEqual(names, [
+            "stop_robot", "get_robot_state", "set_robot_mood", "robot_light", "robot_gesture",
+            "robot_routine", "robot_performance", "resume_robot_performance",
+        ])
     }
 }

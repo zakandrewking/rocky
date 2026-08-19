@@ -99,18 +99,17 @@ final class RealtimeVoiceSession: ObservableObject {
     private var behavior: BehaviorMonitor?
     /// Fixed for the lifetime of one Realtime conversation. Changing personality starts a new
     /// session rather than mutating a character's voice and memory halfway through a thought.
-    private var activeCharacterID = PersonalityCatalog.defaultCharacterID
+    private var activePersonality = PersonalityCatalog.rockyChoice
     /// Capability currently advertised to Realtime; the physical link may change while paused.
     private var sessionHasBody: Bool?
     private var worldTicker: Task<Void, Never>?
 
-    /// The synthesiser, present only when the active character actually wants one. Characters
-    /// voiced by the Realtime model itself speak over the WebRTC track and never touch this --
-    /// one network hop instead of two, which is most of why it sounds quicker.
-    private var hume: HumeSpeech?
-    private var humePlayer: HumePcmPlayer?
+    /// The selected personality's local speech stream. Rocky uses Hume; custom personalities use
+    /// the ElevenLabs voice chosen in their editor.
+    private var speechSynthesizer: (any LocalSpeechSynthesizing)?
+    private var speechPlayer: LocalPcmPlayer?
     private var storySounds: StorySoundEffects?
-    private var humeTextBuffer = ""
+    private var speechTextBuffer = ""
     /// The quiet alien chatter under her voice.
     private var eridian: EridianAudio?
 
@@ -127,13 +126,13 @@ final class RealtimeVoiceSession: ObservableObject {
     private var firstAudioAt: Date?
     private var responseText = ""
     /// The exact text currently being synthesized. Usually this is the response text; during an
-    /// interleaved performance it is only the current say step, so a Hume retry cannot accidentally
+    /// interleaved performance it is only the current say step, so a speech retry cannot accidentally
     /// speak the entire performance at once and skip its movement cues.
-    private var humeUtteranceText = ""
+    private var speechUtteranceText = ""
     private var firstAudioWatchdog: Task<Void, Never>?
     private var turnWatchdog: Task<Void, Never>?
     private var retriedThisResponse = false
-    private var humeSawLastChunk = false
+    private var speechSawLastChunk = false
     private var pauseTimeout: Task<Void, Never>?
     private var isPaused = false
 
@@ -147,7 +146,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private var activeResponseId: String?
     /// The identity of the utterance people can still hear. Unlike `activeResponseId`, this stays
-    /// set after Realtime finishes generating text and until local Hume playback actually drains.
+    /// set after Realtime finishes generating text and until local speech playback actually drains.
     private var utteranceResponseId: String?
     /// Set the instant `response.create` goes out, cleared when the response is created or the
     /// attempt fails. The id only arrives on `response.created`, which is at least a round trip
@@ -189,7 +188,7 @@ final class RealtimeVoiceSession: ObservableObject {
     private var performanceMovementFallback: Task<Void, Never>?
     private var performancePauseTask: Task<Void, Never>?
 
-    /// How long to wait for Hume's first audio before assuming the request was lost.
+    /// How long to wait for a provider's first audio before assuming the request was lost.
     private static let firstAudioTimeout: Duration = .milliseconds(2500)
 
     /// When the user tapped the orb, so the whole startup sequence can be timed end to end --
@@ -208,13 +207,26 @@ final class RealtimeVoiceSession: ObservableObject {
     /// That is a supported, ordinary state -- the app is then exactly what apps/desktop is, a
     /// voice-only Rocky -- so the body tools are dropped from the session rather than left to fail
     /// (see OpenAIRealtimeMinter).
-    func connect(behavior: BehaviorMonitor?, characterID: String) async {
+    func connect(behavior: BehaviorMonitor?, personality: PersonalityChoice) async {
         self.behavior = behavior
         guard state == .disconnected || isFailed else { return }
-        activeCharacterID = PersonalityCatalog.resolvedID(characterID)
-        hume = OpenAIRealtimeMinter.characterSpeaksThroughHume(characterID: activeCharacterID)
-            ? HumeSpeech()
-            : nil
+        activePersonality = personality
+        switch personality.speech {
+        case .hume:
+            speechSynthesizer = HumeSpeech()
+        case .elevenLabs(let voiceID, let stability, let speed):
+            speechSynthesizer = ElevenLabsSpeech(
+                voiceID: voiceID,
+                stability: stability,
+                speed: speed
+            )
+        }
+        guard speechSynthesizer != nil else {
+            let provider = personality.isRocky ? "Hume" : "ElevenLabs"
+            state = .failed("\(provider) credentials are missing from this build; regenerate and reinstall the app")
+            log("connect stopped: \(provider) voice unavailable")
+            return
+        }
         state = .connecting
         wakeBodyIfStill(reason: "voice start")
         // A reconnect gets a brand-new WebRTC track, which starts enabled.
@@ -232,11 +244,11 @@ final class RealtimeVoiceSession: ObservableObject {
             let hasBody = behavior?.connected == true
             let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(
                 hasBody: hasBody,
-                characterID: activeCharacterID
+                personality: activePersonality
             )
             sessionHasBody = hasBody
             log(
-                "minted secret in \(Self.ms(since: connectStart)) (body: \(hasBody ? "yes" : "none"), voice: \(hume == nil ? "openai" : "hume"))"
+                "minted secret in \(Self.ms(since: connectStart)) (body: \(hasBody ? "yes" : "none"), voice: \(speechSynthesizer?.providerName ?? "unavailable"))"
             )
             let negotiateStart = Date()
 
@@ -421,7 +433,7 @@ final class RealtimeVoiceSession: ObservableObject {
             client.send(OutputAudioBufferClearEvent())
         }
         stopLocalAudio()
-        hume?.cancel()
+        speechSynthesizer?.cancel()
         if generatingResponseId != nil, let itemId = currentAssistantItemId, let started = audioStartedAt {
             // Approximate, and honestly so: on WebRTC the exact playback position is not
             // reported, so this is how long audio had been arriving. Erring long would delete
@@ -437,7 +449,7 @@ final class RealtimeVoiceSession: ObservableObject {
         finishResponse(reason: "interrupted by \(event.id)")
 
         let reaction = (Self.immediateReactionPrompt(to: event), "interrupted by \(event.id)")
-        // When generation already ended, only local Hume playback was interrupted. Its queue is
+        // When generation already ended, only local speech playback was interrupted. Its queue is
         // empty now, so the reaction can start immediately. A live server response must first
         // acknowledge cancellation or response.create may overtake response.cancel.
         guard let generatingResponseId else {
@@ -519,7 +531,7 @@ final class RealtimeVoiceSession: ObservableObject {
         }
         suspendActivePerformance(notifyVoice: false, reason: "voice paused")
         stopLocalAudio()
-        hume?.cancel()
+        speechSynthesizer?.cancel()
         // Unconditionally, not only mid-response: generation may have finished while audio is
         // still arriving, and cancelling a response that has already ended is harmless.
         client.send(ResponseCancelEvent(responseId: activeResponseId))
@@ -572,7 +584,7 @@ final class RealtimeVoiceSession: ObservableObject {
         guard state == .connected || state == .paused, sessionHasBody != hasBody,
             let update = OpenAIRealtimeMinter.bodySessionUpdate(
                 hasBody: hasBody,
-                characterID: activeCharacterID
+                personality: activePersonality
             )
         else { return }
         guard client.send(jsonObject: update) else {
@@ -610,12 +622,12 @@ final class RealtimeVoiceSession: ObservableObject {
         suspendedPerformance = nil
         cancelPerformanceTiming()
         stopLocalAudio()
-        hume?.cancel()
-        hume = nil
-        humePlayer = nil
+        speechSynthesizer?.cancel()
+        speechSynthesizer = nil
+        speechPlayer = nil
         storySounds = nil
         eridian = nil
-        humeTextBuffer = ""
+        speechTextBuffer = ""
         sessionHasBody = nil
         firstAudioWatchdog?.cancel()
         turnWatchdog?.cancel()
@@ -651,33 +663,33 @@ final class RealtimeVoiceSession: ObservableObject {
     // MARK: - Rocky's voice and her alien chatter
 
     private func startLocalAudio() {
-        // The Eridian chord layer belongs to Rocky's Hume voice, not to Realtime-voiced
-        // characters such as Fathom.
-        eridian = hume == nil ? nil : EridianAudio()
+        // The alien chord layer is part of Rocky's fixed voice, not a custom personality.
+        eridian = activePersonality.isRocky ? EridianAudio() : nil
         let effects = StorySoundEffects()
         storySounds = effects
         effects.onFinished = { [weak self] in
             guard self?.activePerformance != nil else { return }
             self?.advancePerformance()
         }
-        guard let hume else { return }
-        let player = HumePcmPlayer()
-        humePlayer = player
-        hume.onAudio = { [weak self] base64, isLastChunk in
+        guard let speechSynthesizer else { return }
+        let provider = speechSynthesizer.providerName
+        let player = LocalPcmPlayer(sourceSampleRate: speechSynthesizer.sampleRate)
+        speechPlayer = player
+        speechSynthesizer.onAudio = { [weak self] base64, isLastChunk in
             guard let self else { return }
             if self.firstAudioAt == nil, let started = self.responseStartedAt {
                 self.firstAudioAt = Date()
                 self.audioStartedAt = Date()
-                self.log("hume first audio after \(Self.ms(since: started)) (text→voice latency)")
+                self.log("\(provider) first audio after \(Self.ms(since: started)) (text→voice latency)")
             }
             if isLastChunk {
-                self.humeSawLastChunk = true
-                self.log("hume last chunk received (\(self.humePlayer.map { $0.chunksThisResponse + 1 } ?? 0) chunks this turn)")
+                self.speechSawLastChunk = true
+                self.log("\(provider) last chunk received (\(self.speechPlayer.map { $0.chunksThisResponse + 1 } ?? 0) chunks this turn)")
             }
-            self.humePlayer?.push(base64: base64, isLastChunk: isLastChunk)
+            self.speechPlayer?.push(base64: base64, isLastChunk: isLastChunk)
         }
-        hume.onError = { [weak self] message in
-            self?.log("hume error: \(message)")
+        speechSynthesizer.onError = { [weak self] message in
+            self?.log("\(provider) error: \(message)")
         }
         player.onSpeakingChange = { [weak self] speaking in
             self?.handleSpeakingChange(speaking)
@@ -686,7 +698,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func stopLocalAudio() {
         eridian?.stop()
-        humePlayer?.stop()
+        speechPlayer?.stop()
         storySounds?.stop()
     }
 
@@ -699,14 +711,14 @@ final class RealtimeVoiceSession: ObservableObject {
         // the person was trying to interrupt it.
         suspendActivePerformance(notifyVoice: true, reason: "friend interrupted")
         // Stop local output before reopening the WebRTC microphone. Reversing these two steps
-        // creates a small but repeatable window in which Hume's last queued audio is streamed as
+        // creates a small but repeatable window in which the last queued audio is streamed as
         // if it were the friend's interruption.
         stopLocalAudio()
-        hume?.cancel()
+        speechSynthesizer?.cancel()
         if responseStartedAt != nil { finishResponse(reason: "barge-in") }
     }
 
-    /// Pause is the only reason the microphone track closes. Hume and every local effect now play
+    /// Pause is the only reason the microphone track closes. Speech and every local effect play
     /// through WebRTC's injected voice-processing device, so its AEC removes Rocky while keeping
     /// real nearby speech available to semantic VAD throughout her response.
     private func refreshMicrophone(_ reason: String) {
@@ -721,9 +733,7 @@ final class RealtimeVoiceSession: ObservableObject {
         !isPaused
     }
 
-    /// Rocky's voice and Fathom's arrive by completely different routes, so "she started
-    /// speaking" has to be detected differently: Hume reports playback, while the Realtime
-    /// model's own speech is only visible here as its transcript arriving.
+    /// Local speech reports playback independently from the Realtime text stream.
     private func noteRockyStartedSpeaking() {
         guard !speaking else { return }
         speaking = true
@@ -741,10 +751,10 @@ final class RealtimeVoiceSession: ObservableObject {
             return
         }
         self.speaking = false
-        // Playback draining is not the same as Rocky being finished: if Hume is still streaming,
-        // the queue can empty briefly between chunks. Wait for the chunk Hume marked last before
+        // Playback draining is not the same as the personality being finished: if speech is still
+        // streaming, the queue can empty briefly between chunks. Wait for its final chunk before
         // ending the utterance; the microphone itself stays continuously open.
-        guard humeSawLastChunk else {
+        guard speechSawLastChunk else {
             log("playback drained mid-response, holding the turn open for more audio")
             return
         }
@@ -758,19 +768,22 @@ final class RealtimeVoiceSession: ObservableObject {
         finishResponse(reason: "playback ended")
     }
 
-    /// Feeds Rocky's streaming words to Hume a sensible mouthful at a time (see SpeechChunks).
-    private func sendToHume(_ delta: String, flush: Bool = false) {
-        guard let hume else { return }
-        let split = SpeechChunks.split(buffer: humeTextBuffer, delta: delta, flush: flush)
-        humeTextBuffer = split.remainder
+    /// Feeds streaming words to the selected voice a sensible mouthful at a time.
+    private func sendToSpeech(_ delta: String, flush: Bool = false) {
+        guard let speechSynthesizer else { return }
+        let split = SpeechChunks.split(buffer: speechTextBuffer, delta: delta, flush: flush)
+        speechTextBuffer = split.remainder
         for (index, chunk) in split.complete.enumerated() {
             // Only the genuinely final chunk flushes. `remainder` is the same for every iteration,
-            // so testing it alone marked *all* of them final, and Hume answered each with its own
+            // so testing it alone marked *all* of them final, and the provider answered each with
             // end-of-stream -- several "last chunks" per turn, and a turn that looked finished
             // while more audio was still coming.
             let isFinal = flush && split.remainder.isEmpty && index == split.complete.count - 1
-            log("hume ← \(chunk.count) chars\(isFinal ? " (final)" : "")")
-            hume.speak(chunk, flush: isFinal)
+            log("\(speechSynthesizer.providerName) ← \(chunk.count) chars\(isFinal ? " (final)" : "")")
+            speechSynthesizer.speak(chunk, flush: isFinal)
+        }
+        if flush && split.complete.isEmpty {
+            speechSynthesizer.speak("", flush: true)
         }
     }
 
@@ -788,11 +801,11 @@ final class RealtimeVoiceSession: ObservableObject {
     // Ported from apps/desktop. Both exist because the failure that matters here is silence, and
     // silence is indistinguishable from thinking until you put a clock on it.
 
-    /// Hume was sent text but no audio came back. Usually the socket died quietly; one retry on a
+    /// The voice provider was sent text but no audio came back. Usually its socket died quietly; a
     /// fresh connection recovers it.
     private func armFirstAudioWatchdog() {
         firstAudioWatchdog?.cancel()
-        guard hume != nil, !humeUtteranceText.isEmpty else { return }
+        guard speechSynthesizer != nil, !speechUtteranceText.isEmpty else { return }
         firstAudioWatchdog = Task { [weak self] in
             try? await Task.sleep(for: Self.firstAudioTimeout)
             guard !Task.isCancelled else { return }
@@ -801,22 +814,22 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     private func handleMissingFirstAudio() {
-        guard firstAudioAt == nil, !humeUtteranceText.isEmpty else { return }
+        guard firstAudioAt == nil, !speechUtteranceText.isEmpty else { return }
         guard !retriedThisResponse else {
-            log("hume produced no audio after retry, giving up on this turn")
+            log("\(speechSynthesizer?.providerName ?? "voice") produced no audio after retry, giving up on this turn")
             finishResponse(reason: "no audio after retry")
             return
         }
         retriedThisResponse = true
-        log("hume produced no audio in 2.5s, retrying on a fresh socket")
+        log("\(speechSynthesizer?.providerName ?? "voice") produced no audio in 2.5s, retrying on a fresh socket")
         // Cancel first: the original request may be slow rather than lost, and would otherwise
         // deliver its audio after the retry's, speaking the same line twice.
-        hume?.cancel()
-        humePlayer?.stop()
-        humeTextBuffer = ""
-        humeSawLastChunk = false
-        humePlayer?.beginResponse()
-        sendToHume(humeUtteranceText, flush: true)
+        speechSynthesizer?.cancel()
+        speechPlayer?.stop()
+        speechTextBuffer = ""
+        speechSawLastChunk = false
+        speechPlayer?.beginResponse()
+        sendToSpeech(speechUtteranceText, flush: true)
         armFirstAudioWatchdog()
     }
 
@@ -824,16 +837,13 @@ final class RealtimeVoiceSession: ObservableObject {
     /// have finished, and nothing is actually queued, release the turn so the mic reopens.
     private func armTurnWatchdog() {
         turnWatchdog?.cancel()
-        // Only the Hume path can get stuck: it is the one that gates the microphone and plays
-        // audio this app has to track itself. When the model does its own speaking, response.done
-        // always arrives and ends the turn, so a watchdog there would only ever fire early on a
-        // long reply and cut it short.
-        guard hume != nil else { return }
-        let words = humeUtteranceText.split(whereSeparator: \.isWhitespace).count
+        // Local audio is the path this app has to track itself, so it gets an anti-stuck watchdog.
+        guard speechSynthesizer != nil else { return }
+        let words = speechUtteranceText.split(whereSeparator: \.isWhitespace).count
         // A performance's entire script arrives inside function arguments, so it can have no
         // output_text while the model is still validly generating. Give that generation the full
         // ceiling; once a say step begins, the ordinary word-based playback budget takes over.
-        let budget = humeUtteranceText.isEmpty
+        let budget = speechUtteranceText.isEmpty
             ? 12_000
             : min(12_000, max(4_000, 2_000 + words * 420))
         turnWatchdog = Task { [weak self] in
@@ -845,7 +855,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func handleTurnOverrun(budget: Int) {
         guard responseStartedAt != nil else { return }
-        let queued = humePlayer?.millisecondsUntilPlaybackEnd ?? 0
+        let queued = speechPlayer?.millisecondsUntilPlaybackEnd ?? 0
         // Genuinely still talking: extend rather than cut real audio off mid-word.
         if queued > 750 {
             let grace = min(8_000, Int(queued) + 1_000)
@@ -875,12 +885,12 @@ final class RealtimeVoiceSession: ObservableObject {
         firstAudioAt = nil
         audioStartedAt = nil
         responseText = ""
-        humeUtteranceText = ""
+        speechUtteranceText = ""
         utteranceSoFar = ""
         currentAssistantItemId = nil
-        humeTextBuffer = ""
+        speechTextBuffer = ""
         retriedThisResponse = false
-        humeSawLastChunk = false
+        speechSawLastChunk = false
         queuedPerformance = nil
         activePerformance = nil
         refreshMicrophone(reason)
@@ -945,9 +955,9 @@ final class RealtimeVoiceSession: ObservableObject {
             cancelWatchdog?.cancel()
             responseStartedAt = Date()
             retriedThisResponse = false
-            humeSawLastChunk = false
+            speechSawLastChunk = false
             responseText = ""
-            humeUtteranceText = ""
+            speechUtteranceText = ""
             utteranceSoFar = ""
             currentAssistantItemId = nil
             audioStartedAt = nil
@@ -959,7 +969,7 @@ final class RealtimeVoiceSession: ObservableObject {
             } else {
                 log("response started")
             }
-            humePlayer?.beginResponse()
+            speechPlayer?.beginResponse()
             eridian?.playThinkingPrelude()
             // Armed here so a response that never produces text cannot hold the turn forever.
             armTurnWatchdog()
@@ -972,7 +982,7 @@ final class RealtimeVoiceSession: ObservableObject {
                 currentAssistantItemId = id
             }
 
-        // Hume path: OpenAI streams words, Hume speaks them, and the chord layer follows the
+        // Local speech path: OpenAI streams words, the selected provider speaks them, and Rocky's
         // same text.
         case "response.output_text.delta":
             if let delta = event.delta {
@@ -1038,18 +1048,18 @@ final class RealtimeVoiceSession: ObservableObject {
                 cancelWatchdog?.cancel()
                 cancelWatchdog = nil
             }
-            // With Hume, the turn normally ends when playback does, not when the text does --
+            // With local speech, the turn ends when playback does, not when the text does --
             // unless there was no text, in which case nothing will ever play.
-            if hume == nil {
+            if speechSynthesizer == nil {
                 speaking = false
                 finishResponse(reason: "response done")
             } else if toolCalls.isEmpty, !responseText.isEmpty {
-                // Hold Hume text until the response shape is known. The model can emit a spoken
+                // Hold speech text until the response shape is known. The model can emit a spoken
                 // preamble before a function item; streaming that immediately made movement tools
                 // audible as “I will now...” announcements before we knew a tool was coming.
-                humeUtteranceText = responseText
+                speechUtteranceText = responseText
                 log("said: \(responseText)")
-                sendToHume(responseText, flush: true)
+                sendToSpeech(responseText, flush: true)
                 armFirstAudioWatchdog()
                 armTurnWatchdog()
             } else if !toolCalls.isEmpty, !responseText.isEmpty {
@@ -1225,7 +1235,7 @@ final class RealtimeVoiceSession: ObservableObject {
             return Self.decided(action)
 
         case "robot_performance":
-            guard hume != nil else {
+            guard speechSynthesizer != nil else {
                 return Self.encodeResult([
                     "ok": false, "problem": "this voice cannot play an interleaved performance"
                 ])
@@ -1350,8 +1360,8 @@ final class RealtimeVoiceSession: ObservableObject {
     private func advancePerformance() {
         firstAudioWatchdog?.cancel()
         turnWatchdog?.cancel()
-        humeTextBuffer = ""
-        humeSawLastChunk = false
+        speechTextBuffer = ""
+        speechSawLastChunk = false
 
         if var performance = activePerformance {
             performance.currentStepIndex = nil
@@ -1394,12 +1404,12 @@ final class RealtimeVoiceSession: ObservableObject {
                 performance.currentStepIndex = stepIndex
                 activePerformance = performance
                 firstAudioAt = nil
-                humeUtteranceText = text
-                humePlayer?.beginResponse()
+                speechUtteranceText = text
+                speechPlayer?.beginResponse()
                 eridian?.pushTranscriptDelta(text)
                 eridian?.flushTranscript()
                 log("performance said: \(text)")
-                sendToHume(text, flush: true)
+                sendToSpeech(text, flush: true)
                 armFirstAudioWatchdog()
                 armTurnWatchdog()
                 return

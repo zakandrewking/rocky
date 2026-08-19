@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { FATHOM, ROCKY } from "./characters/index.ts";
+import { ROCKY, type Character } from "./characters/index.ts";
 import { createDeviceSessionConfig, DEVICE_ADDENDUM, mintDeviceSession, type FetchLike } from "./session.ts";
 
 /** Records what was sent upstream, so tests can assert on headers and body. */
@@ -22,23 +22,17 @@ interface SessionConfig {
 }
 
 describe("createDeviceSessionConfig", () => {
-  it("speaks as the character it is given", () => {
+  it("speaks as Rocky", () => {
     const rocky = createDeviceSessionConfig({ character: ROCKY }) as SessionConfig;
-    const fathom = createDeviceSessionConfig({ character: FATHOM }) as SessionConfig;
 
     expect(rocky.instructions).toContain("You are Rocky, a brilliant Eridian engineer");
-    expect(fathom.instructions).toContain("You are Fathom, a lantern-keeper");
-    expect(fathom.instructions).not.toContain("You are Rocky");
   });
 
-  it("gives every character the same conduct", () => {
-    for (const character of [ROCKY, FATHOM]) {
-      const config = createDeviceSessionConfig({ character }) as SessionConfig;
-      // Safety and tool rules are shared, so a new character can never quietly ship without them.
-      expect(config.instructions).toContain("Never tell a child to smell, taste, touch, heat, or mix");
-      expect(config.instructions).toContain("Call remember_family_fact silently");
-      expect(config.instructions).toContain("Output plain spoken text only");
-    }
+  it("keeps shared conduct in Rocky's generated session", () => {
+    const config = createDeviceSessionConfig({ character: ROCKY }) as SessionConfig;
+    expect(config.instructions).toContain("Never tell a child to smell, taste, touch, heat, or mix");
+    expect(config.instructions).toContain("Call remember_family_fact silently");
+    expect(config.instructions).toContain("Output plain spoken text only");
   });
 
   it("tells the persona what the body cannot do", () => {
@@ -47,11 +41,20 @@ describe("createDeviceSessionConfig", () => {
     expect(config.instructions).toContain("Never offer to make a spreadsheet");
   });
 
-  it("lets the model speak for a character with its own Realtime voice", () => {
-    const config = createDeviceSessionConfig({ character: FATHOM }) as SessionConfig;
-    expect(config.output_modalities).toEqual(["audio"]);
-    expect(config.audio.output.voice).toBe("marin");
+  it("supports client-synthesized custom character templates", () => {
+    const custom: Character = {
+      id: "custom-template",
+      name: "Custom",
+      summary: "Runtime personality template",
+      voice: { provider: "local" },
+      cadence: ROCKY.cadence,
+      persona: "__CUSTOM_PERSONA__",
+    };
+    const config = createDeviceSessionConfig({ character: custom }) as SessionConfig;
+    expect(config.output_modalities).toEqual(["text"]);
     expect(config.audio.input.turn_detection.interrupt_response).toBe(true);
+    expect(config.instructions).toContain("__CUSTOM_PERSONA__");
+    expect(config.instructions).toContain("Never tell a child to smell");
   });
 
   it("asks for text when the character is voiced by Hume", () => {

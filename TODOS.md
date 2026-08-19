@@ -200,11 +200,16 @@ loud startled me") and control travels as Rocky's own *intentions*, never as hum
 Once chosen, every physical expression takes over its automatic counterpart immediately. Stop is
 the one human imperative.
 
-- [x] Let the person choose who is speaking on iOS. The main-screen personality pill opens a
-  persisted Rocky/Fathom selector; the build now bundles every registry entry from
-  `services/device-api/src/characters/` instead of baking only one prompt. Selection controls the
-  full generated session and voice path, and a paused conversation ends before a different
-  character starts so identity and memory never change mid-session.
+- [x] Let the person choose who is speaking on iOS. The main-screen personality pill keeps Rocky
+  as the fixed default with his Hume voice, and persists user-created profiles with editable
+  warmth, energy, humor, curiosity, talkativeness, voice consistency, and speed. A profile can
+  choose any voice in the configured ElevenLabs account or design three new candidates from
+  presentation/accent/age/pitch/texture/expression controls, audition them, and save the chosen
+  voice. OpenAI generates a playful one-word name and short identity paragraph from the current
+  personality sliders; acting prompts, voice names, and voice-design descriptions are generated
+  too, so the flow contains no text input. Custom persona text is inserted into a
+  generated session template that retains the same conduct and body rules. A paused conversation
+  ends before a different personality starts so identity and memory never change mid-session.
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
   stream on 8768, UDP beacon under a different service name so the motion-agent discovery ignores
   it.

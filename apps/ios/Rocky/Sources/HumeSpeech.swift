@@ -7,10 +7,13 @@ import Foundation
 /// One socket per conversation, opened lazily and reused. There is no cancel message in the
 /// protocol: closing the socket *is* the cancel, and the next `speak` transparently reconnects.
 @MainActor
-final class HumeSpeech {
+final class HumeSpeech: LocalSpeechSynthesizing {
     /// Raw PCM from Hume: signed 16-bit little-endian, mono, always this rate. Hume does not
     /// report it, so it is fixed here exactly as the desktop client fixes it.
     static let sampleRate = 48_000.0
+
+    let providerName = "hume"
+    var sampleRate: Double { Self.sampleRate }
 
     var onAudio: ((_ base64: String, _ isLastChunk: Bool) -> Void)?
     var onError: ((String) -> Void)?

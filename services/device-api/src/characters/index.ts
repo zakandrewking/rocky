@@ -1,4 +1,3 @@
-import { FATHOM } from "./fathom.ts";
 import { ROCKY } from "./rocky.ts";
 import { SHARED_BEHAVIOUR } from "./shared.ts";
 import type { Character } from "./types.ts";
@@ -6,9 +5,8 @@ import type { Character } from "./types.ts";
 export type { Character, CharacterCadence, CharacterVoice } from "./types.ts";
 export { SHARED_BEHAVIOUR } from "./shared.ts";
 export { ROCKY } from "./rocky.ts";
-export { FATHOM } from "./fathom.ts";
 
-export const CHARACTERS: readonly Character[] = [ROCKY, FATHOM];
+export const CHARACTERS: readonly Character[] = [ROCKY];
 
 export const DEFAULT_CHARACTER_ID = ROCKY.id;
 

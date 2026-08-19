@@ -252,11 +252,12 @@ making an API call. The command prints a short summary and writes the detailed i
 `local-data/evals/latest-transcript-review.md`, which makes prompt changes easy to compare against
 real family interactions.
 
-Each character's cadence knobs live with its source in `services/device-api/src/characters/`:
+Rocky's fixed cadence knobs live with his source in `services/device-api/src/characters/rocky.ts`:
 normal reply length, sentence cap, greeting length, question cap, and emphasis repetition. Tune
-those values first when listening feedback is about pace or verbosity; use the longer persona
-text in the same character file for behavioral changes. The deprecated desktop app keeps its own
-frozen copy and is not the source of truth.
+those values first when listening feedback is about Rocky's pace or verbosity. Additional iOS
+personalities and their ElevenLabs voices are created and edited on the phone; OpenAI turns their
+slider settings into a playful name and compact character paragraph, with no text-entry step. The deprecated
+desktop app keeps its own frozen copy and is not the source of truth.
 
 ### Experimental cloned voice
 

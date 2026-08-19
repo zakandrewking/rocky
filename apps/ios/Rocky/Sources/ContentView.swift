@@ -32,6 +32,7 @@ enum RobotSearchStatus {
 /// connected automatically (RobotDiscovery), the same way desktop's own plumbing is invisible.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
+    @StateObject private var personalityStore = PersonalityStore()
     @AppStorage(PersonalityCatalog.selectionKey) private var selectedCharacterID = PersonalityCatalog.defaultCharacterID
     /// The one robot integration: finds the board, watches what it does, and passes Rocky's
     /// intentions back. There is one payload (apps/robot/device/rocky_agent.py) and so one
@@ -80,7 +81,7 @@ struct ContentView: View {
         }
         .preferredColorScheme(.dark)
         .onAppear {
-            selectedCharacterID = PersonalityCatalog.resolvedID(selectedCharacterID)
+            selectedCharacterID = personalityStore.resolvedID(selectedCharacterID)
             behavior.start()
         }
         .onChange(of: behavior.connected) { _, found in
@@ -88,6 +89,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showPersonalitySelector) {
             PersonalitySelectorView(
+                store: personalityStore,
                 selection: $selectedCharacterID,
                 canChange: canChangePersonality,
                 onChange: personalityChanged
@@ -157,8 +159,8 @@ struct ContentView: View {
 
     // MARK: - Personality
 
-    private var selectedPersonality: PersonalityProfile? {
-        PersonalityCatalog.profile(for: selectedCharacterID)
+    private var selectedPersonality: PersonalityChoice {
+        personalityStore.choice(for: selectedCharacterID)
     }
 
     private var canChangePersonality: Bool {
@@ -177,7 +179,7 @@ struct ContentView: View {
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: "sparkles")
-                Text(selectedPersonality?.name ?? "Personality")
+                Text(selectedPersonality.name)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .bold))
             }
@@ -195,7 +197,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .disabled(!canChangePersonality)
-        .accessibilityLabel("Choose personality. Current personality: \(selectedPersonality?.name ?? "unknown")")
+        .accessibilityLabel("Choose personality. Current personality: \(selectedPersonality.name)")
         .accessibilityHint(canChangePersonality ? "Opens the personality selector" : "Pause the conversation first")
     }
 
@@ -205,7 +207,7 @@ struct ContentView: View {
             lastStopAt = Date()
             appendLog("voice: ended paused conversation to switch personality")
         }
-        let name = PersonalityCatalog.profile(for: characterID)?.name ?? characterID
+        let name = personalityStore.choice(for: characterID).name
         appendLog("personality: \(name)")
     }
 
@@ -245,7 +247,7 @@ struct ContentView: View {
         case .paused: "paused"
         case .failed: "failed"
         }
-        let personality = selectedPersonality?.id ?? "?"
+        let personality = selectedPersonality.id
         return "p:\(personality) \(bodyDescription) v:\(voice)\(hasBakedOpenAIKey ? "" : " k:missing")"
     }
 
@@ -403,7 +405,7 @@ struct ContentView: View {
         appendLog("voice: connecting…")
         // No robot is fine and expected -- Rocky is then exactly the desktop app: a full
         // conversation, just without a body.
-        await voiceSession.connect(behavior: behavior, characterID: selectedCharacterID)
+        await voiceSession.connect(behavior: behavior, personality: selectedPersonality)
         if case .failed(let message) = voiceSession.state {
             appendLog("voice: connect failed: \(message)")
         } else {

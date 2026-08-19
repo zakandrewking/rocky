@@ -41,6 +41,8 @@ targets:
         # Rocky's actual voice (Hume Octave). Both empty means fall back to OpenAI's own voice.
         RockyHumeKey: "${ROCKY_HUME_KEY_IOS}"
         RockyHumeVoiceId: "${ROCKY_HUME_VOICE_ID_IOS}"
+        # Runtime-created personalities use ElevenLabs Flash; Rocky always keeps Hume.
+        RockyElevenLabsKey: "${ROCKY_ELEVENLABS_KEY_IOS}"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: family.rocky.ios

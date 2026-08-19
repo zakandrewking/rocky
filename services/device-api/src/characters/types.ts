@@ -27,7 +27,9 @@ export interface CharacterCadence {
  */
 export type CharacterVoice =
   | { readonly provider: "openai"; readonly name: string }
-  | { readonly provider: "hume" };
+  | { readonly provider: "hume" }
+  /** Text returned to a client-owned synthesizer such as ElevenLabs. */
+  | { readonly provider: "local" };
 
 export interface Character {
   /** Stable id; ROCKY_CHARACTER selects by this. */

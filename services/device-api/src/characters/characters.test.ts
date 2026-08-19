@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { activeCharacter, buildInstructions, CHARACTERS, characterById, FATHOM, ROCKY } from "./index.ts";
+import { activeCharacter, buildInstructions, CHARACTERS, characterById, ROCKY } from "./index.ts";
 
 describe("the character registry", () => {
   it("gives every character a distinct id", () => {
@@ -8,14 +8,13 @@ describe("the character registry", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("selects by ROCKY_CHARACTER", () => {
-    expect(activeCharacter({ ROCKY_CHARACTER: "fathom" })).toBe(FATHOM);
-    expect(activeCharacter({ ROCKY_CHARACTER: "  Fathom " })).toBe(FATHOM);
+  it("keeps Rocky as the default and only built-in character", () => {
+    expect(CHARACTERS).toEqual([ROCKY]);
     expect(activeCharacter({})).toBe(ROCKY);
   });
 
   it("falls back rather than losing its voice over a typo", () => {
-    expect(activeCharacter({ ROCKY_CHARACTER: "fathomm" })).toBe(ROCKY);
+    expect(activeCharacter({ ROCKY_CHARACTER: "removed-character" })).toBe(ROCKY);
     expect(characterById("nobody")).toBeUndefined();
   });
 });
@@ -51,8 +50,8 @@ describe("every character", () => {
 
 describe("buildInstructions", () => {
   it("puts conduct after personality so it wins", () => {
-    const instructions = buildInstructions(FATHOM);
-    expect(instructions.indexOf("You are Fathom")).toBeLessThan(instructions.indexOf("SPEECH AND CONDUCT"));
+    const instructions = buildInstructions(ROCKY);
+    expect(instructions.indexOf("You are Rocky")).toBeLessThan(instructions.indexOf("SPEECH AND CONDUCT"));
   });
 
   it("appends extra sections last", () => {
@@ -62,21 +61,6 @@ describe("buildInstructions", () => {
 
   it("drops empty extras rather than leaving blank gaps", () => {
     expect(buildInstructions(ROCKY, ["  "])).toBe(buildInstructions(ROCKY));
-  });
-});
-
-describe("Fathom", () => {
-  it("is voiced by the Realtime model rather than a second service", () => {
-    expect(FATHOM.voice).toEqual({ provider: "openai", name: "marin" });
-  });
-
-  it("is built as Rocky's opposite, not a reskin", () => {
-    // Rocky is broken-grammar and shouty-happy; Fathom is grammatical and gets quieter. If these
-    // ever converge, the character system is decoration rather than structure.
-    expect(ROCKY.persona).toContain("Never use contractions");
-    expect(FATHOM.persona).toContain("You may use\n  contractions");
-    expect(FATHOM.persona).toContain("Never use an exclamation mark");
-    expect(FATHOM.cadence.extremeEmphasisRepeats).not.toBe(ROCKY.cadence.extremeEmphasisRepeats);
   });
 });
 

@@ -2,7 +2,7 @@
 # Wraps `xcodegen generate` with the two things plain xcodegen can't do:
 #   1. Bake secrets from the repo root .env into the built app's Info.plist (see project.yml's
 #      Rocky* keys) so the phone needs no laptop server at runtime: OPENAI_API_KEY to mint its own
-#      ephemeral Realtime secret, and the Hume credentials for Rocky's actual voice. Personal-use
+#      ephemeral Realtime secret and generate custom identities, plus the Hume credentials for Rocky's actual voice. Personal-use
 #      tradeoff: unlike services/device-api's whole reason for existing, these keys are not scoped
 #      or revocable without rotating them, so this only belongs on a phone you control.
 #   2. Regenerate Rocky/Resources/RealtimeSessionConfig.json from the character registry and
@@ -33,13 +33,15 @@ read_env() {
 export ROCKY_OPENAI_KEY_IOS="$(read_env OPENAI_API_KEY)"
 export ROCKY_HUME_KEY_IOS="$(read_env HUME_API_KEY)"
 export ROCKY_HUME_VOICE_ID_IOS="$(read_env HUME_VOICE_ID)"
+export ROCKY_ELEVENLABS_KEY_IOS="$(read_env ELEVENLABS_API_KEY)"
 
-# Passed through to the dump script below. ROCKY_CHARACTER chooses the fresh-install default; all
-# registered characters are bundled so the phone can switch between them at runtime.
+# Passed through to the dump script below. Rocky is always the built-in default; runtime-created
+# personalities use the same model while supplying their own generated persona and ElevenLabs
+# voice.
 #
 # Written as if-blocks, not `[ -n "$X" ] && export ...`: under `set -e` a false test is a failing
 # command, so the one-liner form aborts the whole build the moment a variable is simply unset.
-for name in ROCKY_CHARACTER ROCKY_VOICE ROCKY_REALTIME_MODEL; do
+for name in ROCKY_VOICE ROCKY_REALTIME_MODEL; do
   value="$(read_env "$name")"
   if [ -n "$value" ]; then
     export "$name=$value"
@@ -48,6 +50,11 @@ done
 
 if [ -n "$ROCKY_OPENAI_KEY_IOS" ]; then
   echo "==> Baking OPENAI_API_KEY from .env (personal-device use only)"
+fi
+if [ -n "$ROCKY_ELEVENLABS_KEY_IOS" ]; then
+  echo "==> ElevenLabs credentials found (used only by custom personalities)"
+else
+  echo "==> No ELEVENLABS_API_KEY in .env -- custom personalities can be edited but not heard"
 fi
 if [ -n "$ROCKY_HUME_KEY_IOS" ] && [ -n "$ROCKY_HUME_VOICE_ID_IOS" ]; then
   echo "==> Hume credentials found (used only if the character asks for a Hume voice)"

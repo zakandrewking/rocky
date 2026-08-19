@@ -348,7 +348,7 @@ const RESUME_PERFORMANCE_TOOL = {
 
 export interface DeviceSessionOptions {
   readonly model?: string;
-  /** Overrides the character's own voice. Ignored when the character speaks through Hume. */
+  /** Overrides a character's OpenAI voice. Ignored for client-synthesized voices. */
   readonly voice?: string;
   /** Extra private context, e.g. saved family memory. */
   readonly memoryContext?: string;
@@ -365,17 +365,17 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
     extras.push(`SAVED FAMILY MEMORY — PRIVATE LOCAL CONTEXT\n${memoryContext.trim()}`);
   }
 
-  // A Hume-voiced character needs the model to produce words, not speech; anyone else is spoken
-  // by the model itself, which is a whole network hop cheaper. Clients read this back to decide
-  // whether to run a synthesiser at all, so it has to say what the character actually wants.
-  const speaksThroughHume = character.voice.provider === "hume";
+  // Hume and runtime-created ElevenLabs personalities need words for the client synthesizer;
+  // OpenAI-voiced characters receive audio directly from Realtime. Clients read this field back,
+  // so it must reflect the character rather than a client-side guess.
+  const usesLocalSpeech = character.voice.provider !== "openai";
   const voice = options.voice ?? (character.voice.provider === "openai" ? character.voice.name : DEFAULT_VOICE);
 
   return {
     type: "realtime",
     model,
     instructions: buildInstructions(character, extras),
-    output_modalities: speaksThroughHume ? ["text"] : ["audio"],
+    output_modalities: usesLocalSpeech ? ["text"] : ["audio"],
     audio: {
       input: {
         transcription: { model: "gpt-realtime-whisper" },
@@ -398,7 +398,7 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       LIGHT_TOOL,
       GESTURE_TOOL,
       ROUTINE_TOOL,
-      ...(speaksThroughHume ? [PERFORMANCE_TOOL, RESUME_PERFORMANCE_TOOL] : []),
+      ...(usesLocalSpeech ? [PERFORMANCE_TOOL, RESUME_PERFORMANCE_TOOL] : []),
     ],
     tool_choice: "auto",
   };

@@ -69,7 +69,7 @@ final class EridianAudio {
     /// Chords are queued back to back rather than pinned to absolute sample times, so the gap
     /// after each one is rendered into its own buffer as silence. Same result, without depending
     /// on a node clock that resets whenever WebRTC restarts the engine underneath us -- see
-    /// HumePcmPlayer for what that cost.
+    /// LocalPcmPlayer for what that cost.
     private func schedule(_ tokens: [String]) {
         guard !tokens.isEmpty, volume > 0 else { return }
         RockyAudioEngine.shared.ensureRunning()

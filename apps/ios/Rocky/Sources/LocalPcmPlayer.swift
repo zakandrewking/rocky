@@ -1,6 +1,7 @@
 import AVFoundation
 
-/// Plays the PCM Hume streams back, ported from apps/desktop/src/renderer/src/humePcmAudio.ts.
+/// Plays raw mono PCM from a local speech provider. The shared engine runs at 48 kHz, so streams
+/// such as ElevenLabs' 24 kHz output are resampled before they are scheduled.
 ///
 /// Desktop schedules each chunk at an absolute time on the AudioContext clock. This does not: it
 /// queues buffers back to back on an AVAudioPlayerNode and lets the node play them in order,
@@ -12,7 +13,7 @@ import AVFoundation
 /// cursor on that clock" produced audio scheduled into the far future: silence, with no error
 /// raised, no buffer ever completing, and nothing in the API to notice it by.
 @MainActor
-final class HumePcmPlayer {
+final class LocalPcmPlayer {
     /// Silence appended to the final chunk so the tail isn't clipped.
     private static let finalPaddingSeconds = 0.280
 
@@ -20,14 +21,16 @@ final class HumePcmPlayer {
     var onSpeakingChange: ((Bool) -> Void)?
 
     private let player: AVAudioPlayerNode
-    private let sampleRate: Double
+    private let outputSampleRate: Double
+    private let sourceSampleRate: Double
 
     private var pendingChunks = 0
     private var queuedSeconds = 0.0
     private var isSpeaking = false
 
-    init() {
-        self.sampleRate = RockyAudioEngine.shared.sampleRate
+    init(sourceSampleRate: Double) {
+        self.outputSampleRate = RockyAudioEngine.shared.sampleRate
+        self.sourceSampleRate = sourceSampleRate
         self.player = RockyAudioEngine.shared.player(for: .voice)
     }
 
@@ -37,10 +40,11 @@ final class HumePcmPlayer {
     }
 
     func push(base64: String, isLastChunk: Bool) {
-        guard let samples = Self.decodePCM16LE(base64), !samples.isEmpty else { return }
+        guard let decoded = Self.decodePCM16LE(base64), !decoded.isEmpty else { return }
+        let samples = Self.resample(decoded, from: sourceSampleRate, to: outputSampleRate)
         RockyAudioEngine.shared.ensureRunning()
 
-        let padding = isLastChunk ? Int(Self.finalPaddingSeconds * sampleRate) : 0
+        let padding = isLastChunk ? Int(Self.finalPaddingSeconds * outputSampleRate) : 0
         let frameCount = AVAudioFrameCount(samples.count + padding)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: RockyAudioEngine.format, frameCapacity: frameCount),
             let channel = buffer.floatChannelData?[0]
@@ -51,7 +55,7 @@ final class HumePcmPlayer {
             channel.advanced(by: samples.count).update(repeating: 0, count: padding)
         }
 
-        let seconds = Double(frameCount) / sampleRate
+        let seconds = Double(frameCount) / outputSampleRate
         pendingChunks += 1
         chunksThisResponse += 1
         queuedSeconds += seconds
@@ -103,7 +107,7 @@ final class HumePcmPlayer {
         onSpeakingChange?(speaking)
     }
 
-    /// Hume's wire format: base64 of signed 16-bit little-endian mono samples. Pure, so it is
+    /// Providers use base64 of signed 16-bit little-endian mono samples. Pure, so it is
     /// deliberately not actor-bound -- it runs wherever the socket callback landed.
     nonisolated static func decodePCM16LE(_ base64: String) -> [Float]? {
         guard let data = Data(base64Encoded: base64) else { return nil }
@@ -116,6 +120,20 @@ final class HumePcmPlayer {
                 out[index] = Float(Int16(bitPattern: low | (high << 8))) / 32768
             }
             return out
+        }
+    }
+
+    nonisolated static func resample(_ input: [Float], from sourceRate: Double, to outputRate: Double) -> [Float] {
+        guard !input.isEmpty, sourceRate > 0, outputRate > 0 else { return [] }
+        guard sourceRate != outputRate else { return input }
+
+        let outputCount = max(1, Int((Double(input.count) * outputRate / sourceRate).rounded()))
+        return (0..<outputCount).map { outputIndex in
+            let position = Double(outputIndex) * sourceRate / outputRate
+            let lower = min(input.count - 1, Int(position))
+            let upper = min(input.count - 1, lower + 1)
+            let fraction = Float(position - Double(lower))
+            return input[lower] + (input[upper] - input[lower]) * fraction
         }
     }
 }
