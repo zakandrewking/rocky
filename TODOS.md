@@ -234,6 +234,16 @@ crashing.**
   with one helper, `RealtimeVoiceSession.shortItemId(_:)`, that keeps a generated id under the
   limit by construction rather than trusting each call site's arithmetic; covered by
   `testGeneratedItemIdsNeverExceedTheRealtimeAPIsLimit`.
+- [x] **Debounced vision announcements after a live false-negative (2026-08-21).** With the id-length
+  fix in, a real session showed a genuine failure mode instead: one Gemini turn timed out under
+  network contention (three simultaneous sessions — OpenAI Realtime WebRTC, Hume speech, Gemini
+  vision — sharing one phone's Wi-Fi), and the very next frame's single noisy read of "no person"
+  got told to Rocky as fact immediately, who then correctly but wrongly said the friend had left.
+  `RealtimeVoiceSession.updatePersonDetection` now requires the same presence verdict twice in a
+  row (`personPresenceConfirmations = 2`) before announcing a change, trading roughly one extra
+  sample interval (~1s) of latency for not flip-flopping on a single bad frame. Not unit-tested:
+  the guard sits behind `canReachVoice`, which needs a live data channel this class doesn't mock
+  elsewhere either — verified live instead.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime

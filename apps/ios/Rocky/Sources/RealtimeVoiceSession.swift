@@ -88,6 +88,11 @@ final class RealtimeVoiceSession: ObservableObject {
     /// What Rocky was last told about who's visible, so `updatePersonDetection` only speaks up on
     /// an actual change rather than every sampled frame.
     private var lastAnnouncedPersonPresent: Bool?
+    /// The presence verdict currently being confirmed, and how many consecutive detections have
+    /// agreed with it -- see `updatePersonDetection`.
+    private var pendingPersonPresent: Bool?
+    private var pendingPersonPresentStreak = 0
+    private static let personPresenceConfirmations = 2
 
     // MARK: - The world
     //
@@ -593,8 +598,22 @@ final class RealtimeVoiceSession: ObservableObject {
     /// `insertWorldItem` mechanism `WorldProjector` uses for body facts -- and only when presence
     /// actually changes, since a fresh line every ~1s the whole time someone is simply standing
     /// there would be noise, not information.
+    ///
+    /// "Actually changes" needs its own confirmation, though: a single frame's judgment is noisy
+    /// (motion blur, a glance down, a bad angle), confirmed live when one such frame briefly read
+    /// as empty and Rocky was told the friend had left. This waits for the same verdict twice in a
+    /// row before believing it, so one bad frame can't flip what Rocky's told.
     func updatePersonDetection(_ detection: PersonDetection) {
-        guard canReachVoice, lastAnnouncedPersonPresent != detection.personPresent else { return }
+        if detection.personPresent == pendingPersonPresent {
+            pendingPersonPresentStreak += 1
+        } else {
+            pendingPersonPresent = detection.personPresent
+            pendingPersonPresentStreak = 1
+        }
+        guard canReachVoice,
+            pendingPersonPresentStreak >= Self.personPresenceConfirmations,
+            lastAnnouncedPersonPresent != detection.personPresent
+        else { return }
         lastAnnouncedPersonPresent = detection.personPresent
         let text: String
         if detection.personPresent {
@@ -651,6 +670,8 @@ final class RealtimeVoiceSession: ObservableObject {
         state = .disconnected
         greeted = false
         lastAnnouncedPersonPresent = nil
+        pendingPersonPresent = nil
+        pendingPersonPresentStreak = 0
         activeResponseId = nil
         awaitingResponse = false
         cancelWatchdog?.cancel()
