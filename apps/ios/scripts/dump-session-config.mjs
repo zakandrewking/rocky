@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dumps Rocky's fixed session plus a safe client-synthesized template for generated personalities.
+// Dumps Rocky's fixed session, generated at build time from services/device-api's session builder.
 // Run from apps/ios/scripts/generate.sh, not directly.
 
 import { writeFile } from "node:fs/promises";
@@ -9,7 +9,6 @@ import { createDeviceSessionConfig, DEFAULT_MODEL } from "../../../services/devi
 
 const model = process.env["ROCKY_REALTIME_MODEL"] ?? DEFAULT_MODEL;
 const defaultCharacter = ROCKY;
-const customPersonaToken = "__ROCKY_CUSTOM_PERSONA__";
 // Only override the character's own voice when one was asked for explicitly -- passing a default
 // here would silently outrank every character's choice.
 const voice = process.env["ROCKY_VOICE"];
@@ -19,17 +18,6 @@ const characters = CHARACTERS.map((character) => ({
   summary: character.summary,
   session: createDeviceSessionConfig({ model, character, ...(voice ? { voice } : {}) }),
 }));
-const customSession = createDeviceSessionConfig({
-  model,
-  character: {
-    id: "custom-template",
-    name: "Custom",
-    summary: "Runtime-created personality",
-    voice: { provider: "local" },
-    cadence: ROCKY.cadence,
-    persona: customPersonaToken,
-  },
-});
 
 const outPath = fileURLToPath(new URL("../Rocky/Resources/RealtimeSessionConfig.json", import.meta.url));
 await writeFile(
@@ -38,8 +26,6 @@ await writeFile(
     {
       default_character_id: defaultCharacter.id,
       characters,
-      custom_persona_token: customPersonaToken,
-      custom_session: customSession,
     },
     null,
     2,

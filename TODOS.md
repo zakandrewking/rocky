@@ -200,40 +200,13 @@ loud startled me") and control travels as Rocky's own *intentions*, never as hum
 Once chosen, every physical expression takes over its automatic counterpart immediately. Stop is
 the one human imperative.
 
-- [x] Let the person choose who is speaking on iOS. The main-screen personality pill keeps Rocky
-  as the fixed default with his Hume voice, and persists user-created profiles with editable
-  warmth, energy, humor, curiosity, talkativeness, Earth↔Sky, Fantasy↔Reality, and speaking speed.
-  Each new draft starts at random slider positions. The seven character sliders deterministically
-  retrieve exactly one attributed Project Gutenberg passage apiece—childhood, drive, comic lens,
-  dream, voice, physical form, or origin—and display that passage directly beneath its controlling
-  slider. Generate makes one structured GPT-5.6 Sol call at high reasoning that turns only those
-  passages into an unconstrained-register name, a chronological 45–80 word miniature life, and a compact audible
-  voice-design seed for later synthesis steps, all in the same structured pass. The life is made almost
-  entirely from concrete source evidence: quantities,
-  objects, bodily features, places, incidents, promises, and active projects. The probe corpus was
-  re-audited accordingly; aphorisms were replaced by passages carrying anchors such as twenty-five
-  dollars, three hundred yards of wincey, a stolen knife, a little dancer drying her dress on the
-  roof, a palaeontologist's Kalmuck skulls, a fortuitous motor-car crash, seventeen steps, and an old tin kitchen, while the
-  compiler now preserves public-domain diction instead of paraphrasing it into trait language.
-  The source details stay old and strange where useful, but the compiled life is explicitly
-  contemporary and its connective narration avoids period pastiche.
-  The final prompt presents that poetic,
-  specific essence as its first top-level section and all common conduct, safety, memory, and body
-  rules as its second. A fixed instruction makes the miniature life private background that shapes
-  attention and judgment, rather than a story the character continually recites. Save and prompt preview require a successful generation
-  for the exact current slider state; persisted generation provenance keeps stale prompts invalid
-  after relaunch. Profiles can be explicitly deleted. The editor can preview and share the exact
-  final Realtime instructions, including shared rules and the current body-connectivity override,
-  using the same session-construction code as minting rather than a second approximation. Custom
-  persona text is inserted into a generated session template that retains the same conduct and body
-  rules. A paused conversation ends before a different personality starts so identity and memory
-  never change mid-session.
-- [ ] Evaluate the literary-DNA probe with blind first-conversation auditions against Rocky and
-  the old adjective-only Zizzle baseline. Compare the dense essence compiler with the former runtime
-  quote scaffold, and test whether five anchors per slider are enough before expanding the
-  35-passage corpus. Keep edition links and verbatim-text tests with every addition.
-- [ ] Reintroduce ElevenLabs Voice Design only when the voice-creation flow has a clearer product
-  role; for now personalities choose built-in or existing account voices.
+- [x] Built, then removed, a personality selector on iOS: a main-screen pill that let a person
+  create and tune custom AI-generated characters (literary-quote-driven trait sliders, a
+  GPT-5.6 Sol compiler synthesizing a name/essence/voice-design seed, ElevenLabs voices) alongside
+  the fixed Rocky. Reverted 2026-08-21 back to Rocky as the only personality — no selector UI, no
+  custom-character generation or storage, no ElevenLabs. `services/device-api`'s `CHARACTERS`
+  registry (currently `[ROCKY]`) and session builder are unaffected; they were always the shared
+  infrastructure behind both the selector and the robot's own live session.
 - [x] A: observation. Ring buffer on `_enter` (the single transition choke point), TCP event
   stream on 8768, UDP beacon under a different service name so the motion-agent discovery ignores
   it.

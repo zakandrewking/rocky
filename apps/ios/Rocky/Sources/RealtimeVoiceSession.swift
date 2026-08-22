@@ -97,15 +97,11 @@ final class RealtimeVoiceSession: ObservableObject {
     private let salience = SalienceJudge()
     private lazy var behaviorSource = BehaviorWorldSource(store: world)
     private var behavior: BehaviorMonitor?
-    /// Fixed for the lifetime of one Realtime conversation. Changing personality starts a new
-    /// session rather than mutating a character's voice and memory halfway through a thought.
-    private var activePersonality = PersonalityCatalog.rockyChoice
     /// Capability currently advertised to Realtime; the physical link may change while paused.
     private var sessionHasBody: Bool?
     private var worldTicker: Task<Void, Never>?
 
-    /// The selected personality's local speech stream. Rocky uses Hume; custom personalities use
-    /// the ElevenLabs voice chosen in their editor.
+    /// Rocky's local speech stream, synthesized through Hume.
     private var speechSynthesizer: (any LocalSpeechSynthesizing)?
     private var speechPlayer: LocalPcmPlayer?
     private var storySounds: StorySoundEffects?
@@ -207,24 +203,13 @@ final class RealtimeVoiceSession: ObservableObject {
     /// That is a supported, ordinary state -- the app is then exactly what apps/desktop is, a
     /// voice-only Rocky -- so the body tools are dropped from the session rather than left to fail
     /// (see OpenAIRealtimeMinter).
-    func connect(behavior: BehaviorMonitor?, personality: PersonalityChoice) async {
+    func connect(behavior: BehaviorMonitor?) async {
         self.behavior = behavior
         guard state == .disconnected || isFailed else { return }
-        activePersonality = personality
-        switch personality.speech {
-        case .hume:
-            speechSynthesizer = HumeSpeech()
-        case .elevenLabs(let voiceID, let stability, let speed):
-            speechSynthesizer = ElevenLabsSpeech(
-                voiceID: voiceID,
-                stability: stability,
-                speed: speed
-            )
-        }
+        speechSynthesizer = HumeSpeech()
         guard speechSynthesizer != nil else {
-            let provider = personality.isRocky ? "Hume" : "ElevenLabs"
-            state = .failed("\(provider) credentials are missing from this build; regenerate and reinstall the app")
-            log("connect stopped: \(provider) voice unavailable")
+            state = .failed("Hume credentials are missing from this build; regenerate and reinstall the app")
+            log("connect stopped: Hume voice unavailable")
             return
         }
         state = .connecting
@@ -242,10 +227,7 @@ final class RealtimeVoiceSession: ObservableObject {
             try await AudioSessionManager.configureForVoice()
             startLocalAudio()
             let hasBody = behavior?.connected == true
-            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(
-                hasBody: hasBody,
-                personality: activePersonality
-            )
+            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasBody: hasBody)
             sessionHasBody = hasBody
             log(
                 "minted secret in \(Self.ms(since: connectStart)) (body: \(hasBody ? "yes" : "none"), voice: \(speechSynthesizer?.providerName ?? "unavailable"))"
@@ -582,10 +564,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// robot found after startup or during a pause usable without creating a new voice session.
     func bodyAvailabilityChanged(_ hasBody: Bool) {
         guard state == .connected || state == .paused, sessionHasBody != hasBody,
-            let update = OpenAIRealtimeMinter.bodySessionUpdate(
-                hasBody: hasBody,
-                personality: activePersonality
-            )
+            let update = OpenAIRealtimeMinter.bodySessionUpdate(hasBody: hasBody)
         else { return }
         guard client.send(jsonObject: update) else {
             log("body capability update waiting for the data channel")
@@ -663,8 +642,7 @@ final class RealtimeVoiceSession: ObservableObject {
     // MARK: - Rocky's voice and her alien chatter
 
     private func startLocalAudio() {
-        // The alien chord layer is part of Rocky's fixed voice, not a custom personality.
-        eridian = activePersonality.isRocky ? EridianAudio() : nil
+        eridian = EridianAudio()
         let effects = StorySoundEffects()
         storySounds = effects
         effects.onFinished = { [weak self] in

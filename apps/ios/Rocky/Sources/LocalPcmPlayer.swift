@@ -1,7 +1,7 @@
 import AVFoundation
 
-/// Plays raw mono PCM from a local speech provider. The shared engine runs at 48 kHz, so streams
-/// such as ElevenLabs' 24 kHz output are resampled before they are scheduled.
+/// Plays raw mono PCM from a local speech provider. The shared engine runs at 48 kHz, so a
+/// provider streaming at a lower rate is resampled before it is scheduled.
 ///
 /// Desktop schedules each chunk at an absolute time on the AudioContext clock. This does not: it
 /// queues buffers back to back on an AVAudioPlayerNode and lets the node play them in order,

@@ -1,7 +1,6 @@
 import Foundation
 
-/// A text-to-speech stream whose raw PCM can be played by `LocalPcmPlayer`.
-/// Rocky uses Hume; user-created personalities use ElevenLabs.
+/// A text-to-speech stream whose raw PCM can be played by `LocalPcmPlayer`. Rocky uses Hume.
 @MainActor
 protocol LocalSpeechSynthesizing: AnyObject {
     var providerName: String { get }

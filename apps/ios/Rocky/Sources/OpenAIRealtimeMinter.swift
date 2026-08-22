@@ -26,17 +26,13 @@ enum OpenAIRealtimeMinter {
         - Your identity, agency, relationships, and conversation are unchanged.
         """
 
-    /// Rocky's full session and a custom-personality session template are dumped from
-    /// services/device-api at build time. Swift replaces only the template's persona token; shared
-    /// conduct, tools, model, and body rules remain generated from the server source of truth.
+    /// Rocky's full session is dumped from services/device-api at build time. Shared conduct,
+    /// tools, model, and body rules are generated from the server source of truth.
     ///
     /// `hasRobot` is false when discovery found no robot: the movement tools are stripped and the
     /// body context corrected, so the app is still a full voice Rocky (what apps/desktop is) even
     /// with no robot in the room.
-    static func mintEphemeralSecret(
-        hasBody: Bool,
-        personality: PersonalityChoice = PersonalityCatalog.rockyChoice
-    ) async throws -> String {
+    static func mintEphemeralSecret(hasBody: Bool) async throws -> String {
         guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String,
             !apiKey.isEmpty
         else {
@@ -44,9 +40,9 @@ enum OpenAIRealtimeMinter {
                 "no OpenAI API key baked into this build -- run apps/ios/scripts/generate.sh with OPENAI_API_KEY set in the repo root .env, then rebuild"
             )
         }
-        guard let requestBody = sessionData(hasBody: hasBody, personality: personality)
+        guard let requestBody = sessionData(hasBody: hasBody)
         else {
-            throw RockyError.commandFailed("selected personality config missing from the app bundle -- run apps/ios/scripts/generate.sh, not xcodegen generate directly")
+            throw RockyError.commandFailed("Rocky's session config missing from the app bundle -- run apps/ios/scripts/generate.sh, not xcodegen generate directly")
         }
 
         var request = URLRequest(url: URL(string: "https://api.openai.com/v1/realtime/client_secrets")!)
@@ -89,11 +85,8 @@ enum OpenAIRealtimeMinter {
 
     /// Changes body capabilities inside an existing Realtime session. Re-minting would throw
     /// away the paused conversation; this updates only instructions and tools, leaving it intact.
-    static func bodySessionUpdate(
-        hasBody: Bool,
-        personality: PersonalityChoice = PersonalityCatalog.rockyChoice
-    ) -> [String: Any]? {
-        guard let baked = bakedSessionData(for: personality) else { return nil }
+    static func bodySessionUpdate(hasBody: Bool) -> [String: Any]? {
+        guard let baked = bakedSessionData() else { return nil }
         let selected = hasBody ? baked : withoutRobotBody(baked)
         guard let root = try? JSONSerialization.jsonObject(with: selected) as? [String: Any],
             let session = root["session"] as? [String: Any],
@@ -111,51 +104,22 @@ enum OpenAIRealtimeMinter {
         ]
     }
 
-    /// The exact instruction string sent for the selected character in the current body state.
-    /// The editor uses this instead of reimplementing template substitution, so its preview cannot
-    /// drift from session creation. Function-tool schemas are separate Realtime session fields,
-    /// not part of the system prompt.
-    static func systemInstructions(
-        hasBody: Bool,
-        personality: PersonalityChoice = PersonalityCatalog.rockyChoice
-    ) -> String? {
-        guard let data = sessionData(hasBody: hasBody, personality: personality),
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let session = root["session"] as? [String: Any]
-        else { return nil }
-        return session["instructions"] as? String
-    }
-
-    private static func sessionData(hasBody: Bool, personality: PersonalityChoice) -> Data? {
-        guard let baked = bakedSessionData(for: personality) else { return nil }
+    private static func sessionData(hasBody: Bool) -> Data? {
+        guard let baked = bakedSessionData() else { return nil }
         // The baked config already describes the one body there is (session.ts), so a robot on the
         // network needs no edit at all. Only its absence does.
         return hasBody ? baked : withoutRobotBody(baked)
     }
 
-    /// Extracts one generated session from the bundled catalog. Kept internal so tests can prove
-    /// that every personality the selector shows can actually start a conversation.
-    static func bakedSessionData(
-        for personality: PersonalityChoice = PersonalityCatalog.rockyChoice
-    ) -> Data? {
+    /// Extracts Rocky's generated session from the bundled catalog. Kept internal so tests can
+    /// prove Rocky can actually start a conversation.
+    static func bakedSessionData() -> Data? {
         guard let configURL = Bundle.main.url(forResource: "RealtimeSessionConfig", withExtension: "json"),
             let data = try? Data(contentsOf: configURL),
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let characters = root["characters"] as? [[String: Any]],
+            let session = characters.first(where: { $0["id"] as? String == "rocky" })?["session"] as? [String: Any]
         else { return nil }
-
-        var session: [String: Any]?
-        if personality.isRocky {
-            let characters = root["characters"] as? [[String: Any]]
-            session = characters?.first(where: { $0["id"] as? String == PersonalityCatalog.defaultCharacterID })?["session"] as? [String: Any]
-        } else if var custom = root["custom_session"] as? [String: Any],
-            let token = root["custom_persona_token"] as? String,
-            let prompt = personality.customPrompt,
-            let instructions = custom["instructions"] as? String
-        {
-            custom["instructions"] = instructions.replacingOccurrences(of: token, with: prompt)
-            session = custom
-        }
-        guard let session else { return nil }
         return try? JSONSerialization.data(withJSONObject: ["session": session])
     }
 
