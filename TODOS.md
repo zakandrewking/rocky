@@ -179,9 +179,12 @@ crashing.**
 - [x] **Camera semantic layer, brought forward ahead of the physical mount (2026-08-21):
   person-presence and bearing, standalone on the phone, not yet wired to the robot.**
   `apps/ios/Rocky/Sources/PersonCamera.swift` samples the **front** camera (the side the screen's
-  face is on) every ~2.5s; `PersonVision.swift` sends each frame to Claude (`claude-haiku-4-5`) for
-  person/bearing judgment — a second model and provider from the OpenAI Realtime voice session,
-  deliberately, so a slow vision call can never stall the one session that has to keep talking. Has
+  face is on) every ~2.5s; `PersonVision.swift` sends each frame to Gemini Robotics-ER
+  (`gemini-robotics-er-2-streaming-preview`, over Gemini's Live API WebSocket -- the model only
+  exists in streaming form, so the session stays open for the camera's whole run rather than
+  reconnecting per frame) for person/bearing judgment — a second model and provider from the
+  OpenAI Realtime voice session, deliberately, so a slow vision call can never stall the one
+  session that has to keep talking. Has
   its own explicit, visible on/off (`PersonCameraView.swift`'s Start/Stop, opened from a camera-panel
   button, never auto-started) and records nothing — each frame is judged and discarded, no video
   file, no photo-library write. `apps/robot/PLAN.md`'s camera section and `apps/ios/README.md` are

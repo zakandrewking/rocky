@@ -100,12 +100,15 @@ recorded: every captured frame is downscaled, judged, and discarded, with no vid
 photo-library write.
 
 While running, it samples one frame roughly every 2.5 seconds and sends it to `PersonVision.swift`,
-which asks **Claude** (`claude-haiku-4-5`, over Anthropic's Messages API) whether a person is in
+which asks **Gemini Robotics-ER** (`gemini-robotics-er-2-streaming-preview`) whether a person is in
 frame and roughly where. This is deliberately a second model and a second provider from the OpenAI
 Realtime session carrying Rocky's voice — see that file's header for why keeping them apart matters
-more than sharing one round trip would save. `PersonCameraView.swift` shows the live preview with a
-ring over the last detected bearing; `PersonVision.parseDetection`'s tolerant-JSON parsing is
-covered by `PersonVisionTests.swift` with no camera or network needed.
+more than sharing one round trip would save. That model only exists behind Gemini's *Live API* — a
+stateful WebSocket, not a one-shot REST call — so `PersonVision` holds one session open for as long
+as the camera is running: a `setup` message once, then one `clientContent` turn (an inline JPEG
+part) per sampled frame, read back as streamed `serverContent` text. `PersonCameraView.swift` shows
+the live preview with a ring over the last detected bearing; `PersonVision.parseDetection`'s
+tolerant-JSON parsing is covered by `PersonVisionTests.swift` with no camera or network needed.
 
 This is Phase 9 of `apps/robot/PLAN.md`'s build order, built and testable standalone on a phone
 today — it is not yet wired into robot movement (`drive`/`turn` toward a detected bearing), which

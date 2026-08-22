@@ -168,13 +168,16 @@ together — bearing from vision, safe approach distance from ultrasonic.
 **Update (2026-08-21): built as a second model, not the Realtime session.** The original plan here
 was to reuse the same vision-capable model already reasoning for Rocky's voice, to avoid a second
 CV pipeline. Built instead: `apps/ios/Rocky/Sources/PersonCamera.swift` samples the **front**
-camera (same side as the screen showing Rocky's face) roughly every 2.5s and
-`PersonVision.swift` sends each frame to Claude (`claude-haiku-4-5`, Anthropic's Messages API) —
-deliberately a separate model and provider from the OpenAI Realtime voice session, so a slow or
-stuck vision call can never stall the one continuous session that has to keep talking. See
-`apps/ios/README.md`'s "Seeing a person, with a second model" for the detail. What exists today is
-person-presence and bearing only, running standalone and gated behind an explicit on/off in the
-camera panel (per the privacy note below) — not yet tagged onto the occupancy grid or wired into
+camera (same side as the screen showing Rocky's face) roughly every 2.5s and `PersonVision.swift`
+sends each frame to **Gemini Robotics-ER** (`gemini-robotics-er-2-streaming-preview`) — a model
+purpose-built for embodied/spatial reasoning, and deliberately a separate model and provider from
+the OpenAI Realtime voice session, so a slow or stuck vision call can never stall the one
+continuous session that has to keep talking. That model is only exposed via Gemini's Live API (a
+stateful WebSocket, not one-shot REST), so `PersonVision` holds a session open for the camera's
+whole run rather than reconnecting per frame. See `apps/ios/README.md`'s "Seeing a person, with a
+second model" for the detail. What exists today is person-presence and bearing only, running
+standalone and gated behind an explicit on/off in the camera panel (per the privacy note below) —
+not yet tagged onto the occupancy grid or wired into
 `drive`/`turn`, which is real Phase 9→10 work still ahead once Phase 6 (physical mount) and Phases
 3-4 (occupancy grid) exist to wire it into.
 

@@ -27,6 +27,7 @@ final class PersonCamera: NSObject, ObservableObject {
 
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
+    private let vision = PersonVision()
     private var sampleTimer: Task<Void, Never>?
     private var configured = false
 
@@ -77,6 +78,7 @@ final class PersonCamera: NSObject, ObservableObject {
         sampleTimer?.cancel()
         sampleTimer = nil
         session.stopRunning()
+        vision.disconnect()
         isRunning = false
         isDetecting = false
     }
@@ -114,7 +116,7 @@ final class PersonCamera: NSObject, ObservableObject {
             return
         }
         do {
-            let detection = try await PersonVision.detectPerson(in: jpegData)
+            let detection = try await vision.detectPerson(in: jpegData)
             lastDetection = detection
             lastError = nil
         } catch {

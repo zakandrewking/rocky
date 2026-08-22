@@ -42,9 +42,10 @@ targets:
         # Rocky's actual voice (Hume Octave). Both empty means fall back to OpenAI's own voice.
         RockyHumeKey: "${ROCKY_HUME_KEY_IOS}"
         RockyHumeVoiceId: "${ROCKY_HUME_VOICE_ID_IOS}"
-        # Person-detection vision calls (PersonVision.swift) -- a separate model and provider from
-        # the OpenAI Realtime voice session on purpose, see that file's header.
-        RockyAnthropicKey: "${ROCKY_ANTHROPIC_KEY_IOS}"
+        # Person-detection vision calls (PersonVision.swift, Gemini Robotics-ER) -- a separate
+        # model and provider from the OpenAI Realtime voice session on purpose, see that file's
+        # header.
+        RockyGeminiKey: "${ROCKY_GEMINI_KEY_IOS}"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: family.rocky.ios
