@@ -202,12 +202,19 @@ final class PersonVision {
         }
 
         guard let serverContent = object["serverContent"] as? [String: Any] else { return }
+        // Confirmed against the real API (2026-08-21): with responseModalities: ["TEXT"], the
+        // model's reply arrives as `outputTranscription.text`, not `modelTurn.parts[].text` --
+        // the latter is what the reference docs describe, but isn't what the server actually
+        // sends for this config. Both are read so a future/alternate config isn't silently dropped.
         if let modelTurn = serverContent["modelTurn"] as? [String: Any],
             let parts = modelTurn["parts"] as? [[String: Any]]
         {
             for part in parts {
                 if let text = part["text"] as? String { turnText += text }
             }
+        }
+        if let text = (serverContent["outputTranscription"] as? [String: Any])?["text"] as? String {
+            turnText += text
         }
         if serverContent["turnComplete"] as? Bool == true {
             let text = turnText
