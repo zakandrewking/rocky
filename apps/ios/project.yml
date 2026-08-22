@@ -31,6 +31,7 @@ targets:
       properties:
         UILaunchScreen: {}
         NSMicrophoneUsageDescription: "Rocky listens so you can talk with her and she can drive the robot."
+        NSCameraUsageDescription: "Rocky's front camera looks for a person to talk to. Off until you start it from the camera panel; nothing is recorded."
         NSLocalNetworkUsageDescription: "Rocky connects to the mBot2 robot and the laptop's voice service over your local Wi-Fi network."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -41,6 +42,9 @@ targets:
         # Rocky's actual voice (Hume Octave). Both empty means fall back to OpenAI's own voice.
         RockyHumeKey: "${ROCKY_HUME_KEY_IOS}"
         RockyHumeVoiceId: "${ROCKY_HUME_VOICE_ID_IOS}"
+        # Person-detection vision calls (PersonVision.swift) -- a separate model and provider from
+        # the OpenAI Realtime voice session on purpose, see that file's header.
+        RockyAnthropicKey: "${ROCKY_ANTHROPIC_KEY_IOS}"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: family.rocky.ios

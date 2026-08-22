@@ -2,9 +2,11 @@
 # Wraps `xcodegen generate` with the two things plain xcodegen can't do:
 #   1. Bake secrets from the repo root .env into the built app's Info.plist (see project.yml's
 #      Rocky* keys) so the phone needs no laptop server at runtime: OPENAI_API_KEY to mint its own
-#      ephemeral Realtime secret, plus the Hume credentials for Rocky's actual voice. Personal-use
-#      tradeoff: unlike services/device-api's whole reason for existing, these keys are not scoped
-#      or revocable without rotating them, so this only belongs on a phone you control.
+#      ephemeral Realtime secret, the Hume credentials for Rocky's actual voice, and
+#      ANTHROPIC_API_KEY for the front-camera person-detection calls (PersonVision.swift) --
+#      deliberately a different model/provider than the voice session. Personal-use tradeoff:
+#      unlike services/device-api's whole reason for existing, these keys are not scoped or
+#      revocable without rotating them, so this only belongs on a phone you control.
 #   2. Regenerate Rocky/Resources/RealtimeSessionConfig.json from the character registry and
 #      session builder in services/device-api, so Rocky's session stays defined in one place.
 # Anything missing from .env is baked as empty rather than failing -- the app still builds and
@@ -32,6 +34,7 @@ read_env() {
 export ROCKY_OPENAI_KEY_IOS="$(read_env OPENAI_API_KEY)"
 export ROCKY_HUME_KEY_IOS="$(read_env HUME_API_KEY)"
 export ROCKY_HUME_VOICE_ID_IOS="$(read_env HUME_VOICE_ID)"
+export ROCKY_ANTHROPIC_KEY_IOS="$(read_env ANTHROPIC_API_KEY)"
 
 # Passed through to the dump script below.
 #
@@ -51,6 +54,11 @@ if [ -n "$ROCKY_HUME_KEY_IOS" ] && [ -n "$ROCKY_HUME_VOICE_ID_IOS" ]; then
   echo "==> Hume credentials found (Rocky's voice)"
 else
   echo "==> No Hume credentials in .env -- Rocky will have no voice"
+fi
+if [ -n "$ROCKY_ANTHROPIC_KEY_IOS" ]; then
+  echo "==> Anthropic credentials found (front-camera person detection)"
+else
+  echo "==> No ANTHROPIC_API_KEY in .env -- the camera panel can open but detection will fail"
 fi
 
 echo "==> Regenerating Rocky/Resources/RealtimeSessionConfig.json from session.ts"

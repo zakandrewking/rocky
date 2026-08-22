@@ -36,9 +36,13 @@ struct ContentView: View {
     /// intentions back. There is one payload (apps/robot/device/rocky_agent.py) and so one
     /// connection -- the older commanded-motion agent and its separate discovery are deprecated.
     @StateObject private var behavior = BehaviorMonitor()
+    /// Off until explicitly started from the camera panel -- see `PersonCameraView`'s header for
+    /// why that has to be a visible, deliberate control rather than something that just comes on.
+    @StateObject private var personCamera = PersonCamera()
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
     @State private var showBodyPanel = false
+    @State private var showCameraPanel = false
     @State private var detailsOpen = false
     /// Set the instant the stone is tapped, before any awaiting, purely so the UI can respond to
     /// the touch rather than to the network.
@@ -240,6 +244,15 @@ struct ContentView: View {
                 .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
                 .sheet(isPresented: $showBodyPanel) {
                     WorldDebugView(log: WorldLog.shared, world: voiceSession.world)
+                }
+
+            // Camera access, and any use of it, only ever starts from inside this panel -- see
+            // PersonCameraView's header for why that has to stay an explicit, visible switch.
+            Button("camera: what rocky sees…") { showCameraPanel = true }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
+                .sheet(isPresented: $showCameraPanel) {
+                    PersonCameraView(camera: personCamera)
                 }
 
             Button("push payload to cyberpi…") { showPayloadPicker = true }

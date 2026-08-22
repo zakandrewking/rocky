@@ -162,10 +162,21 @@ The ultrasonic/odometry layer answers *where is space free*. It cannot answer *w
 than a laptop webcam would have been — and does so as a genuinely different kind of sensor, not a
 redundant one: monocular vision gives identity and bearing (this is a person, and they're roughly
 20° to my left) but not reliable depth — so it composes with the occupancy grid rather than
-replacing it. Concretely: send frames through the same vision-capable model already reasoning for
-Rocky (no separate CV pipeline to build), and when it reports a person, tag that bearing onto the
-map at the robot's current pose. "Find/follow a person" in the north star is this layer plus the
-occupancy grid together — bearing from vision, safe approach distance from ultrasonic.
+replacing it. "Find/follow a person" in the north star is this layer plus the occupancy grid
+together — bearing from vision, safe approach distance from ultrasonic.
+
+**Update (2026-08-21): built as a second model, not the Realtime session.** The original plan here
+was to reuse the same vision-capable model already reasoning for Rocky's voice, to avoid a second
+CV pipeline. Built instead: `apps/ios/Rocky/Sources/PersonCamera.swift` samples the **front**
+camera (same side as the screen showing Rocky's face) roughly every 2.5s and
+`PersonVision.swift` sends each frame to Claude (`claude-haiku-4-5`, Anthropic's Messages API) —
+deliberately a separate model and provider from the OpenAI Realtime voice session, so a slow or
+stuck vision call can never stall the one continuous session that has to keep talking. See
+`apps/ios/README.md`'s "Seeing a person, with a second model" for the detail. What exists today is
+person-presence and bearing only, running standalone and gated behind an explicit on/off in the
+camera panel (per the privacy note below) — not yet tagged onto the occupancy grid or wired into
+`drive`/`turn`, which is real Phase 9→10 work still ahead once Phase 6 (physical mount) and Phases
+3-4 (occupancy grid) exist to wire it into.
 
 Two things to hold onto before building this:
 

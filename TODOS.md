@@ -176,12 +176,18 @@ crashing.**
 - [ ] Verify the obstacle-avoidance reflex stops a commanded drive locally, without waiting on the
   laptop, when something is placed in the ultrasonic's path mid-motion.
 - [ ] iPhone-side frontier navigation against the occupancy grid.
-- [ ] Camera semantic layer: detect a person, estimate bearing, turn to face them. The iPhone's
-  own camera is the sensor for this (better than the laptop webcam the original design assumed)
-  but still isn't on/near the robot until it's physically mounted — decide explicitly whether to
-  bring that forward instead of waiting.
-- [ ] Add an explicit, visible on/off for the camera layer and no persistent recording by default;
-  a camera on a family device is a bigger privacy step than audio alone.
+- [x] **Camera semantic layer, brought forward ahead of the physical mount (2026-08-21):
+  person-presence and bearing, standalone on the phone, not yet wired to the robot.**
+  `apps/ios/Rocky/Sources/PersonCamera.swift` samples the **front** camera (the side the screen's
+  face is on) every ~2.5s; `PersonVision.swift` sends each frame to Claude (`claude-haiku-4-5`) for
+  person/bearing judgment — a second model and provider from the OpenAI Realtime voice session,
+  deliberately, so a slow vision call can never stall the one session that has to keep talking. Has
+  its own explicit, visible on/off (`PersonCameraView.swift`'s Start/Stop, opened from a camera-panel
+  button, never auto-started) and records nothing — each frame is judged and discarded, no video
+  file, no photo-library write. `apps/robot/PLAN.md`'s camera section and `apps/ios/README.md` are
+  updated with the design and the reasoning for the second-model choice. Not yet tagged onto the
+  occupancy grid or turning the robot to face someone — that's still real work, blocked on the
+  physical mount (Phase 6) and occupancy grid (Phases 3-4) below.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime
