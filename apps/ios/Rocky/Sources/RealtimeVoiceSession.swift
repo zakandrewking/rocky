@@ -85,6 +85,9 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private let client = RealtimeWebRTCClient()
     private var greeted = false
+    /// What Rocky was last told about who's visible, so `updatePersonDetection` only speaks up on
+    /// an actual change rather than every sampled frame.
+    private var lastAnnouncedPersonPresent: Bool?
 
     // MARK: - The world
     //
@@ -579,6 +582,30 @@ final class RealtimeVoiceSession: ObservableObject {
         bodyAvailabilityChanged(behavior?.connected == true)
     }
 
+    /// The one door `PersonCamera`'s detections have into what Rocky actually knows. Without
+    /// this, "can you see me" has a real, honest, and useless answer -- the camera panel updates
+    /// its own state and nothing else ever hears about it.
+    ///
+    /// Deliberately outside the World system above: vision is a fact about the person in front of
+    /// the camera, not about the robot's own body, and folding it into `WorldStore` would mean
+    /// the salience machinery there starts making judgments about a sense it wasn't built for. A
+    /// plain conversation item is enough -- inserted quietly, no response requested, the same
+    /// `insertWorldItem` mechanism `WorldProjector` uses for body facts -- and only when presence
+    /// actually changes, since a fresh line every ~1s the whole time someone is simply standing
+    /// there would be noise, not information.
+    func updatePersonDetection(_ detection: PersonDetection) {
+        guard canReachVoice, lastAnnouncedPersonPresent != detection.personPresent else { return }
+        lastAnnouncedPersonPresent = detection.personPresent
+        let text: String
+        if detection.personPresent {
+            text = "<vision>Someone just came into view on your front camera: \(detection.description ?? "a person").</vision>"
+        } else {
+            text = "<vision>No one is visible on your front camera right now.</vision>"
+        }
+        insertWorldItem(id: "vision_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))", text: text)
+        log("vision: \(text)")
+    }
+
     /// Startup safety belongs to the board; waking for an active conversation belongs here. This
     /// happens before Rocky can choose a gesture, and also when a body arrives after voice did.
     private func wakeBodyIfStill(reason: String) {
@@ -623,6 +650,7 @@ final class RealtimeVoiceSession: ObservableObject {
         hasSpokenOnce = false
         state = .disconnected
         greeted = false
+        lastAnnouncedPersonPresent = nil
         activeResponseId = nil
         awaitingResponse = false
         cancelWatchdog?.cancel()

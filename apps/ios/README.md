@@ -116,6 +116,16 @@ frame, read back as streamed `serverContent` text. `PersonCameraView.swift` show
 with a ring over the last detected bearing; `PersonVision.parseDetection`'s tolerant-JSON parsing
 is covered by `PersonVisionTests.swift` with no camera or network needed.
 
+Detection reaching a debug panel isn't the same as Rocky knowing it -- the first live device test
+had her say, honestly, "I cannot see it yet. No picture came through," because nothing told the
+voice session anything. `RealtimeVoiceSession.updatePersonDetection` is the fix: `ContentView`
+forwards every `personCamera.lastDetection` change to it, and on an actual presence change (not
+every ~1s sample) it inserts a quiet `<vision>...</vision>` conversation item over the same
+`insertWorldItem` door `WorldProjector` uses for body facts -- no response requested, just context
+available for whenever Rocky next has something to say. Deliberately kept outside `WorldStore`:
+vision is a fact about the person in front of the camera, not the robot's own body, so it doesn't
+belong in the salience machinery built for that.
+
 This is Phase 9 of `apps/robot/PLAN.md`'s build order, built and testable standalone on a phone
 today — it is not yet wired into robot movement (`drive`/`turn` toward a detected bearing), which
 needs the CyberPi mount (Phase 6) and occupancy grid (Phases 3-4) this repo doesn't have physical

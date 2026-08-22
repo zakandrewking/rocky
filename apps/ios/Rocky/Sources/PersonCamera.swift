@@ -77,12 +77,14 @@ final class PersonCamera: NSObject, ObservableObject {
         }
         guard authorized else {
             lastError = "camera access not granted -- enable it in Settings"
+            RockyLog.write("camera: \(lastError!)")
             return
         }
 
         if !configured {
             guard configure() else {
                 lastError = "no front camera available on this device"
+                RockyLog.write("camera: \(lastError!)")
                 return
             }
             configured = true
@@ -93,6 +95,7 @@ final class PersonCamera: NSObject, ObservableObject {
         throttle.withLock { $0 = ThrottleState() }
         session.startRunning()
         isRunning = true
+        RockyLog.write("camera: started")
     }
 
     func stop() {
@@ -100,6 +103,7 @@ final class PersonCamera: NSObject, ObservableObject {
         vision.disconnect()
         isRunning = false
         isDetecting = false
+        RockyLog.write("camera: stopped")
     }
 
     private func configure() -> Bool {
@@ -129,10 +133,19 @@ final class PersonCamera: NSObject, ObservableObject {
         defer { isDetecting = false }
         do {
             let detection = try await vision.detectPerson(in: jpegData)
+            // Logged only on a real change, the same restraint `RealtimeVoiceSession` applies to
+            // vision context in the conversation -- a line every ~1s the whole time someone is
+            // simply standing there would drown out everything else in session.log.
+            if detection.personPresent != lastDetection?.personPresent {
+                RockyLog.write(
+                    "camera: \(detection.personPresent ? "person appeared (\(detection.description ?? "no description"))" : "person left view")"
+                )
+            }
             lastDetection = detection
             lastError = nil
         } catch {
             lastError = error.localizedDescription
+            RockyLog.write("camera: detection failed: \(error.localizedDescription)")
         }
     }
 }

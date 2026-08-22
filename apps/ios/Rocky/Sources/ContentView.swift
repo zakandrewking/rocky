@@ -82,6 +82,9 @@ struct ContentView: View {
         .onChange(of: voiceSession.state) { _, state in
             handleVoiceStateChangeForCamera(state)
         }
+        .onChange(of: personCamera.lastDetection) { _, detection in
+            if let detection { voiceSession.updatePersonDetection(detection) }
+        }
     }
 
     /// Rocky's eyes follow her voice: on the instant a conversation connects (including a resume

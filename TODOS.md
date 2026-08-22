@@ -207,6 +207,21 @@ crashing.**
   automatic over asked-every-time. What's kept: still never on for a merely-open app, only for a
   conversation the person themselves just started; still records nothing; and the camera panel's
   Stop button remains a within-conversation manual override.
+- [x] **Found and fixed a real bug from the first live device test: Rocky could not actually use
+  the camera.** Asked in conversation, she answered honestly — "I cannot see it yet. No picture
+  came through" — because `PersonCamera`'s detections only ever reached the debug panel; nothing
+  told the OpenAI Realtime session anything. Fixed with
+  `RealtimeVoiceSession.updatePersonDetection`: `ContentView` forwards every detection change to
+  it, and on an actual presence change (not every ~1s sample) it inserts a quiet
+  `<vision>...</vision>` conversation item via the same `insertWorldItem` door `WorldProjector`
+  uses for body facts — no response requested, just context available for whenever Rocky next has
+  something to say. Deliberately kept outside `WorldStore`: vision is a fact about the person in
+  front of the camera, not the robot's own body, and doesn't belong in salience machinery built
+  for that sense. Also found in the same pass: nothing about the camera's operation was ever
+  written to `RockyLog`/`session.log`, the exact file `pull-log.sh` exists to make "it didn't
+  work" diagnosable after the fact — added start/stop/error/presence-change logging to
+  `PersonCamera.swift` so a future silent failure is actually visible in the pulled log instead of
+  invisible the way this one was.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime
