@@ -178,19 +178,35 @@ crashing.**
 - [ ] iPhone-side frontier navigation against the occupancy grid.
 - [x] **Camera semantic layer, brought forward ahead of the physical mount (2026-08-21):
   person-presence and bearing, standalone on the phone, not yet wired to the robot.**
-  `apps/ios/Rocky/Sources/PersonCamera.swift` samples the **front** camera (the side the screen's
-  face is on) every ~2.5s; `PersonVision.swift` sends each frame to Gemini Robotics-ER
+  `apps/ios/Rocky/Sources/PersonCamera.swift` reads the **front** camera (the side the screen's
+  face is on) as a continuous `AVCaptureVideoDataOutput` stream, throttled in software to ~1fps;
+  `PersonVision.swift` sends each sampled frame to Gemini Robotics-ER
   (`gemini-robotics-er-2-streaming-preview`, over Gemini's Live API WebSocket -- the model only
   exists in streaming form, so the session stays open for the camera's whole run rather than
   reconnecting per frame) for person/bearing judgment — a second model and provider from the
   OpenAI Realtime voice session, deliberately, so a slow vision call can never stall the one
-  session that has to keep talking. Has
-  its own explicit, visible on/off (`PersonCameraView.swift`'s Start/Stop, opened from a camera-panel
-  button, never auto-started) and records nothing — each frame is judged and discarded, no video
+  session that has to keep talking. Records nothing — each frame is judged and discarded, no video
   file, no photo-library write. `apps/robot/PLAN.md`'s camera section and `apps/ios/README.md` are
-  updated with the design and the reasoning for the second-model choice. Not yet tagged onto the
-  occupancy grid or turning the robot to face someone — that's still real work, blocked on the
-  physical mount (Phase 6) and occupancy grid (Phases 3-4) below.
+  updated with the design and the reasoning for the second-model choice. Verified live against the
+  real Gemini API (not just docs): the actual reply arrives as `serverContent.outputTranscription
+  .text`, not `modelTurn.parts[].text` as the reference docs describe, wrapped in a markdown code
+  fence despite the prompt asking for bare JSON — both handled and covered by
+  `PersonVisionTests.swift`. Deployed and confirmed working on a real iPhone, including the
+  true-positive path (an actual person in frame). Not yet tagged onto the occupancy grid or
+  turning the robot to face someone — that's still real work, blocked on the physical mount
+  (Phase 6) and occupancy grid (Phases 3-4) below.
+- [x] **Made the camera fluid and automatic, by request (2026-08-21).** Two changes:
+  capture switched from a discrete `AVCapturePhotoOutput.capturePhoto()` per tick (real shutter
+  latency, ~2.5s cadence) to the continuous video stream above, throttled to Gemini's documented
+  ≤1fps ceiling instead of paced by a slow capture call — the bearing marker now tracks like video
+  rather than a slideshow. And the camera's on/off moved from a manual Start/Stop the person had
+  to remember to visit, to following the voice conversation's own lifecycle: on the instant a
+  conversation connects (including resuming from pause), off the instant it pauses, ends, or
+  fails (`ContentView.swift`'s `handleVoiceStateChangeForCamera`). This deliberately reverses the
+  "explicit, visible on/off" privacy line from the original camera plan — the person asked for
+  automatic over asked-every-time. What's kept: still never on for a merely-open app, only for a
+  conversation the person themselves just started; still records nothing; and the camera panel's
+  Stop button remains a within-conversation manual override.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime

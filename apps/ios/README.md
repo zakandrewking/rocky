@@ -48,9 +48,9 @@ apps/ios/
 │   │   ├── NetworkUtilities.swift — shared phone-subnet detection for the discovery sweep
 │   │   ├── RockyError.swift      — the errors this app raises for itself
 │   │   ├── CyberPiPusher.swift   — Swift port of apps/robot/scripts/push.mjs (OTA to bootstrap.py)
-│   │   ├── PersonCamera.swift    — front-camera session, samples a frame every ~2.5s
-│   │   ├── PersonVision.swift    — sends a frame to Claude vision, parses person/bearing
-│   │   ├── PersonCameraView.swift — live preview + bearing marker + explicit on/off (Body panel)
+│   │   ├── PersonCamera.swift    — front-camera video stream, throttled to ~1fps, tied to voice state
+│   │   ├── PersonVision.swift    — sends a frame to Gemini Robotics-ER, parses person/bearing
+│   │   ├── PersonCameraView.swift — live preview + bearing marker (camera panel)
 │   │   └── World/                — Rocky's sense of her own body (docs/embodiment.md)
 │   │       ├── WorldStore.swift      — the authoritative state; the conversation is not the database
 │   │       ├── WorldProjector.swift  — what crosses into the Realtime conversation, and when
@@ -93,22 +93,28 @@ CyberPi payload-push button, the camera panel button, and the scrolling log.
 
 `PersonCamera.swift` owns the phone's **front** camera — not the rear one, because the screen
 already shows Rocky's face outward (`OrbView`), so the camera on that same side is the one pointed
-at whoever Rocky is looking at. Camera access, and the session itself, only ever start from an
-explicit, visible control inside the camera panel (`camera: what rocky sees…` in the state chip's
-detail area) — never implicitly from the app launching or a conversation starting. Nothing is
-recorded: every captured frame is downscaled, judged, and discarded, with no video file and no
-photo-library write.
+at whoever Rocky is looking at. It starts the instant a voice conversation connects and stops the
+instant it pauses, ends, or fails (`ContentView.swift`'s `handleVoiceStateChangeForCamera`, driven
+off `voiceSession.state`) — no separate button to remember, but still never on for a merely-open
+app, only for a conversation the person themselves just started; the camera panel's Stop button is
+a within-conversation override for turning it off without ending the call. Nothing is recorded:
+every captured frame is downscaled, judged, and discarded, with no video file and no photo-library
+write.
 
-While running, it samples one frame roughly every 2.5 seconds and sends it to `PersonVision.swift`,
-which asks **Gemini Robotics-ER** (`gemini-robotics-er-2-streaming-preview`) whether a person is in
-frame and roughly where. This is deliberately a second model and a second provider from the OpenAI
-Realtime session carrying Rocky's voice — see that file's header for why keeping them apart matters
-more than sharing one round trip would save. That model only exists behind Gemini's *Live API* — a
-stateful WebSocket, not a one-shot REST call — so `PersonVision` holds one session open for as long
-as the camera is running: a `setup` message once, then one `clientContent` turn (an inline JPEG
-part) per sampled frame, read back as streamed `serverContent` text. `PersonCameraView.swift` shows
-the live preview with a ring over the last detected bearing; `PersonVision.parseDetection`'s
-tolerant-JSON parsing is covered by `PersonVisionTests.swift` with no camera or network needed.
+Capture is a continuous `AVCaptureVideoDataOutput` stream, not discrete photos — a photo-per-tick
+has real shutter latency, and this is meant to track like video. It's throttled in software (an
+`OSAllocatedUnfairLock`-guarded flag, since frames arrive on their own delivery queue off the main
+actor) to roughly one sample per second, just inside Gemini's documented ≤1fps ceiling for this
+model, and each sampled frame goes to `PersonVision.swift`, which asks **Gemini Robotics-ER**
+(`gemini-robotics-er-2-streaming-preview`) whether a person is in frame and roughly where. This is
+deliberately a second model and a second provider from the OpenAI Realtime session carrying
+Rocky's voice — see that file's header for why keeping them apart matters more than sharing one
+round trip would save. That model only exists behind Gemini's *Live API* — a stateful WebSocket,
+not a one-shot REST call — so `PersonVision` holds one session open for as long as the camera is
+running: a `setup` message once, then one `clientContent` turn (an inline JPEG part) per sampled
+frame, read back as streamed `serverContent` text. `PersonCameraView.swift` shows the live preview
+with a ring over the last detected bearing; `PersonVision.parseDetection`'s tolerant-JSON parsing
+is covered by `PersonVisionTests.swift` with no camera or network needed.
 
 This is Phase 9 of `apps/robot/PLAN.md`'s build order, built and testable standalone on a phone
 today — it is not yet wired into robot movement (`drive`/`turn` toward a detected bearing), which

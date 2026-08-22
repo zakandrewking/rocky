@@ -168,27 +168,40 @@ together — bearing from vision, safe approach distance from ultrasonic.
 **Update (2026-08-21): built as a second model, not the Realtime session.** The original plan here
 was to reuse the same vision-capable model already reasoning for Rocky's voice, to avoid a second
 CV pipeline. Built instead: `apps/ios/Rocky/Sources/PersonCamera.swift` samples the **front**
-camera (same side as the screen showing Rocky's face) roughly every 2.5s and `PersonVision.swift`
-sends each frame to **Gemini Robotics-ER** (`gemini-robotics-er-2-streaming-preview`) — a model
-purpose-built for embodied/spatial reasoning, and deliberately a separate model and provider from
-the OpenAI Realtime voice session, so a slow or stuck vision call can never stall the one
-continuous session that has to keep talking. That model is only exposed via Gemini's Live API (a
-stateful WebSocket, not one-shot REST), so `PersonVision` holds a session open for the camera's
-whole run rather than reconnecting per frame. See `apps/ios/README.md`'s "Seeing a person, with a
-second model" for the detail. What exists today is person-presence and bearing only, running
-standalone and gated behind an explicit on/off in the camera panel (per the privacy note below) —
-not yet tagged onto the occupancy grid or wired into
-`drive`/`turn`, which is real Phase 9→10 work still ahead once Phase 6 (physical mount) and Phases
-3-4 (occupancy grid) exist to wire it into.
+camera (same side as the screen showing Rocky's face) and `PersonVision.swift` sends frames to
+**Gemini Robotics-ER** (`gemini-robotics-er-2-streaming-preview`) — a model purpose-built for
+embodied/spatial reasoning, and deliberately a separate model and provider from the OpenAI
+Realtime voice session, so a slow or stuck vision call can never stall the one continuous session
+that has to keep talking. That model is only exposed via Gemini's Live API (a stateful WebSocket,
+not one-shot REST), so `PersonVision` holds a session open for the camera's whole run rather than
+reconnecting per frame. See `apps/ios/README.md`'s "Seeing a person, with a second model" for the
+detail. What exists today is person-presence and bearing only, running standalone — not yet tagged
+onto the occupancy grid or wired into `drive`/`turn`, which is real Phase 9→10 work still ahead
+once Phase 6 (physical mount) and Phases 3-4 (occupancy grid) exist to wire it into.
+
+**Update (2026-08-21, later): capture switched from discrete photos to a continuous video stream,
+and the on/off switched from a manual button to the voice conversation's own lifecycle.** A photo
+per tick had real shutter latency; `PersonCamera` now reads a live `AVCaptureVideoDataOutput`
+stream and throttles it in software to ~1fps (Gemini's documented ceiling for this model), which
+is what makes the bearing marker track like video instead of a slideshow. And rather than a
+separate Start/Stop the person has to remember to visit, the camera now starts the instant a voice
+conversation connects and stops the instant it pauses, ends, or fails — see
+`apps/ios/Rocky/Sources/PersonCamera.swift`'s header and `ContentView.swift`'s
+`handleVoiceStateChangeForCamera`. Deliberately, by request: reverses the "explicit, visible
+on/off" line from the privacy note below, in exchange for the camera doing what a working sensor
+should — being on when it's useful without being asked each time.
 
 Two things to hold onto before building this:
 
 - **The camera isn't on the robot until it's physically mounted** (Phase 6). Don't block Phase 5
   on Phase 6 without deciding that explicitly.
 - **Privacy**: a camera on a family device is a materially bigger deal than audio alone (this
-  project's existing rule is already careful about audio memory — see root `TODOS.md`). Default
-  to no persistent recording, and give it an explicit, visible on/off — not bundled silently into
-  "the robot is on."
+  project's existing rule is already careful about audio memory — see root `TODOS.md`). Default to
+  no persistent recording, always true here regardless of the on/off design. The on/off itself is
+  now tied to the voice conversation's own lifecycle rather than a separate manual switch (see the
+  update above) — still never on for a merely-open app, only for a conversation the person
+  themselves just started, with a manual override in the camera panel to turn it off mid-conversation
+  without ending the call.
 
 ## Repo shape
 

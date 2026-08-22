@@ -1,42 +1,67 @@
 import AVFoundation
+import CoreImage
 import Foundation
+import os
 
-/// Owns the front camera and turns it into a slow trickle of person-detection judgments.
+/// Owns the front camera and turns it into a steady trickle of person-detection judgments.
 ///
 /// The front camera, not the rear one: the phone's screen shows Rocky's face outward
 /// (`OrbView` in `ContentView`), so the camera on the same side is the one pointed at whoever
 /// Rocky is looking at.
 ///
-/// This never records or persists a frame. Each captured photo lives only long enough to be
-/// downscaled, sent to `PersonVision`, and discarded -- there is no video file, no photo-library
-/// write, and nothing written to disk. The session itself only exists between `start()` and
-/// `stop()`, both driven by an explicit, visible control in the UI (see `PersonCameraView`), never
-/// started implicitly by the rest of the app coming up.
+/// Runs for exactly the lifetime of a voice conversation -- `ContentView` calls `start()` the
+/// moment a conversation connects and `stop()` the moment it pauses, ends, or fails (see its
+/// `voiceSession.state` observer). That is the whole privacy story: the camera is never on when
+/// the app is merely open, only while you are actively talking to Rocky, and it stops the instant
+/// that stops being true. This never records or persists a frame either way -- each frame lives
+/// only long enough to be downscaled, sent to `PersonVision`, and discarded, with no video file
+/// and no photo-library write.
+///
+/// Captures a continuous video stream rather than discrete photos, throttled in software to one
+/// sample roughly every second -- a still-photo capture per tick has real shutter latency; a
+/// throttled frame from an already-running video feed does not, which is what makes tracking feel
+/// like tracking rather than a slideshow.
 @MainActor
 final class PersonCamera: NSObject, ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var lastDetection: PersonDetection?
     @Published private(set) var lastError: String?
-    /// True while a captured frame is out being judged, so the next timer tick can skip rather
-    /// than pile a second request on top of a slow one.
+    /// True while a sampled frame is out being judged, so the throttle can skip rather than pile
+    /// a second request on top of a slow one.
     @Published private(set) var isDetecting = false
 
-    /// How often to sample a frame. A person doesn't need 30fps reasoning about them -- this is
-    /// a bearing check, not a video call -- and every tick is a paid API call.
-    private static let sampleInterval: TimeInterval = 2.5
+    /// How often to sample a frame. Gemini's documented input shape for this model is JPEG frames
+    /// at ≤1fps; this stays just inside that rather than at its edge. Read from the nonisolated
+    /// capture-delivery queue below, so it has to be nonisolated itself rather than main-actor
+    /// like the rest of this class.
+    private nonisolated static let sampleInterval: TimeInterval = 1.0
+    /// Reused across frames -- CIContext is expensive to create and safe to share, per Apple's
+    /// docs, across concurrent renders. Also read from the nonisolated delivery queue.
+    private nonisolated static let ciContext = CIContext()
 
     let session = AVCaptureSession()
-    private let photoOutput = AVCapturePhotoOutput()
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let videoQueue = DispatchQueue(label: "family.rocky.personcamera.video")
     private let vision = PersonVision()
-    private var sampleTimer: Task<Void, Never>?
     private var configured = false
+
+    /// Frames arrive on `videoQueue`, serially but off the main actor; detection state
+    /// (`isDetecting`, `lastDetection`, ...) is main-actor-isolated. This lock is the one thing
+    /// both sides may touch, so the throttle -- "are we already mid-request, and is it too soon
+    /// since the last one" -- can be decided cheaply on the delivery queue before ever paying for
+    /// a CVPixelBuffer → JPEG conversion on a frame that's going to be dropped anyway.
+    private struct ThrottleState {
+        var lastSampleAt = Date.distantPast
+        var inFlight = false
+    }
+    private let throttle = OSAllocatedUnfairLock(initialState: ThrottleState())
 
     var authorizationStatus: AVAuthorizationStatus {
         AVCaptureDevice.authorizationStatus(for: .video)
     }
 
-    /// Requests camera access if needed, configures the front camera once, and starts the
-    /// sampling loop. Safe to call again while already running.
+    /// Requests camera access if needed, configures the front camera once, and starts the video
+    /// feed. Safe to call again while already running.
     func start() async {
         guard !isRunning else { return }
         lastError = nil
@@ -63,20 +88,14 @@ final class PersonCamera: NSObject, ObservableObject {
             configured = true
         }
 
+        // A stale `lastSampleAt`/`inFlight` from a previous run would otherwise either delay the
+        // first frame of this one by a full interval or block it outright.
+        throttle.withLock { $0 = ThrottleState() }
         session.startRunning()
         isRunning = true
-        sampleTimer = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(Self.sampleInterval))
-                guard !Task.isCancelled else { return }
-                self?.captureSample()
-            }
-        }
     }
 
     func stop() {
-        sampleTimer?.cancel()
-        sampleTimer = nil
         session.stopRunning()
         vision.disconnect()
         isRunning = false
@@ -87,34 +106,27 @@ final class PersonCamera: NSObject, ObservableObject {
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front),
             let input = try? AVCaptureDeviceInput(device: device),
             session.canAddInput(input),
-            session.canAddOutput(photoOutput)
+            session.canAddOutput(videoOutput)
         else { return false }
 
         session.beginConfiguration()
         session.sessionPreset = .medium
         session.addInput(input)
-        session.addOutput(photoOutput)
+        videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+        // The throttle already drops all but ~1fps; a queued backlog of frames we'll never look
+        // at just holds memory and adds latency to the ones we do want.
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
+        session.addOutput(videoOutput)
         session.commitConfiguration()
         return true
     }
 
-    private func captureSample() {
-        guard isRunning, !isDetecting else { return }
+    private func handleFrame(jpegData: Data) async {
+        defer { throttle.withLock { $0.inFlight = false } }
+        guard isRunning else { return }
         isDetecting = true
-        let settings = AVCapturePhotoSettings()
-        photoOutput.capturePhoto(with: settings, delegate: self)
-    }
-
-    private func handleCapturedPhoto(jpegData: Data?, errorDescription: String?) async {
         defer { isDetecting = false }
-        if let errorDescription {
-            lastError = errorDescription
-            return
-        }
-        guard let jpegData else {
-            lastError = "camera produced no image data"
-            return
-        }
         do {
             let detection = try await vision.detectPerson(in: jpegData)
             lastDetection = detection
@@ -125,19 +137,37 @@ final class PersonCamera: NSObject, ObservableObject {
     }
 }
 
-extension PersonCamera: AVCapturePhotoCaptureDelegate {
-    nonisolated func photoOutput(
-        _ output: AVCapturePhotoOutput,
-        didFinishProcessingPhoto photo: AVCapturePhoto,
-        error: Error?
+extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
+    nonisolated func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
     ) {
-        // Pulled out here, inside the nonisolated delegate call, because AVCapturePhoto itself
-        // isn't Sendable and can't cross into the @MainActor task below -- only the plain Data and
-        // String extracted from it can.
-        let jpegData = photo.fileDataRepresentation()
-        let errorDescription = error?.localizedDescription
-        Task { @MainActor in
-            await handleCapturedPhoto(jpegData: jpegData, errorDescription: errorDescription)
+        let shouldSample = throttle.withLock { state -> Bool in
+            guard !state.inFlight, Date().timeIntervalSince(state.lastSampleAt) >= Self.sampleInterval
+            else { return false }
+            state.lastSampleAt = Date()
+            state.inFlight = true
+            return true
+        }
+        guard shouldSample else { return }
+
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+            throttle.withLock { $0.inFlight = false }
+            return
+        }
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        guard let jpegData = Self.ciContext.jpegRepresentation(
+            of: ciImage,
+            colorSpace: ciImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            options: [:]
+        ) else {
+            throttle.withLock { $0.inFlight = false }
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            await self?.handleFrame(jpegData: jpegData)
         }
     }
 }

@@ -22,12 +22,13 @@ private struct CameraPreview: UIViewRepresentable {
 }
 
 /// What Rocky sees: a live front-camera preview with a marker over the last detected person's
-/// bearing, and an explicit on/off control.
+/// bearing.
 ///
-/// The explicit control is the point, not a convenience -- a camera on a family device needs a
-/// visible switch, not a feed that just happens to be running because the app is open (see
-/// `apps/robot/PLAN.md`'s privacy note). Nothing here is recorded: `PersonCamera` discards each
-/// frame right after judging it, and closing this sheet stops the session outright.
+/// `PersonCamera` starts and stops on its own, tied to the voice conversation's lifecycle (see
+/// its header) -- this view is a window onto that, not the switch for it. Dismissing this sheet
+/// leaves the camera running exactly as it was; the manual button below is a within-conversation
+/// override, for anyone who wants Rocky's eyes off without ending the conversation to do it.
+/// Nothing here is recorded: `PersonCamera` discards each frame right after judging it.
 struct PersonCameraView: View {
     @ObservedObject var camera: PersonCamera
     @Environment(\.dismiss) private var dismiss
@@ -57,7 +58,6 @@ struct PersonCameraView: View {
                 }
             }
         }
-        .onDisappear { camera.stop() }
     }
 
     @ViewBuilder

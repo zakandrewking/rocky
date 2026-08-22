@@ -36,8 +36,9 @@ struct ContentView: View {
     /// intentions back. There is one payload (apps/robot/device/rocky_agent.py) and so one
     /// connection -- the older commanded-motion agent and its separate discovery are deprecated.
     @StateObject private var behavior = BehaviorMonitor()
-    /// Off until explicitly started from the camera panel -- see `PersonCameraView`'s header for
-    /// why that has to be a visible, deliberate control rather than something that just comes on.
+    /// Runs for exactly the lifetime of a voice conversation -- started and stopped by the
+    /// `voiceSession.state` observer below, never idling on while the app is merely open. See
+    /// `PersonCamera`'s header for the reasoning.
     @StateObject private var personCamera = PersonCamera()
     @State private var log: [String] = []
     @State private var showPayloadPicker = false
@@ -77,6 +78,25 @@ struct ContentView: View {
         }
         .onChange(of: behavior.connected) { _, found in
             voiceSession.bodyAvailabilityChanged(found)
+        }
+        .onChange(of: voiceSession.state) { _, state in
+            handleVoiceStateChangeForCamera(state)
+        }
+    }
+
+    /// Rocky's eyes follow her voice: on the instant a conversation connects (including a resume
+    /// from pause), off the instant it stops being live. This is the camera's entire on/off story
+    /// -- see `PersonCamera`'s header for why that's still a defensible privacy line even without
+    /// a manual switch: it is never on for a mere-open app, only for a conversation the person
+    /// themselves just started.
+    private func handleVoiceStateChangeForCamera(_ state: RealtimeVoiceSession.State) {
+        switch state {
+        case .connecting, .connected:
+            guard !personCamera.isRunning else { return }
+            Task { await personCamera.start() }
+        case .disconnected, .paused, .failed:
+            guard personCamera.isRunning else { return }
+            personCamera.stop()
         }
     }
 
