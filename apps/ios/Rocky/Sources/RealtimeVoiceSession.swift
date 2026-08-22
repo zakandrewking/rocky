@@ -93,6 +93,10 @@ final class RealtimeVoiceSession: ObservableObject {
     private var pendingPersonPresent: Bool?
     private var pendingPersonPresentStreak = 0
     private static let personPresenceConfirmations = 2
+    /// When Rocky was last told anything about who's visible, so a continuously-present person
+    /// still gets periodically refreshed rather than described only once, forever.
+    private var lastVisionAnnouncedAt: Date?
+    private static let visionRefreshInterval: TimeInterval = 10
 
     // MARK: - The world
     //
@@ -595,14 +599,20 @@ final class RealtimeVoiceSession: ObservableObject {
     /// the camera, not about the robot's own body, and folding it into `WorldStore` would mean
     /// the salience machinery there starts making judgments about a sense it wasn't built for. A
     /// plain conversation item is enough -- inserted quietly, no response requested, the same
-    /// `insertWorldItem` mechanism `WorldProjector` uses for body facts -- and only when presence
-    /// actually changes, since a fresh line every ~1s the whole time someone is simply standing
-    /// there would be noise, not information.
+    /// `insertWorldItem` mechanism `WorldProjector` uses for body facts.
     ///
-    /// "Actually changes" needs its own confirmation, though: a single frame's judgment is noisy
-    /// (motion blur, a glance down, a bad angle), confirmed live when one such frame briefly read
-    /// as empty and Rocky was told the friend had left. This waits for the same verdict twice in a
-    /// row before believing it, so one bad frame can't flip what Rocky's told.
+    /// Two live findings shaped when it actually fires:
+    ///
+    /// A single frame's judgment is noisy (motion blur, a glance down, a bad angle) -- one such
+    /// frame briefly read as empty and Rocky told a friend they'd left. This waits for the same
+    /// presence verdict twice in a row before believing it, so one bad frame can't flip what
+    /// Rocky's told.
+    ///
+    /// Presence alone is not the same as staying current, though: a session where presence never
+    /// toggled back to false left Rocky describing the first person seen minutes after someone
+    /// else had replaced them in view, because nothing re-announces while it simply stays true.
+    /// So this also refreshes on a timer while someone remains present -- not just on the
+    /// true/false edge -- worded as an update rather than a fresh arrival.
     func updatePersonDetection(_ detection: PersonDetection) {
         if detection.personPresent == pendingPersonPresent {
             pendingPersonPresentStreak += 1
@@ -610,14 +620,21 @@ final class RealtimeVoiceSession: ObservableObject {
             pendingPersonPresent = detection.personPresent
             pendingPersonPresentStreak = 1
         }
-        guard canReachVoice,
-            pendingPersonPresentStreak >= Self.personPresenceConfirmations,
-            lastAnnouncedPersonPresent != detection.personPresent
-        else { return }
+        guard canReachVoice, pendingPersonPresentStreak >= Self.personPresenceConfirmations else { return }
+
+        let presenceChanged = lastAnnouncedPersonPresent != detection.personPresent
+        let dueForRefresh =
+            detection.personPresent
+            && Date().timeIntervalSince(lastVisionAnnouncedAt ?? .distantPast) >= Self.visionRefreshInterval
+        guard presenceChanged || dueForRefresh else { return }
+
         lastAnnouncedPersonPresent = detection.personPresent
+        lastVisionAnnouncedAt = Date()
         let text: String
         if detection.personPresent {
-            text = "<vision>Someone just came into view on your front camera: \(detection.description ?? "a person").</vision>"
+            text = presenceChanged
+                ? "<vision>Someone just came into view on your front camera: \(detection.description ?? "a person").</vision>"
+                : "<vision>Still visible on your front camera, an updated look: \(detection.description ?? "a person").</vision>"
         } else {
             text = "<vision>No one is visible on your front camera right now.</vision>"
         }
@@ -672,6 +689,7 @@ final class RealtimeVoiceSession: ObservableObject {
         lastAnnouncedPersonPresent = nil
         pendingPersonPresent = nil
         pendingPersonPresentStreak = 0
+        lastVisionAnnouncedAt = nil
         activeResponseId = nil
         awaitingResponse = false
         cancelWatchdog?.cancel()

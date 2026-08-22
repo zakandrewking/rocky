@@ -244,6 +244,15 @@ crashing.**
   sample interval (~1s) of latency for not flip-flopping on a single bad frame. Not unit-tested:
   the guard sits behind `canReachVoice`, which needs a live data channel this class doesn't mock
   elsewhere either — verified live instead.
+- [x] **Added a periodic vision refresh after a live stale-description bug (2026-08-21).** With the
+  debounce fix in, a real session showed presence never toggling back to false across a whole
+  conversation — because someone stayed continuously in frame — so the one-time
+  presence-changed announcement never fired again: the camera panel's live description had moved
+  on to "child with striped shirt," but Rocky kept confidently describing "person with glasses"
+  minutes later, because that was the only `<vision>` item she'd ever been given. Fixed by
+  refreshing on a 10s timer (`visionRefreshInterval`) while someone remains present, not only on
+  the true/false edge — worded as "an updated look," not a fresh arrival, so it doesn't read as a
+  second person showing up.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime
