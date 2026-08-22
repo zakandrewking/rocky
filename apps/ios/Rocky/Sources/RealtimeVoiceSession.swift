@@ -602,7 +602,7 @@ final class RealtimeVoiceSession: ObservableObject {
         } else {
             text = "<vision>No one is visible on your front camera right now.</vision>"
         }
-        insertWorldItem(id: "vision_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))", text: text)
+        insertWorldItem(id: Self.shortItemId("vision_"), text: text)
         log("vision: \(text)")
     }
 
@@ -908,6 +908,18 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private static func ms(since date: Date) -> String {
         "\(Int(Date().timeIntervalSince(date) * 1000))ms"
+    }
+
+    /// OpenAI's Realtime API rejects any conversation item id over 32 characters -- confirmed the
+    /// hard way on a real device, where `"vision_" + UUID` (39 chars) was silently refused by the
+    /// server, dropping the vision context it was supposed to add without any error visible to
+    /// the person using the app (only `realtime error: Invalid 'item.id'` in the pulled log).
+    /// Keeps every generated id under that ceiling by construction, rather than trusting each call
+    /// site to do the arithmetic itself.
+    static func shortItemId(_ prefix: String) -> String {
+        let budget = max(0, 32 - prefix.count)
+        let suffix = UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(budget)
+        return "\(prefix)\(suffix)"
     }
 
     private var isFailed: Bool {
@@ -1454,7 +1466,7 @@ final class RealtimeVoiceSession: ObservableObject {
         log("performance paused at step \(performance.nextIndex + 1)/\(performance.steps.count) (\(reason))")
 
         guard notifyVoice, client.isDataChannelOpen else { return }
-        let itemId = "performance_paused_\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        let itemId = Self.shortItemId("performance_paused_")
         client.send(
             ConversationItemCreateEvent(
                 id: itemId,

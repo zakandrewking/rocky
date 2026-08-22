@@ -54,6 +54,18 @@ final class ToolConversationTests: XCTestCase {
         XCTAssertFalse(remembered.contains("short reflexive line"))
     }
 
+    /// Confirmed the hard way on a real device: OpenAI's Realtime API silently refuses any
+    /// conversation item id over 32 characters, and `"vision_" + UUID` (39 chars) was one such id
+    /// -- dropping the vision context it was meant to add with only `realtime error: Invalid
+    /// 'item.id'` in the log to show for it.
+    func testGeneratedItemIdsNeverExceedTheRealtimeAPIsLimit() {
+        for prefix in ["vision_", "performance_paused_", ""] {
+            let id = RealtimeVoiceSession.shortItemId(prefix)
+            XCTAssertLessThanOrEqual(id.count, 32)
+            XCTAssertTrue(id.hasPrefix(prefix))
+        }
+    }
+
     func testOnlyPauseClosesTheFullDuplexMicrophone() {
         XCTAssertTrue(RealtimeVoiceSession.microphoneShouldBeOpen(isPaused: false))
         XCTAssertFalse(RealtimeVoiceSession.microphoneShouldBeOpen(isPaused: true))

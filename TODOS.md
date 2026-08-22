@@ -222,6 +222,18 @@ crashing.**
   work" diagnosable after the fact — added start/stop/error/presence-change logging to
   `PersonCamera.swift` so a future silent failure is actually visible in the pulled log instead of
   invisible the way this one was.
+- [x] **Found and fixed the actual cause: still "no eyes" after the fix above, and the newly-added
+  logging is exactly what found it (2026-08-21).** With logging in place, the pulled log showed the
+  detection firing and the `<vision>` item being built correctly, immediately followed by
+  `realtime error: Invalid 'item.id': string too long. Expected a string with maximum length 32,
+  but got a string with length 39 instead.` OpenAI's Realtime API rejects any conversation item id
+  over 32 characters, and `"vision_" + UUID` (39 chars) was one — the vision context was being
+  silently dropped by the server every time. Found the same defect already live in
+  `suspendActivePerformance`'s `"performance_paused_" + UUID` (52 chars), meaning an interrupted
+  performance's resume context has likely been silently dropped this whole time too. Fixed both
+  with one helper, `RealtimeVoiceSession.shortItemId(_:)`, that keeps a generated id under the
+  limit by construction rather than trusting each call site's arithmetic; covered by
+  `testGeneratedItemIdsNeverExceedTheRealtimeAPIsLimit`.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime
