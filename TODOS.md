@@ -253,8 +253,44 @@ crashing.**
   refreshing on a 10s timer (`visionRefreshInterval`) while someone remains present, not only on
   the true/false edge — worded as "an updated look," not a fresh arrival, so it doesn't read as a
   second person showing up.
+- [x] **Rocky can see things, not just people, and can look on demand (2026-08-23).** A friend held
+  a can of coconut water up to the camera and asked about it; the camera panel read "man holding
+  coconut water" and Rocky still missed it entirely. Three separate causes, all fixed together:
+  - **She was never told about objects at all.** `PersonVision` asked Gemini one question — is a
+    person present — and threw away everything else, so `person_present: true` was the whole truth
+    available. Its prompt now describes the entire frame (`SceneReading.scene`: what people are
+    holding, wearing, showing, plus objects and readable text, named specifically — "a can of
+    coconut water", not "a drink"), and `scene` survives a `person_present: false` reading, because
+    an empty room and an empty room with a drawing held up in it are different facts.
+  - **Nothing fired.** The passive `<vision>` stream only announced on the person-present edge and
+    a 10s timer. The friend never left frame, so presence never flipped and nothing was said. A
+    materially different scene now announces itself too — rate-limited (`sceneChangeMinInterval`,
+    4s) rather than debounced, since holding something up shouldn't wait two frames. "Materially"
+    can't be a string comparison, since Gemini rephrases itself every frame, so
+    `RealtimeVoiceSession.sceneChanged` compares significant-word overlap; unit-tested in
+    `VisionContextTests` against both a real object appearing and pure rewording.
+  - **Sight is always slightly in the past.** Frames are sampled at ~1fps and take another beat to
+    judge, so at the instant any question lands, the newest look predates it. New `look_now` tool
+    (this repo's first tool that is the *phone's*, not the board's) blocks the answer until a frame
+    captured **after** the question comes back, up to 3.5s, then falls back to the newest look and
+    says how old it is so Rocky can speak it as old. Needed three supporting changes: it must skip
+    the body guard, it must survive `withoutRobotBody` (`phoneToolNames` — losing the body must not
+    blind a phone whose camera is wide open), and it needs its own follow-up prompt, because the
+    normal one exists to keep movement silent ("produce no additional words") and would have
+    suppressed the answer.
+  Also found: `<vision>` had **no prompt rule at all** — it was reaching Rocky as unexplained text
+  with nothing saying not to read it aloud. There is now a `YOUR EYES` section covering the tag,
+  the lag, when to call `look_now`, and saying plainly when she cannot see rather than inventing.
+- [x] **Made this flow debuggable, since all three causes above were invisible in the log
+  (2026-08-23).** Camera logging deliberately fired only on presence change — the exact definition
+  under which this bug produced no lines at all. Now: every reading logs seq, round-trip ms,
+  presence, bearing and scene; `PersonVision` logs Gemini's verbatim reply with timing, plus setup,
+  reconnects, timeouts and a distinct line for a reply that parsed to nothing; suppressed
+  announcements say *which* gate held them (unconfirmed flip vs. scene steady vs. too soon), since
+  "nothing changed" and "changed but rate-limited" look identical from outside and want opposite
+  fixes; and `look_now` logs the wait, what came back, and any fallback.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
-    comfortable distance.
+    comfortable distance. The bearing this needs is unchanged; `SceneReading` keeps it.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime
   voice conversation, without crashing. Run repeatedly; tune thresholds against what actually
   happens on hardware, not what was assumed in the plan.

@@ -86,10 +86,12 @@ describe("createDeviceSessionConfig", () => {
 
     // Five reach apps/robot/device/rocky_agent.py directly; performance is sequenced by iOS into
     // speech plus those same physical messages. The steering tools are gone with the deprecated
-    // motion agent.
+    // motion agent. look_now is the exception to the rule in this test's name: it reaches the
+    // phone's own camera, so it is offered whether or not a board is there to answer anything.
     expect(names).toEqual([
       "stop_robot",
       "get_robot_state",
+      "look_now",
       "set_robot_mood",
       "robot_light",
       "robot_gesture",
@@ -97,6 +99,25 @@ describe("createDeviceSessionConfig", () => {
       "robot_performance",
       "resume_robot_performance",
     ]);
+  });
+
+  /// A friend held a drink up to the camera and asked about it, and Rocky answered from a look
+  /// taken before they raised it. The tool is only half the fix; the character has to be told to
+  /// reach for it on exactly those moments rather than trusting the sight that arrives on its own.
+  it("makes Rocky look again before answering about what is in front of her", () => {
+    const config = createDeviceSessionConfig() as SessionConfig;
+    const tools = config.tools as Array<{ name: string; description: string; parameters: unknown }>;
+    const look = tools.find((tool) => tool.name === "look_now");
+
+    expect(look?.description).toContain("wait for that look before you answer");
+    expect(look?.description).toContain("held up");
+    expect(look?.parameters).toMatchObject({ properties: {} });
+    expect(config.instructions).toContain("Your sight lags a little behind the moment");
+    expect(config.instructions).toContain("whenever you are about to say you cannot see something");
+    // The private sight tag had no rule at all until the same pass that added the tool, so it was
+    // reaching Rocky as unexplained text with nothing saying not to read it out loud.
+    expect(config.instructions).toContain("tagged <vision>");
+    expect(config.instructions).toContain("say plainly that you cannot see right now");
   });
 
   it("teaches the character that startup wakes privately out of the boot interlock", () => {

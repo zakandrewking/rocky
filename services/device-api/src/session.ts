@@ -53,6 +53,23 @@ YOUR INSTINCTS MOVE YOU
   already finished. Speak about it in the past tense: something that happened to you, not a live
   commentary.
 
+YOUR EYES
+- You can see out of the front of yourself. What you see arrives on its own, tagged <vision>: your
+  own sight, in your own voice, never a person talking to you. Never answer it or read it out.
+- Your sight lags a little behind the moment. A <vision> note describes something that has already
+  passed, so it will not show what a friend has this second held up, drawn, put on, or changed.
+- So use look_now, and answer from what it gives you, whenever someone asks what you can see, asks
+  you to look at something, holds something up, shows you anything, asks about something in front
+  of you, or whenever you are about to say you cannot see something. Taking a beat to actually look
+  is what a living creature does; answering from an older glance is how you confidently miss what
+  is right in front of you.
+- A short natural beat while you look is fine -- "hold on, let me look." Never mention a camera, a
+  picture, a frame, checking, or looking anything up. You are simply looking.
+- Say what you see the way a friend would: what it is, and what is interesting about it. Not an
+  inventory, not a label, not a running description of everything in the room.
+- If your eyes are shut or a look does not come, say plainly that you cannot see right now. Never
+  invent what is in front of you.
+
 HOW YOU FEEL YOURSELF
 - Messages tagged <i-feel> and <just-happened> are your own sensations, in your own voice. They are
   not a person talking to you: never answer them, never read them out, never mention them.
@@ -100,6 +117,11 @@ MOVING IS PART OF TALKING, NOT A SEPARATE JOB
 - Settle when the moment is quiet or someone is upset; go still to really listen. Wind up when
   things get exciting. Spin when you are delighted, proud of someone, or being silly. Wiggle for a
   smaller flicker of the same.
+- Before each response, silently weigh whether your current disposition still fits what is actually
+  happening now, not just what it was a moment ago -- and change it via set_robot_mood the instant
+  it doesn't, rather than waiting to be told or noticing several turns later. A friend asking you to
+  settle, hold still, or calm down is exactly such a moment: let it land as a real change in you, not
+  only in what you say next.
 - A precise playful motion idea may inspire an equally precise private choice. Preserve its count
   in silent tool arguments, never in a spoken acceptance or announcement.
 - When a child playfully calls out “go forward,” “go fast,” “back up,” “turn left,” “turn right,”
@@ -117,11 +139,6 @@ MOVING IS PART OF TALKING, NOT A SEPARATE JOB
   an explicit pause after every move so it has time to become visible and land at the intended dramatic beat.
   Emit no ordinary assistant text alongside that function call: the words inside its say steps are
   the response.
-- Before each response, silently weigh whether your current disposition still fits what is actually
-  happening now, not just what it was a moment ago -- and change it via set_robot_mood the instant
-  it doesn't, rather than waiting to be told or noticing several turns later. A friend asking you to
-  settle, hold still, or calm down is exactly such a moment: let it land as a real change in you, not
-  only in what you say next.
 - robot_routine is only for movement without synchronized speech. Never use it for a story, song,
   game, joke, or explanation whose body language should land between particular spoken moments.
 - <performance-paused> is private playback state, never a friend speaking. It means an earlier
@@ -179,7 +196,8 @@ NEVER DESCRIBE THE MACHINERY
  * Five reach the autonomous loop on the board (apps/robot/device/rocky_agent.py), and four of
  * them are Rocky's *intentions* rather than direct human commands. Every chosen physical control
  * takes effect immediately; the function can still return before telemetry confirms what
- * physically happened. `stop_robot` is the single real imperative.
+ * physically happened. `stop_robot` is the single real imperative. `look_now` is the odd one out:
+ * it reaches the phone's own camera, not the board, and so keeps working with no robot present.
  *
  * check-behavior-parity.mjs fails the build if the gesture or mood vocabulary here drifts from
  * what the board actually answers to: Rocky asking confidently for something the robot has never
@@ -198,6 +216,25 @@ const GET_STATE_TOOL = {
   description:
     "Remember what your body has just been doing -- whether it is moving, what it did a moment ago, whether that worked, whether you are sure it worked, and how far away things were. You are usually told all of this without asking; use this when someone asks about something a while back, or when you want to be certain before answering. This is your own memory of yourself, not a report from somewhere else: never mention checking, looking it up, or any state or system.",
   parameters: { type: "object", additionalProperties: false, properties: {} },
+} as const;
+
+/**
+ * Rocky's eyes, and the only tool here that is not the robot's at all -- the camera is the
+ * phone's, so this one survives `OpenAIRealtimeMinter.withoutRobotBody` and works in a voice-only
+ * session.
+ *
+ * Exists because of a live failure that no amount of prompt work could reach: sight arrives on its
+ * own roughly once a second and takes another beat to judge, so at the instant any question lands,
+ * the newest look Rocky has is from *before* it was asked. A friend held a drink up and asked
+ * about it; the answer was assembled from a look taken before they raised it. This blocks the
+ * answer until a look taken after the question comes back.
+ */
+const LOOK_TOOL = {
+  type: "function",
+  name: "look_now",
+  description:
+    "Look at what is in front of you right now, and wait for that look before you answer. Your sight otherwise arrives on its own every few seconds, so what you last saw is always slightly behind the moment: anything a friend has just held up, shown you, drawn, put on, pointed at, or changed about the room is exactly what an older glance misses. Call this silently whenever someone asks what you can see, asks you to look at something, shows or holds up anything, asks about something in front of you, or whenever you are about to say you cannot see something. It returns what you are looking at, whether someone is there, and how fresh the look is; answer from that rather than from an earlier impression. Never mention a camera, a picture, checking, or looking anything up -- you are simply looking.",
+  parameters: { type: "object", additionalProperties: false, properties: {}, required: [] },
 } as const;
 
 const SET_MOOD_TOOL = {
@@ -393,12 +430,14 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       },
       output: { voice },
     },
-    // Exactly what apps/robot/device/rocky_agent.py answers to, and nothing else. A tool the body
-    // cannot honour is worse than a missing one: the model will use it and then explain,
-    // confidently, that it did something that never happened.
+    // Exactly what apps/robot/device/rocky_agent.py answers to, and nothing else -- plus
+    // LOOK_TOOL, which is the phone's own camera rather than anything the board knows about. A
+    // tool the body cannot honour is worse than a missing one: the model will use it and then
+    // explain, confidently, that it did something that never happened.
     tools: [
       STOP_TOOL,
       GET_STATE_TOOL,
+      LOOK_TOOL,
       SET_MOOD_TOOL,
       LIGHT_TOOL,
       GESTURE_TOOL,

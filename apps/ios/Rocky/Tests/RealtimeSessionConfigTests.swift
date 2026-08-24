@@ -35,6 +35,26 @@ final class RealtimeSessionConfigTests: XCTestCase {
         XCTAssertEqual(stripped["tool_choice"] as! String, "none")
     }
 
+    /// Rocky's eyes are the phone's front camera, and it runs on the voice conversation, not on
+    /// whether discovery found a robot. Stripping `look_now` with the movement tools would blind a
+    /// voice-only Rocky whose camera is in fact wide open and describing the room to her.
+    func testKeepsThePhonesOwnToolsWhenThereIsNoRobot() {
+        let input = config(
+            tools: [
+                ["type": "function", "name": "robot_gesture"],
+                ["type": "function", "name": "look_now"],
+            ],
+            instructions: "You are Rocky."
+        )
+
+        let stripped = session(of: OpenAIRealtimeMinter.withoutRobotBody(input))
+        let names = (stripped["tools"] as! [[String: Any]]).map { $0["name"] as! String }
+
+        XCTAssertEqual(names, ["look_now"])
+        XCTAssertEqual(stripped["tool_choice"] as! String, "auto")
+        XCTAssertTrue((stripped["instructions"] as! String).contains("Your eyes are unaffected"))
+    }
+
     func testCorrectsTheBodyContextSoRockyDoesNotPromiseABodySheHasNot() {
         let input = config(tools: [], instructions: "You are Rocky. It moves itself.")
 
@@ -61,10 +81,13 @@ final class RealtimeSessionConfigTests: XCTestCase {
         let connectedSession = try XCTUnwrap(connected["session"] as? [String: Any])
         let voiceOnlySession = try XCTUnwrap(voiceOnly["session"] as? [String: Any])
         XCTAssertEqual(connectedSession["type"] as? String, "realtime")
-        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 8)
+        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 9)
         XCTAssertEqual(connectedSession["tool_choice"] as? String, "auto")
-        XCTAssertEqual((voiceOnlySession["tools"] as? [Any])?.count, 0)
-        XCTAssertEqual(voiceOnlySession["tool_choice"] as? String, "none")
+        // Not zero: losing the body does not close Rocky's eyes.
+        XCTAssertEqual(
+            (voiceOnlySession["tools"] as? [[String: Any]])?.map { $0["name"] as? String }, ["look_now"]
+        )
+        XCTAssertEqual(voiceOnlySession["tool_choice"] as? String, "auto")
         XCTAssertTrue(
             (voiceOnlySession["instructions"] as? String)?.contains("NOT CONNECTED RIGHT NOW") == true
         )

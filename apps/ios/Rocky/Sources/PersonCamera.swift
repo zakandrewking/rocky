@@ -24,11 +24,15 @@ import os
 @MainActor
 final class PersonCamera: NSObject, ObservableObject {
     @Published private(set) var isRunning = false
-    @Published private(set) var lastDetection: PersonDetection?
+    /// The newest judged frame, carrying its own timestamps so anything downstream can ask how
+    /// old this look actually is rather than assuming "latest" means "now".
+    @Published private(set) var lastSample: VisionSample?
     @Published private(set) var lastError: String?
     /// True while a sampled frame is out being judged, so the throttle can skip rather than pile
     /// a second request on top of a slow one.
     @Published private(set) var isDetecting = false
+
+    var lastReading: SceneReading? { lastSample?.reading }
 
     /// How often to sample a frame. Gemini's documented input shape for this model is JPEG frames
     /// at ≤1fps; this stays just inside that rather than at its edge. Read from the nonisolated
@@ -44,6 +48,7 @@ final class PersonCamera: NSObject, ObservableObject {
     private let videoQueue = DispatchQueue(label: "family.rocky.personcamera.video")
     private let vision = PersonVision()
     private var configured = false
+    private var sampleSeq = 0
 
     /// Frames arrive on `videoQueue`, serially but off the main actor; detection state
     /// (`isDetecting`, `lastDetection`, ...) is main-actor-isolated. This lock is the one thing
@@ -126,22 +131,28 @@ final class PersonCamera: NSObject, ObservableObject {
         return true
     }
 
-    private func handleFrame(jpegData: Data) async {
+    private func handleFrame(jpegData: Data, capturedAt: Date) async {
         defer { throttle.withLock { $0.inFlight = false } }
         guard isRunning else { return }
         isDetecting = true
         defer { isDetecting = false }
         do {
-            let detection = try await vision.detectPerson(in: jpegData)
-            // Logged only on a real change, the same restraint `RealtimeVoiceSession` applies to
-            // vision context in the conversation -- a line every ~1s the whole time someone is
-            // simply standing there would drown out everything else in session.log.
-            if detection.personPresent != lastDetection?.personPresent {
-                RockyLog.write(
-                    "camera: \(detection.personPresent ? "person appeared (\(detection.description ?? "no description"))" : "person left view")"
-                )
-            }
-            lastDetection = detection
+            let reading = try await vision.read(frame: jpegData)
+            sampleSeq += 1
+            let sample = VisionSample(
+                seq: sampleSeq, capturedAt: capturedAt, judgedAt: Date(), reading: reading
+            )
+            // Every reading, deliberately, where this used to log only presence changes. That
+            // restraint is exactly what hid a live failure: a friend held an object up while
+            // staying in view the whole time, so by the old definition nothing ever "changed" and
+            // the log had nothing to say about the frames that mattered. One line per second is a
+            // price worth paying to be able to answer "what did it actually see, and when".
+            RockyLog.write(
+                "camera: #\(sample.seq) judged in \(Int(sample.latency * 1000))ms — person=\(reading.personPresent)"
+                    + (reading.bearing.map { String(format: " bearing=%.2f", $0) } ?? "")
+                    + " scene=\(reading.scene ?? "(none)")"
+            )
+            lastSample = sample
             lastError = nil
         } catch {
             lastError = error.localizedDescription
@@ -156,10 +167,11 @@ extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
+        let capturedAt = Date()
         let shouldSample = throttle.withLock { state -> Bool in
-            guard !state.inFlight, Date().timeIntervalSince(state.lastSampleAt) >= Self.sampleInterval
+            guard !state.inFlight, capturedAt.timeIntervalSince(state.lastSampleAt) >= Self.sampleInterval
             else { return false }
-            state.lastSampleAt = Date()
+            state.lastSampleAt = capturedAt
             state.inFlight = true
             return true
         }
@@ -180,7 +192,7 @@ extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         }
 
         Task { @MainActor [weak self] in
-            await self?.handleFrame(jpegData: jpegData)
+            await self?.handleFrame(jpegData: jpegData, capturedAt: capturedAt)
         }
     }
 }

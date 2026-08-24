@@ -62,7 +62,7 @@ struct PersonCameraView: View {
 
     @ViewBuilder
     private var bearingMarker: some View {
-        if let bearing = camera.lastDetection?.bearing {
+        if let bearing = camera.lastReading?.bearing {
             GeometryReader { geo in
                 let x = geo.size.width * (0.5 + bearing / 2)
                 Circle()
@@ -99,8 +99,8 @@ struct PersonCameraView: View {
         Group {
             if !camera.isRunning {
                 Text("camera: off")
-            } else if let detection = camera.lastDetection, detection.personPresent {
-                Text("person seen\(detection.description.map { ": \($0)" } ?? "")")
+            } else if let reading = camera.lastReading, reading.personPresent {
+                Text("person seen\(reading.person.map { ": \($0)" } ?? "")")
             } else if camera.isDetecting {
                 Text("looking…")
             } else {

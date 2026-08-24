@@ -56,7 +56,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// continuation used in the failed story session made the model announce every move in its
     /// own response. This returns attention to the relationship without casting the person as an
     /// operator whose request Rocky is executing.
-    static let toolFollowupPrompt = """
+    nonisolated static let toolFollowupPrompt = """
         Continue the shared conversation as a self-directed alien friend, not the tool call. Tools
         and body state are silent body language, never a new conversational turn. Continue the
         current thought, story, game, song, joke, or explanation naturally without a fresh
@@ -67,6 +67,18 @@ final class RealtimeVoiceSession: ObservableObject {
         friend's whole turn was a playful physical idea and your silent movement or light choice
         already answered it, produce no words; never narrate waiting, momentum, future motion, or
         a color change.
+        """
+
+    /// Looking is the one tool whose result has to be *spoken*, which is why it cannot share the
+    /// follow-up above. That one exists to keep movement silent -- "tools are silent body
+    /// language, never a new conversational turn," down to "produce no additional words" -- and
+    /// pointing it at a look would suppress the very answer the friend just asked for.
+    nonisolated static let lookFollowupPrompt = """
+        You have just looked, and what you saw is in the tool result. Answer your friend from it
+        now, in your own voice: what you can see, and what is interesting about it. Never mention a
+        camera, a picture, a frame, checking, or looking anything up -- you simply looked. If the
+        look was old or nothing came back, say honestly that you cannot see it right now instead of
+        guessing. Keep it short and stay inside the conversation you were already having.
         """
 
     /// A paused session is held open, but not forever: the connection would go stale on its own
@@ -85,18 +97,40 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private let client = RealtimeWebRTCClient()
     private var greeted = false
-    /// What Rocky was last told about who's visible, so `updatePersonDetection` only speaks up on
+    /// What Rocky was last told about who's visible, so `updateVision` only speaks up on
     /// an actual change rather than every sampled frame.
     private var lastAnnouncedPersonPresent: Bool?
     /// The presence verdict currently being confirmed, and how many consecutive detections have
-    /// agreed with it -- see `updatePersonDetection`.
+    /// agreed with it -- see `updateVision`.
     private var pendingPersonPresent: Bool?
     private var pendingPersonPresentStreak = 0
     private static let personPresenceConfirmations = 2
-    /// When Rocky was last told anything about who's visible, so a continuously-present person
+    /// When Rocky was last told anything about what's visible, so a continuously-present person
     /// still gets periodically refreshed rather than described only once, forever.
     private var lastVisionAnnouncedAt: Date?
     private static let visionRefreshInterval: TimeInterval = 10
+    /// The scene Rocky was last told about, so a change *within* a steady presence -- someone
+    /// holding something up without leaving the frame -- is noticed rather than waiting out the
+    /// refresh interval.
+    private var lastAnnouncedScene: String?
+    /// Floor between scene-change announcements. Presence flips get a two-frame debounce; this is
+    /// the equivalent guard against the model simply rephrasing itself into a burst of chatter.
+    private static let sceneChangeMinInterval: TimeInterval = 4
+    /// Below this word overlap, two scene phrases are treated as describing different scenes.
+    private nonisolated static let sceneSimilarityThreshold = 0.6
+
+    /// The newest look Rocky has had, and anyone waiting for one newer than a given moment.
+    private var latestVision: VisionSample?
+    private var eyesOpen = false
+    private struct VisionWaiter {
+        let after: Date
+        let resume: (VisionSample?) -> Void
+    }
+    private var visionWaiters: [UUID: VisionWaiter] = [:]
+    /// How long `look_now` will hold the answer open for a genuinely fresh look. One sample a
+    /// second plus a round trip to judge it means ~2.5s is the realistic case; past this it is
+    /// better to answer from a slightly old look, and say so, than to keep a friend waiting.
+    private static let lookTimeout: Duration = .milliseconds(3500)
 
     // MARK: - The world
     //
@@ -591,7 +625,7 @@ final class RealtimeVoiceSession: ObservableObject {
         bodyAvailabilityChanged(behavior?.connected == true)
     }
 
-    /// The one door `PersonCamera`'s detections have into what Rocky actually knows. Without
+    /// The one door `PersonCamera`'s readings have into what Rocky actually knows. Without
     /// this, "can you see me" has a real, honest, and useless answer -- the camera panel updates
     /// its own state and nothing else ever hears about it.
     ///
@@ -601,7 +635,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// plain conversation item is enough -- inserted quietly, no response requested, the same
     /// `insertWorldItem` mechanism `WorldProjector` uses for body facts.
     ///
-    /// Two live findings shaped when it actually fires:
+    /// Three live findings shaped when it actually fires:
     ///
     /// A single frame's judgment is noisy (motion blur, a glance down, a bad angle) -- one such
     /// frame briefly read as empty and Rocky told a friend they'd left. This waits for the same
@@ -613,33 +647,134 @@ final class RealtimeVoiceSession: ObservableObject {
     /// else had replaced them in view, because nothing re-announces while it simply stays true.
     /// So this also refreshes on a timer while someone remains present -- not just on the
     /// true/false edge -- worded as an update rather than a fresh arrival.
-    func updatePersonDetection(_ detection: PersonDetection) {
-        if detection.personPresent == pendingPersonPresent {
+    ///
+    /// And presence is not the only thing that changes: a friend held a drink up to the camera and
+    /// asked about it, and Rocky missed it entirely. Presence never flipped (they were there
+    /// throughout) and the refresh timer had not come round, so nothing was ever said -- on top of
+    /// the model not having been asked to describe objects at all, which `SceneReading.scene`
+    /// fixes. So a materially different scene now announces itself too, rate-limited rather than
+    /// debounced because holding something up is a real event that should not wait two frames.
+    /// `look_now` covers the same ground on demand, for when a friend asks before this notices.
+    func updateVision(_ sample: VisionSample) {
+        latestVision = sample
+        resolveVisionWaiters(with: sample)
+
+        let reading = sample.reading
+        if reading.personPresent == pendingPersonPresent {
             pendingPersonPresentStreak += 1
         } else {
-            pendingPersonPresent = detection.personPresent
+            pendingPersonPresent = reading.personPresent
             pendingPersonPresentStreak = 1
         }
-        guard canReachVoice, pendingPersonPresentStreak >= Self.personPresenceConfirmations else { return }
+        guard canReachVoice else {
+            log("vision: #\(sample.seq) held (nothing to tell -- voice is not listening)")
+            return
+        }
+        guard pendingPersonPresentStreak >= Self.personPresenceConfirmations else {
+            log("vision: #\(sample.seq) held (presence flip not confirmed yet)")
+            return
+        }
 
-        let presenceChanged = lastAnnouncedPersonPresent != detection.personPresent
-        let dueForRefresh =
-            detection.personPresent
-            && Date().timeIntervalSince(lastVisionAnnouncedAt ?? .distantPast) >= Self.visionRefreshInterval
-        guard presenceChanged || dueForRefresh else { return }
+        let now = Date()
+        let sinceLast = now.timeIntervalSince(lastVisionAnnouncedAt ?? .distantPast)
+        let presenceChanged = lastAnnouncedPersonPresent != reading.personPresent
+        let sceneMoved = Self.sceneChanged(from: lastAnnouncedScene, to: reading.scene)
+        let sceneChanged = sceneMoved && sinceLast >= Self.sceneChangeMinInterval
+        let dueForRefresh = reading.personPresent && sinceLast >= Self.visionRefreshInterval
+        guard presenceChanged || sceneChanged || dueForRefresh else {
+            // Says which gate held it, not merely that something was held: "the scene changed but
+            // it was 1s after the last one" and "nothing has changed at all" look identical from
+            // the outside and want opposite fixes.
+            log(
+                "vision: #\(sample.seq) held (presence steady, scene \(sceneMoved ? "moved but only \(Int(sinceLast))s since the last note" : "steady"), \(Int(sinceLast))s since the last note)"
+            )
+            return
+        }
 
-        lastAnnouncedPersonPresent = detection.personPresent
-        lastVisionAnnouncedAt = Date()
+        lastAnnouncedPersonPresent = reading.personPresent
+        lastAnnouncedScene = reading.scene
+        lastVisionAnnouncedAt = now
+        let seen = reading.scene ?? reading.person ?? "a person"
         let text: String
-        if detection.personPresent {
-            text = presenceChanged
-                ? "<vision>Someone just came into view on your front camera: \(detection.description ?? "a person").</vision>"
-                : "<vision>Still visible on your front camera, an updated look: \(detection.description ?? "a person").</vision>"
+        if !reading.personPresent {
+            text = reading.scene.map {
+                "<vision>No one is visible on your front camera right now. You can see: \($0).</vision>"
+            } ?? "<vision>No one is visible on your front camera right now.</vision>"
+        } else if presenceChanged {
+            text = "<vision>Someone just came into view on your front camera: \(seen).</vision>"
+        } else if sceneChanged {
+            text = "<vision>What you can see has just changed: \(seen).</vision>"
         } else {
-            text = "<vision>No one is visible on your front camera right now.</vision>"
+            text = "<vision>Still visible on your front camera, an updated look: \(seen).</vision>"
         }
         insertWorldItem(id: Self.shortItemId("vision_"), text: text)
-        log("vision: \(text)")
+        log("vision: #\(sample.seq) told (\(presenceChanged ? "presence" : sceneChanged ? "scene" : "refresh")): \(text)")
+    }
+
+    /// Whether two scene phrases describe different scenes, rather than the same one worded
+    /// differently. Gemini rephrases itself constantly ("man facing camera" / "a man, facing the
+    /// camera"), so a plain string comparison would announce a change every second; comparing the
+    /// significant words tolerates the rewording while still catching a new object appearing.
+    nonisolated static func sceneChanged(from previous: String?, to current: String?) -> Bool {
+        guard let current, !current.isEmpty else { return false }
+        guard let previous, !previous.isEmpty else { return true }
+        let before = significantWords(previous)
+        let after = significantWords(current)
+        guard !before.isEmpty, !after.isEmpty else { return before != after }
+        let shared = Double(before.intersection(after).count)
+        return shared / Double(before.union(after).count) < sceneSimilarityThreshold
+    }
+
+    private nonisolated static let sceneStopWords: Set<String> = [
+        "and", "the", "with", "that", "this", "there", "are", "his", "her", "its", "their", "for",
+        "from", "into", "onto", "near", "over", "some", "who", "while", "wearing", "seems", "looks",
+    ]
+
+    private nonisolated static func significantWords(_ phrase: String) -> Set<String> {
+        Set(
+            phrase.lowercased()
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+                .map(String.init)
+                .filter { $0.count > 2 && !sceneStopWords.contains($0) }
+        )
+    }
+
+    /// Whether Rocky's eyes are open at all, so `look_now` can say so honestly instead of waiting
+    /// out its timeout for a look that was never coming.
+    func eyesAvailabilityChanged(_ open: Bool) {
+        guard eyesOpen != open else { return }
+        eyesOpen = open
+        log("vision: eyes \(open ? "open" : "closed")")
+        if !open { resolveVisionWaiters(with: nil) }
+    }
+
+    /// Resolves everyone waiting on a look newer than the moment they asked. Passing nil ends
+    /// every wait empty-handed, for when the eyes close with people still waiting.
+    private func resolveVisionWaiters(with sample: VisionSample?) {
+        for (id, waiter) in visionWaiters {
+            guard let sample else {
+                visionWaiters.removeValue(forKey: id)
+                waiter.resume(nil)
+                continue
+            }
+            guard sample.capturedAt > waiter.after else { continue }
+            visionWaiters.removeValue(forKey: id)
+            waiter.resume(sample)
+        }
+    }
+
+    /// Waits for a look taken strictly after `moment`, giving up after `timeout`.
+    private func vision(capturedAfter moment: Date, timeout: Duration) async -> VisionSample? {
+        if let latestVision, latestVision.capturedAt > moment { return latestVision }
+        let id = UUID()
+        return await withCheckedContinuation { (continuation: CheckedContinuation<VisionSample?, Never>) in
+            visionWaiters[id] = VisionWaiter(after: moment) { continuation.resume(returning: $0) }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard let waiter = self?.visionWaiters.removeValue(forKey: id) else { return }
+                waiter.resume(nil)
+            }
+        }
     }
 
     /// Startup safety belongs to the board; waking for an active conversation belongs here. This
@@ -690,6 +825,10 @@ final class RealtimeVoiceSession: ObservableObject {
         pendingPersonPresent = nil
         pendingPersonPresentStreak = 0
         lastVisionAnnouncedAt = nil
+        lastAnnouncedScene = nil
+        latestVision = nil
+        // Anyone still waiting on a look is waiting on a conversation that no longer exists.
+        resolveVisionWaiters(with: nil)
         activeResponseId = nil
         awaitingResponse = false
         cancelWatchdog?.cancel()
@@ -1156,9 +1295,10 @@ final class RealtimeVoiceSession: ObservableObject {
             if performancePrepared {
                 startQueuedPerformance()
             } else {
+                let names = calls.compactMap(\.name)
                 requestResponse(
-                    instructions: Self.toolFollowupPrompt,
-                    reason: "after \(calls.compactMap(\.name).joined(separator: "+"))"
+                    instructions: Self.followupPrompt(after: names),
+                    reason: "after \(names.joined(separator: "+"))"
                 )
             }
         }
@@ -1237,6 +1377,13 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func execute(name: String, argumentsJSON: String, callId: String) async throws -> String {
         let data = Data(argumentsJSON.utf8)
+
+        // Answered before the body guard below, deliberately: Rocky's eyes are the phone's front
+        // camera, so looking works in a voice-only session with no robot on the network at all.
+        // (`OpenAIRealtimeMinter.phoneToolNames` is the other half of that -- it keeps this tool
+        // when the body tools are stripped.)
+        if name == "look_now" { return await lookNow() }
+
         guard let behavior, behavior.connected else {
             return Self.encodeResult(["ok": false, "problem": "my body isn't with me right now"])
         }
@@ -1326,6 +1473,55 @@ final class RealtimeVoiceSession: ObservableObject {
         default:
             return Self.encodeResult(["ok": false, "problem": "I don't have that"])
         }
+    }
+
+    /// Which follow-up a turn's tool calls have earned. A turn that looked has to speak, and that
+    /// outranks a movement call in the same turn: staying silent about a movement costs nothing,
+    /// while staying silent about a look leaves a friend's question unanswered.
+    nonisolated static func followupPrompt(after toolNames: [String]) -> String {
+        toolNames.contains("look_now") ? lookFollowupPrompt : toolFollowupPrompt
+    }
+
+    /// Takes a look *now* and answers from it, rather than from whatever happened to have been
+    /// judged already.
+    ///
+    /// This exists because of a live failure the passive `<vision>` stream cannot fix on its own:
+    /// a friend held something up and asked about it straight away, and the newest look on hand
+    /// was from before they raised it. Sight is sampled about once a second and takes a further
+    /// beat to judge, so at the moment any question lands, what Rocky has is always slightly in
+    /// the past -- and "slightly in the past" is exactly wrong for "what am I holding?".
+    ///
+    /// So this waits for a look whose frame was captured *after* the question, and only falls back
+    /// to the newest one on hand once that stops being worth waiting for -- saying which it got,
+    /// so an answer from an older look can be spoken as one.
+    private func lookNow() async -> String {
+        let askedAt = Date()
+        guard eyesOpen || latestVision != nil else {
+            log("look_now: asked, but Rocky's eyes are not open")
+            return Self.encodeResult(["ok": false, "problem": "my eyes aren't open right now"])
+        }
+
+        if let fresh = await vision(capturedAfter: askedAt, timeout: Self.lookTimeout) {
+            log("look_now: fresh look #\(fresh.seq) after \(Self.ms(since: askedAt)) — \(fresh.reading.scene ?? "(nothing described)")")
+            return Self.encodeLook(fresh, fresh: true)
+        }
+        guard let latest = latestVision else {
+            log("look_now: nothing came back within \(Self.lookTimeout), and there was no earlier look either")
+            return Self.encodeResult(["ok": false, "problem": "I could not get a look just now"])
+        }
+        log("look_now: no fresh look within \(Self.lookTimeout), falling back to #\(latest.seq) from \(Int(latest.age()))s ago")
+        return Self.encodeLook(latest, fresh: false)
+    }
+
+    private static func encodeLook(_ sample: VisionSample, fresh: Bool) -> String {
+        let age = Int(sample.age().rounded())
+        return encodeResult([
+            "seeing": sample.reading.scene ?? sample.reading.person ?? "nothing I can make out",
+            "someone_there": sample.reading.personPresent,
+            // Named for the distinction that matters when speaking it: a look taken after the
+            // question can be answered as what is in front of Rocky, and an older one cannot.
+            "when": fresh ? "just now" : (age <= 1 ? "a moment ago" : "\(age) seconds ago"),
+        ])
     }
 
     /// What a movement tool returns, and deliberately all it returns.

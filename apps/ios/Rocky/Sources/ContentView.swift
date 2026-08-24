@@ -82,8 +82,11 @@ struct ContentView: View {
         .onChange(of: voiceSession.state) { _, state in
             handleVoiceStateChangeForCamera(state)
         }
-        .onChange(of: personCamera.lastDetection) { _, detection in
-            if let detection { voiceSession.updatePersonDetection(detection) }
+        .onChange(of: personCamera.lastSample) { _, sample in
+            if let sample { voiceSession.updateVision(sample) }
+        }
+        .onChange(of: personCamera.isRunning) { _, running in
+            voiceSession.eyesAvailabilityChanged(running)
         }
     }
 

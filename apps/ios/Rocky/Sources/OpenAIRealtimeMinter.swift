@@ -23,6 +23,8 @@ enum OpenAIRealtimeMinter {
           move your body while this connection is absent.
         - If movement becomes relevant, say once and naturally that you cannot feel your body right
           now. Do not pretend or narrate imaginary movement, then return to your friend and topic.
+        - Your eyes are unaffected: you can still see, and look_now still works. Only your body is
+          missing.
         - Your identity, agency, relationships, and conversation are unchanged.
         """
 
@@ -64,6 +66,14 @@ enum OpenAIRealtimeMinter {
         return try JSONDecoder().decode(ClientSecretResponse.self, from: data).value
     }
 
+    /// Tools that belong to the phone rather than the robot, and so survive finding no robot.
+    ///
+    /// Rocky's eyes are the phone's own front camera (`PersonCamera`), which runs on the voice
+    /// conversation's lifecycle and knows nothing about whether a body was discovered. Stripping
+    /// `look_now` along with the movement tools would have blinded a voice-only Rocky whose camera
+    /// was, in fact, wide open and describing the room to her.
+    static let phoneToolNames: Set<String> = ["look_now"]
+
     /// Strips the body tools out of the baked config and corrects the body context, for when
     /// discovery found no robot. Edits the JSON rather than keeping a second hand-written copy of
     /// the persona in Swift, so session.ts stays the single source of truth for everything except
@@ -74,8 +84,11 @@ enum OpenAIRealtimeMinter {
             var session = root["session"] as? [String: Any]
         else { return data }
 
-        session["tools"] = []
-        session["tool_choice"] = "none"
+        let kept = (session["tools"] as? [[String: Any]] ?? []).filter {
+            phoneToolNames.contains($0["name"] as? String ?? "")
+        }
+        session["tools"] = kept
+        session["tool_choice"] = kept.isEmpty ? "none" : "auto"
         if let instructions = session["instructions"] as? String {
             session["instructions"] = instructions + "\n\n" + noBodyNote
         }
