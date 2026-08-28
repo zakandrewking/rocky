@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Wraps `AVCaptureVideoPreviewLayer` -- SwiftUI has no native camera preview, and this is the
 /// standard bridge for it.
-private struct CameraPreview: UIViewRepresentable {
+struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
 
     func makeUIView(context: Context) -> PreviewView {

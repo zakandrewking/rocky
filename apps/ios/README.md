@@ -121,6 +121,10 @@ call, so it cannot wait behind or accidentally reuse the passive frame already b
 camera or network needed. A timeout retires the entire connection epoch before another turn can
 begin, because Live replies have no request id with which to correlate a late response.
 
+While the selfie camera is running, the main conversation screen shows its live image in a small
+rounded picture-in-picture at the top-right. It has no detection labels or controls; those remain
+in the camera debug sheet.
+
 Detection reaching a debug panel isn't the same as Rocky knowing it -- the first live device test
 had her say, honestly, "I cannot see it yet. No picture came through," because nothing told the
 voice session anything. `RealtimeVoiceSession.updateVision` is the fix: `ContentView`

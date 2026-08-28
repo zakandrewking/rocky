@@ -313,6 +313,10 @@ crashing.**
   Verified with 96 device-api tests and 136 iOS simulator tests, plus successful physical iPhone
   build, install, and launch. The next live session should measure the real `look_now` p50/p95
   rather than tune its 3.5s budget from estimates.
+- [x] **Show the active selfie camera without turning the main screen into a debug panel
+  (2026-08-27).** While Rocky's eyes are open, the conversation view now carries a small rounded
+  FaceTime-style preview in the top-right. It is image-only, noninteractive, and disappears with
+  the camera; detection text and camera controls remain in the existing diagnostics sheet.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance. The bearing this needs is unchanged; `SceneReading` keeps it.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime

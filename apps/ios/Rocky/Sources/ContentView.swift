@@ -71,7 +71,20 @@ struct ContentView: View {
                 }
             }
             .padding(14)
+
+            if personCamera.isRunning {
+                VStack {
+                    HStack {
+                        Spacer(minLength: 0)
+                        selfiePreview
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .transition(.scale(scale: 0.92, anchor: .topTrailing).combined(with: .opacity))
+            }
         }
+        .animation(.easeOut(duration: 0.2), value: personCamera.isRunning)
         .preferredColorScheme(.dark)
         .onAppear {
             behavior.start()
@@ -91,6 +104,22 @@ struct ContentView: View {
         .onChange(of: personCamera.isRunning) { _, running in
             voiceSession.eyesAvailabilityChanged(running)
         }
+    }
+
+    /// A quiet confirmation that Rocky's eyes are open. It is deliberately just the live image:
+    /// detection prose and controls stay in the debug sheet, while the everyday conversation view
+    /// gets the familiar FaceTime-style picture-in-picture treatment.
+    private var selfiePreview: some View {
+        CameraPreview(session: personCamera.session)
+            .frame(width: 108, height: 144)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.4), radius: 12, y: 5)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     /// Rocky's eyes follow her voice: on the instant a conversation connects (including a resume
@@ -275,8 +304,8 @@ struct ContentView: View {
                     WorldDebugView(log: WorldLog.shared, world: voiceSession.world)
                 }
 
-            // Camera access, and any use of it, only ever starts from inside this panel -- see
-            // PersonCameraView's header for why that has to stay an explicit, visible switch.
+            // The camera follows the conversation lifecycle. This sheet exposes its diagnostics
+            // and manual override; the main screen's corner preview is intentionally image-only.
             Button("camera: what rocky sees…") { showCameraPanel = true }
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
