@@ -14,6 +14,11 @@ import XCTest
 /// descriptions. This is that judgment, and it is a pure function so it can be pinned down here
 /// rather than tuned by feel against a live camera.
 final class VisionContextTests: XCTestCase {
+    func testPassiveSightCannotCrowdTheConversation() {
+        XCTAssertEqual(RealtimeVoiceSession.sceneChangeMinInterval, 30)
+        XCTAssertEqual(RealtimeVoiceSession.visionRefreshInterval, 60)
+    }
+
     func testAnOlderCaptureCannotBecomeCurrentByFinishingLater() {
         let now = Date()
         let newer = VisionSample(
@@ -154,6 +159,9 @@ final class VisionContextTests: XCTestCase {
             RealtimeVoiceSession.followupPrompt(after: ["robot_gesture"]),
             RealtimeVoiceSession.toolFollowupPrompt
         )
+        XCTAssertTrue(RealtimeVoiceSession.lookFollowupPrompt.contains("exact question"))
+        XCTAssertTrue(RealtimeVoiceSession.lookFollowupPrompt.contains("Do not tour the room"))
+        XCTAssertTrue(RealtimeVoiceSession.lookFollowupPrompt.contains("not the center of your attention"))
     }
 
     func testAWhollyDifferentRoomIsAChange() {

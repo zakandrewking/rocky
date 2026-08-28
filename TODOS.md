@@ -305,11 +305,14 @@ crashing.**
   normal first-person sense, and both tool failures and projected link events use that vocabulary.
   A follow-up live-language fix also makes the sequencing wrapper explicitly unspeakable and words
   its contents as direct first-person perception, preventing “sight notes” or “vision updates” from
-  leaking into Rocky's conversation.
-  Verified with 96 device-api tests and 135 iOS simulator tests. A physical iPhone build and
-  install also succeeded, but iOS refused launch until its personal developer profile is trusted;
-  after that local setting is fixed, measure the real `look_now` p50/p95 rather than tune its 3.5s
-  budget from estimates.
+  leaking into Rocky's conversation. Phone logs then showed a second problem: passive scene changes
+  arrived every few seconds and the explicit-look follow-up invited a room tour plus an invented
+  “vibe.” Passive scene pushes are now spaced at least 30s apart with a 60s steady refresh, while
+  both the system prompt and tool continuation make sight ambient evidence used only when the
+  person's actual question needs it.
+  Verified with 96 device-api tests and 136 iOS simulator tests, plus successful physical iPhone
+  build, install, and launch. The next live session should measure the real `look_now` p50/p95
+  rather than tune its 3.5s budget from estimates.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance. The bearing this needs is unchanged; `SceneReading` keeps it.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime

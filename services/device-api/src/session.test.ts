@@ -111,11 +111,13 @@ describe("createDeviceSessionConfig", () => {
     const tools = config.tools as Array<{ name: string; description: string; parameters: unknown }>;
     const look = tools.find((tool) => tool.name === "look_now");
 
-    expect(look?.description).toContain("wait for that look before you answer");
-    expect(look?.description).toContain("held up");
+    expect(look?.description).toContain("wait for that look before answering");
+    expect(look?.description).toContain("shows or holds up");
+    expect(look?.description).toContain("Do not call it for greetings, generic questions");
+    expect(look?.description).toContain("use only the detail needed to answer the exact question");
     expect(look?.parameters).toMatchObject({ properties: {} });
     expect(config.instructions).toContain("Your sight lags a little behind the moment");
-    expect(config.instructions).toContain("whenever you are about to say you cannot see something");
+    expect(config.instructions).toContain("Use look_now only when a current visual fact is actually needed");
     // The private sight tag had no rule at all until the same pass that added the tool, so it was
     // reaching Rocky as unexplained text with nothing saying not to read it out loud.
     expect(config.instructions).toContain("tagged <vision>");
@@ -124,6 +126,9 @@ describe("createDeviceSessionConfig", () => {
     expect(config.instructions).toContain("Speak only from your own eyes");
     expect(config.instructions).not.toContain("sight note");
     expect(config.instructions).not.toContain("vision note");
+    expect(config.instructions).toContain("Sight is ambient evidence, not an agenda");
+    expect(config.instructions).toContain("Most turns should not mention what you see at all");
+    expect(config.instructions).toContain("Do not inventory");
     expect(config.instructions).toContain("say plainly that you cannot see right now");
   });
 

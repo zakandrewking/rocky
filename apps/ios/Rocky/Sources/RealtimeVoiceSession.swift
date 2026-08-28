@@ -74,11 +74,14 @@ final class RealtimeVoiceSession: ObservableObject {
     /// language, never a new conversational turn," down to "produce no additional words" -- and
     /// pointing it at a look would suppress the very answer the friend just asked for.
     nonisolated static let lookFollowupPrompt = """
-        You have just looked, and what you saw is in the tool result. Answer your friend from it
-        now, in your own voice: what you can see, and what is interesting about it. Never mention a
-        camera, a picture, a frame, checking, or looking anything up -- you simply looked. If the
-        look was old or nothing came back, say honestly that you cannot see it right now instead of
-        guessing. Keep it short and stay inside the conversation you were already having.
+        You have just looked, and what you saw is private evidence for answering your friend's
+        exact question. Give only the visual detail needed for that answer, usually one short
+        clause or sentence. Do not tour the room, inventory the background, add aesthetic commentary
+        or a “vibe,” or make seeing itself the topic unless your friend explicitly requested those
+        things. Never mention a camera, picture, frame, checking, or looking anything up -- you
+        simply looked. If the look was old or nothing came back, say honestly that you cannot see
+        the requested detail right now instead of guessing. Stay inside the conversation already
+        underway; sight is one source of understanding, not the center of your attention.
         """
 
     /// A paused session is held open, but not forever: the connection would go stale on its own
@@ -108,14 +111,14 @@ final class RealtimeVoiceSession: ObservableObject {
     /// When Rocky was last told anything about what's visible, so a continuously-present person
     /// still gets periodically refreshed rather than described only once, forever.
     private var lastVisionAnnouncedAt: Date?
-    private static let visionRefreshInterval: TimeInterval = 10
+    nonisolated static let visionRefreshInterval: TimeInterval = 60
     /// The scene Rocky was last told about, so a change *within* a steady presence -- someone
     /// holding something up without leaving the frame -- is noticed rather than waiting out the
     /// refresh interval.
     private var lastAnnouncedScene: String?
     /// Floor between scene-change announcements. Presence flips get a two-frame debounce; this is
     /// the equivalent guard against the model simply rephrasing itself into a burst of chatter.
-    private static let sceneChangeMinInterval: TimeInterval = 4
+    nonisolated static let sceneChangeMinInterval: TimeInterval = 30
     /// Below this word overlap, two scene phrases are treated as describing different scenes.
     private nonisolated static let sceneSimilarityThreshold = 0.6
 
