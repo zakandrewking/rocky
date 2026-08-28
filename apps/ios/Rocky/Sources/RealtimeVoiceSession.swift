@@ -732,14 +732,14 @@ final class RealtimeVoiceSession: ObservableObject {
         let body: String
         if !reading.personPresent {
             body = reading.scene.map {
-                "No one is visible right now. You can see: \($0)."
-            } ?? "No one is visible right now."
+                "I see no one right now. I see \($0)."
+            } ?? "I see no one right now."
         } else if presenceChanged {
-            body = "Someone just came into view: \(seen)."
+            body = "I now see \(seen)."
         } else if sceneChanged {
-            body = "What you can see has just changed: \(seen)."
+            body = "I now see \(seen)."
         } else {
-            body = "Still visible, an updated look: \(seen)."
+            body = "I see \(seen)."
         }
         return "<vision seq=\"\(sample.seq)\" age_ms=\"\(ageMs)\">\(body)</vision>"
     }

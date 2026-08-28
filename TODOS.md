@@ -303,7 +303,10 @@ crashing.**
   The same pass removed the recurring “my body is unavailable/not connected” voice leak: missing
   robot hardware is now described privately as Rocky's own wheels/touch going numb, sight stays a
   normal first-person sense, and both tool failures and projected link events use that vocabulary.
-  Verified with 96 device-api tests and 134 iOS simulator tests. A physical iPhone build and
+  A follow-up live-language fix also makes the sequencing wrapper explicitly unspeakable and words
+  its contents as direct first-person perception, preventing “sight notes” or “vision updates” from
+  leaking into Rocky's conversation.
+  Verified with 96 device-api tests and 135 iOS simulator tests. A physical iPhone build and
   install also succeeded, but iOS refused launch until its personal developer profile is trusted;
   after that local setting is fixed, measure the real `look_now` p50/p95 rather than tune its 3.5s
   budget from estimates.

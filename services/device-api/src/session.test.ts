@@ -119,8 +119,11 @@ describe("createDeviceSessionConfig", () => {
     // The private sight tag had no rule at all until the same pass that added the tool, so it was
     // reaching Rocky as unexplained text with nothing saying not to read it out loud.
     expect(config.instructions).toContain("tagged <vision>");
-    expect(config.instructions).toContain("Only the note with the highest seq describes your");
-    expect(config.instructions).toContain("current view; older notes are past glimpses");
+    expect(config.instructions).toContain("Silently treat the largest seq as what");
+    expect(config.instructions).toContain("perception has no intermediary and no mechanism");
+    expect(config.instructions).toContain("Speak only from your own eyes");
+    expect(config.instructions).not.toContain("sight note");
+    expect(config.instructions).not.toContain("vision note");
     expect(config.instructions).toContain("say plainly that you cannot see right now");
   });
 

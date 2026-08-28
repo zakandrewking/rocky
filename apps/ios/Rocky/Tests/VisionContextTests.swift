@@ -51,8 +51,31 @@ final class VisionContextTests: XCTestCase {
                 sceneChanged: true,
                 at: captured.addingTimeInterval(1.25)
             ),
-            "<vision seq=\"42\" age_ms=\"1250\">What you can see has just changed: a friend holding a blue cup.</vision>"
+            "<vision seq=\"42\" age_ms=\"1250\">I now see a friend holding a blue cup.</vision>"
         )
+    }
+
+    func testPrivateVisionContextSoundsLikeDirectSightRatherThanAReport() {
+        let now = Date()
+        let sample = VisionSample(
+            seq: 4,
+            capturedAt: now,
+            judgedAt: now,
+            reading: SceneReading(
+                personPresent: true,
+                bearing: nil,
+                person: "a friend",
+                scene: "a friend holding a book"
+            )
+        )
+
+        let context = RealtimeVoiceSession.visionContext(
+            for: sample, presenceChanged: false, sceneChanged: false, at: now
+        )
+        XCTAssertTrue(context.contains(">I see a friend holding a book.</vision>"))
+        XCTAssertFalse(context.localizedCaseInsensitiveContains("note"))
+        XCTAssertFalse(context.localizedCaseInsensitiveContains("update"))
+        XCTAssertFalse(context.localizedCaseInsensitiveContains("look"))
     }
 
     func testHoldingSomethingUpCountsAsAChange() {
