@@ -6,10 +6,10 @@ import XCTest
 /// everything about turning Gemini's reply into a `SceneReading` lives here, where it can be
 /// tested without a device.
 final class PersonVisionTests: XCTestCase {
-    func testParsesAPersonWithABearing() {
-        let reading = PersonVision.parseReading(
+    func testParsesAPersonWithABearing() throws {
+        let reading = try XCTUnwrap(PersonVision.parseReading(
             #"{"person_present": true, "bearing": -0.4, "person": "man, facing camera", "scene": "a man at a desk"}"#
-        )
+        ))
 
         XCTAssertTrue(reading.personPresent)
         XCTAssertEqual(reading.bearing, -0.4)
@@ -20,20 +20,20 @@ final class PersonVisionTests: XCTestCase {
     /// The live failure this whole pass came from: a friend held a drink up and asked about it,
     /// and the answer had nothing in it about a drink. The object has to survive parsing, which it
     /// could not when the model was only ever asked whether a person was present.
-    func testKeepsWhatSomeoneIsHolding() {
-        let reading = PersonVision.parseReading(
+    func testKeepsWhatSomeoneIsHolding() throws {
+        let reading = try XCTUnwrap(PersonVision.parseReading(
             #"{"person_present": true, "bearing": 0.1, "person": "man, facing camera", "scene": "a man holding a can of coconut water"}"#
-        )
+        ))
 
         XCTAssertEqual(reading.scene, "a man holding a can of coconut water")
     }
 
     /// An empty room and an empty room with a drawing held up in it are different facts, so the
     /// scene outlives a false `person_present` even though the person-only fields do not.
-    func testAnEmptyRoomStillDescribesWhatIsInIt() {
-        let reading = PersonVision.parseReading(
+    func testAnEmptyRoomStillDescribesWhatIsInIt() throws {
+        let reading = try XCTUnwrap(PersonVision.parseReading(
             #"{"person_present": false, "bearing": 0.2, "person": "nobody", "scene": "an empty kitchen, a drawing taped to the fridge"}"#
-        )
+        ))
 
         XCTAssertFalse(reading.personPresent)
         XCTAssertNil(reading.bearing)
@@ -43,19 +43,19 @@ final class PersonVisionTests: XCTestCase {
 
     /// "description" is what the earlier person-only prompt asked for. A reply still in that shape
     /// should degrade to the old behaviour rather than to silence.
-    func testStillUnderstandsTheOlderReplyShape() {
-        let reading = PersonVision.parseReading(
+    func testStillUnderstandsTheOlderReplyShape() throws {
+        let reading = try XCTUnwrap(PersonVision.parseReading(
             #"{"person_present": true, "bearing": 0.3, "description": "person, facing camera"}"#
-        )
+        ))
 
         XCTAssertEqual(reading.person, "person, facing camera")
         XCTAssertNil(reading.scene)
     }
 
-    func testToleratesJSONWrappedInProse() {
-        let reading = PersonVision.parseReading(
+    func testToleratesJSONWrappedInProse() throws {
+        let reading = try XCTUnwrap(PersonVision.parseReading(
             #"Sure thing! {"person_present": true, "bearing": 0.9, "scene": "a hallway"} hope that helps"#
-        )
+        ))
 
         XCTAssertTrue(reading.personPresent)
         XCTAssertEqual(reading.bearing, 0.9)
@@ -64,39 +64,37 @@ final class PersonVisionTests: XCTestCase {
 
     /// Confirmed against the real API (2026-08-21): despite the system prompt asking for "exactly
     /// one line of JSON and nothing else," Gemini wraps its reply in a markdown code fence anyway.
-    func testToleratesAMarkdownCodeFence() {
-        let reading = PersonVision.parseReading(
+    func testToleratesAMarkdownCodeFence() throws {
+        let reading = try XCTUnwrap(PersonVision.parseReading(
             "```json\n{\"person_present\": false, \"bearing\": null, \"person\": null, \"scene\": null}\n```"
-        )
+        ))
 
-        XCTAssertEqual(reading, .none)
+        XCTAssertEqual(reading, .empty)
     }
 
-    func testClampsAnOutOfRangeBearing() {
-        let reading = PersonVision.parseReading(#"{"person_present": true, "bearing": 4.2}"#)
+    func testClampsAnOutOfRangeBearing() throws {
+        let reading = try XCTUnwrap(PersonVision.parseReading(#"{"person_present": true, "bearing": 4.2}"#))
 
         XCTAssertEqual(reading.bearing, 1)
     }
 
-    func testBlankPhrasesReadAsNothingSaid() {
-        let reading = PersonVision.parseReading(
+    func testBlankPhrasesReadAsNothingSaid() throws {
+        let reading = try XCTUnwrap(PersonVision.parseReading(
             #"{"person_present": true, "bearing": 0, "person": "  ", "scene": ""}"#
-        )
+        ))
 
         XCTAssertNil(reading.person)
         XCTAssertNil(reading.scene)
     }
 
-    func testUnparseableTextReadsAsSeeingNothing() {
-        XCTAssertEqual(PersonVision.parseReading("not json at all"), .none)
-        XCTAssertEqual(PersonVision.parseReading(""), .none)
-        XCTAssertEqual(PersonVision.parseReading("{not valid json}"), .none)
+    func testUnparseableTextIsNotAnEmptyRoomObservation() {
+        XCTAssertNil(PersonVision.parseReading("not json at all"))
+        XCTAssertNil(PersonVision.parseReading(""))
+        XCTAssertNil(PersonVision.parseReading("{not valid json}"))
     }
 
-    func testMissingPersonPresentDefaultsToFalse() {
-        let reading = PersonVision.parseReading(#"{"bearing": 0.1}"#)
-
-        XCTAssertEqual(reading, .none)
+    func testMissingPersonPresentIsNotEvidenceOfAbsence() {
+        XCTAssertNil(PersonVision.parseReading(#"{"bearing": 0.1}"#))
     }
 
     /// Freshness is measured from when the light hit the lens, not when the judgment came back --
@@ -108,7 +106,7 @@ final class PersonVisionTests: XCTestCase {
             seq: 1,
             capturedAt: captured,
             judgedAt: captured.addingTimeInterval(1.4),
-            reading: .none
+            reading: .empty
         )
 
         XCTAssertEqual(sample.latency, 1.4, accuracy: 0.001)

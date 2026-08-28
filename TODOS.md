@@ -289,6 +289,24 @@ crashing.**
   announcements say *which* gate held them (unconfirmed flip vs. scene steady vs. too soon), since
   "nothing changed" and "changed but rate-limited" look identical from outside and want opposite
   fixes; and `look_now` logs the wait, what came back, and any fallback.
+- [x] **Closed the five reliability gaps found in the vision-flow review (2026-08-27).** `look_now`
+  now requests the first camera frame captured after the tool call and judges it on a separate,
+  pre-warmed Gemini Live lane, so it never waits behind the passive frame already in flight.
+  Gemini timeouts and send failures retire the entire socket epoch before another turn can use it;
+  this also fixed an older watchdog bug that could reset a healthy idle session eight seconds
+  after a successful turn. Invalid/missing presence JSON is now no observation rather than false
+  evidence that the room is empty. Passive `<vision>` items carry `seq` and measured `age_ms`, with
+  a prompt-level highest-sequence-wins rule. Scene comparison now canonicalizes common rewordings,
+  compares against the shorter description, and separately detects changed colors and
+  held/shown/worn details. Logging correlates passive/look lane, socket epoch, request generation,
+  capture timestamp, JPEG size, judgment latency, freshness/fallback, invalid replies, and resets.
+  The same pass removed the recurring “my body is unavailable/not connected” voice leak: missing
+  robot hardware is now described privately as Rocky's own wheels/touch going numb, sight stays a
+  normal first-person sense, and both tool failures and projected link events use that vocabulary.
+  Verified with 96 device-api tests and 134 iOS simulator tests. A physical iPhone build and
+  install also succeeded, but iOS refused launch until its personal developer profile is trusted;
+  after that local setting is fixed, measure the real `look_now` p50/p95 rather than tune its 3.5s
+  budget from estimates.
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance. The bearing this needs is unchanged; `SceneReading` keeps it.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime

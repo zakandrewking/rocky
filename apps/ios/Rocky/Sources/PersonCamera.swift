@@ -46,9 +46,11 @@ final class PersonCamera: NSObject, ObservableObject {
     let session = AVCaptureSession()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let videoQueue = DispatchQueue(label: "family.rocky.personcamera.video")
-    private let vision = PersonVision()
+    private let vision = PersonVision(label: "passive")
+    /// Explicit questions never wait behind the passive frame already being judged. This second
+    /// Live session is warmed with the camera and consumes only a frame requested by `look_now`.
+    private let lookVision = PersonVision(label: "look")
     private var configured = false
-    private var sampleSeq = 0
 
     /// Frames arrive on `videoQueue`, serially but off the main actor; detection state
     /// (`isDetecting`, `lastDetection`, ...) is main-actor-isolated. This lock is the one thing
@@ -58,6 +60,12 @@ final class PersonCamera: NSObject, ObservableObject {
     private struct ThrottleState {
         var lastSampleAt = Date.distantPast
         var inFlight = false
+        var lookAfter: Date?
+        var lookGeneration = 0
+        var lookInFlight = false
+        /// Allocated when light hits the camera, not when a model happens to answer. Passive and
+        /// explicit lanes can finish out of order; sequence must still mean visual time order.
+        var sampleSeq = 0
     }
     private let throttle = OSAllocatedUnfairLock(initialState: ThrottleState())
 
@@ -97,18 +105,53 @@ final class PersonCamera: NSObject, ObservableObject {
 
         // A stale `lastSampleAt`/`inFlight` from a previous run would otherwise either delay the
         // first frame of this one by a full interval or block it outright.
-        throttle.withLock { $0 = ThrottleState() }
+        throttle.withLock { state in
+            let sampleSeq = state.sampleSeq
+            state = ThrottleState()
+            // A paused Realtime conversation keeps its history. Do not restart at one on resume,
+            // or the prompt's highest-sequence-wins rule would prefer a pre-pause glimpse.
+            state.sampleSeq = sampleSeq
+        }
         session.startRunning()
         isRunning = true
         RockyLog.write("camera: started")
+        // Do not hold camera startup on a second provider handshake. Warming in parallel makes a
+        // later explicit look demand-driven without adding setup latency to the voice connection.
+        Task { @MainActor [weak self] in
+            do {
+                try await self?.lookVision.prepare()
+                RockyLog.write("camera: explicit-look lane ready")
+            } catch {
+                RockyLog.write("camera: explicit-look warmup failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     func stop() {
         session.stopRunning()
         vision.disconnect()
+        lookVision.disconnect()
         isRunning = false
         isDetecting = false
         RockyLog.write("camera: stopped")
+    }
+
+    /// Arms the next camera frame captured after the tool call for a separate, high-priority
+    /// judgment. Publishing that result through `lastSample` keeps a single downstream path into
+    /// `RealtimeVoiceSession`, whose existing freshness waiter resolves it.
+    func requestFreshLook(capturedAfter moment: Date) {
+        guard isRunning else {
+            RockyLog.write("camera: explicit look rejected because capture is not running")
+            return
+        }
+        let generation = throttle.withLock { state -> Int in
+            state.lookGeneration += 1
+            state.lookAfter = moment
+            return state.lookGeneration
+        }
+        RockyLog.write(
+            "camera: explicit look g\(generation) requested after \(Self.timestamp(moment))"
+        )
     }
 
     private func configure() -> Bool {
@@ -131,16 +174,15 @@ final class PersonCamera: NSObject, ObservableObject {
         return true
     }
 
-    private func handleFrame(jpegData: Data, capturedAt: Date) async {
+    private func handleFrame(jpegData: Data, capturedAt: Date, seq: Int) async {
         defer { throttle.withLock { $0.inFlight = false } }
         guard isRunning else { return }
         isDetecting = true
         defer { isDetecting = false }
         do {
             let reading = try await vision.read(frame: jpegData)
-            sampleSeq += 1
             let sample = VisionSample(
-                seq: sampleSeq, capturedAt: capturedAt, judgedAt: Date(), reading: reading
+                seq: seq, capturedAt: capturedAt, judgedAt: Date(), reading: reading
             )
             // Every reading, deliberately, where this used to log only presence changes. That
             // restraint is exactly what hid a live failure: a friend held an object up while
@@ -159,6 +201,42 @@ final class PersonCamera: NSObject, ObservableObject {
             RockyLog.write("camera: detection failed: \(error.localizedDescription)")
         }
     }
+
+    private func handleLookFrame(
+        jpegData: Data, capturedAt: Date, generation: Int, seq: Int
+    ) async {
+        defer { throttle.withLock { $0.lookInFlight = false } }
+        guard isRunning else { return }
+        RockyLog.write(
+            "camera: explicit look g\(generation) captured at \(Self.timestamp(capturedAt))"
+        )
+        do {
+            let reading = try await lookVision.read(frame: jpegData)
+            // A newer request superseded this one while it was being judged. Its result may be a
+            // valid observation, but it cannot satisfy that newer request's freshness contract.
+            let stillCurrent = throttle.withLock { $0.lookGeneration == generation }
+            guard stillCurrent else {
+                RockyLog.write("camera: explicit look g\(generation) discarded (superseded)")
+                return
+            }
+            let sample = VisionSample(
+                seq: seq, capturedAt: capturedAt, judgedAt: Date(), reading: reading
+            )
+            RockyLog.write(
+                "camera: explicit look g\(generation) → #\(sample.seq) judged in \(Int(sample.latency * 1000))ms — "
+                    + (reading.scene ?? reading.person ?? "(nothing described)")
+            )
+            lastSample = sample
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            RockyLog.write("camera: explicit look g\(generation) failed: \(error.localizedDescription)")
+        }
+    }
+
+    private nonisolated static func timestamp(_ date: Date) -> String {
+        String(format: "%.3f", date.timeIntervalSince1970)
+    }
 }
 
 extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
@@ -168,17 +246,32 @@ extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
         from connection: AVCaptureConnection
     ) {
         let capturedAt = Date()
-        let shouldSample = throttle.withLock { state -> Bool in
-            guard !state.inFlight, capturedAt.timeIntervalSince(state.lastSampleAt) >= Self.sampleInterval
-            else { return false }
+        let decision = throttle.withLock {
+            state -> (passive: Bool, lookGeneration: Int?, sampleSeq: Int?) in
+            if let after = state.lookAfter, capturedAt > after, !state.lookInFlight {
+                state.lookAfter = nil
+                state.lookInFlight = true
+                state.sampleSeq += 1
+                // The explicit lane wins this frame. Spending the same JPEG on passive inference
+                // too would double network work at the exact moment voice is waiting for sight.
+                return (false, state.lookGeneration, state.sampleSeq)
+            }
+            guard !state.inFlight,
+                capturedAt.timeIntervalSince(state.lastSampleAt) >= Self.sampleInterval
+            else { return (false, nil, nil) }
             state.lastSampleAt = capturedAt
             state.inFlight = true
-            return true
+            state.sampleSeq += 1
+            return (true, nil, state.sampleSeq)
         }
-        guard shouldSample else { return }
+        guard decision.passive || decision.lookGeneration != nil else { return }
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            throttle.withLock { $0.inFlight = false }
+            throttle.withLock {
+                if decision.passive { $0.inFlight = false }
+                if decision.lookGeneration != nil { $0.lookInFlight = false }
+            }
+            RockyLog.write("camera: sampled frame had no image buffer")
             return
         }
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
@@ -187,12 +280,26 @@ extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
             colorSpace: ciImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
             options: [:]
         ) else {
-            throttle.withLock { $0.inFlight = false }
+            throttle.withLock {
+                if decision.passive { $0.inFlight = false }
+                if decision.lookGeneration != nil { $0.lookInFlight = false }
+            }
+            RockyLog.write(
+                "camera: JPEG conversion failed for \(decision.lookGeneration == nil ? "passive" : "explicit") frame"
+            )
             return
         }
 
         Task { @MainActor [weak self] in
-            await self?.handleFrame(jpegData: jpegData, capturedAt: capturedAt)
+            if decision.passive, let seq = decision.sampleSeq {
+                await self?.handleFrame(
+                    jpegData: jpegData, capturedAt: capturedAt, seq: seq
+                )
+            } else if let generation = decision.lookGeneration, let seq = decision.sampleSeq {
+                await self?.handleLookFrame(
+                    jpegData: jpegData, capturedAt: capturedAt, generation: generation, seq: seq
+                )
+            }
         }
     }
 }

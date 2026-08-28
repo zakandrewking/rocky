@@ -106,23 +106,30 @@ has real shutter latency, and this is meant to track like video. It's throttled 
 `OSAllocatedUnfairLock`-guarded flag, since frames arrive on their own delivery queue off the main
 actor) to roughly one sample per second, just inside Gemini's documented ≤1fps ceiling for this
 model, and each sampled frame goes to `PersonVision.swift`, which asks **Gemini Robotics-ER**
-(`gemini-robotics-er-2-streaming-preview`) whether a person is in frame and roughly where. This is
+(`gemini-robotics-er-2-streaming-preview`) for the whole notable scene plus person presence and
+bearing. This is
 deliberately a second model and a second provider from the OpenAI Realtime session carrying
 Rocky's voice — see that file's header for why keeping them apart matters more than sharing one
 round trip would save. That model only exists behind Gemini's *Live API* — a stateful WebSocket,
 not a one-shot REST call — so `PersonVision` holds one session open for as long as the camera is
 running: a `setup` message once, then one `clientContent` turn (an inline JPEG part) per sampled
-frame, read back as streamed `serverContent` text. `PersonCameraView.swift` shows the live preview
-with a ring over the last detected bearing; `PersonVision.parseDetection`'s tolerant-JSON parsing
-is covered by `PersonVisionTests.swift` with no camera or network needed.
+frame, read back as streamed `serverContent` text. Passive sight uses one connection; an explicit
+`look_now` uses a separately warmed connection and the first camera frame captured after the tool
+call, so it cannot wait behind or accidentally reuse the passive frame already being judged.
+`PersonCameraView.swift` shows the live preview with a ring over the last detected bearing;
+`PersonVision.parseReading`'s tolerant-JSON parsing is covered by `PersonVisionTests.swift` with no
+camera or network needed. A timeout retires the entire connection epoch before another turn can
+begin, because Live replies have no request id with which to correlate a late response.
 
 Detection reaching a debug panel isn't the same as Rocky knowing it -- the first live device test
 had her say, honestly, "I cannot see it yet. No picture came through," because nothing told the
-voice session anything. `RealtimeVoiceSession.updatePersonDetection` is the fix: `ContentView`
-forwards every `personCamera.lastDetection` change to it, and on an actual presence change (not
-every ~1s sample) it inserts a quiet `<vision>...</vision>` conversation item over the same
+voice session anything. `RealtimeVoiceSession.updateVision` is the fix: `ContentView`
+forwards every `personCamera.lastSample` change to it, and on a confirmed presence change, a
+material scene change, or a periodic refresh it inserts a quiet `<vision seq="…" age_ms="…">`
+conversation item over the same
 `insertWorldItem` door `WorldProjector` uses for body facts -- no response requested, just context
-available for whenever Rocky next has something to say. Deliberately kept outside `WorldStore`:
+available for whenever Rocky next has something to say. The prompt makes the highest sequence the
+only current view, so older append-only glimpses cannot be combined with it. Deliberately kept outside `WorldStore`:
 vision is a fact about the person in front of the camera, not the robot's own body, so it doesn't
 belong in the salience machinery built for that.
 

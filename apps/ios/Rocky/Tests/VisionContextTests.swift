@@ -14,6 +14,47 @@ import XCTest
 /// descriptions. This is that judgment, and it is a pure function so it can be pinned down here
 /// rather than tuned by feel against a live camera.
 final class VisionContextTests: XCTestCase {
+    func testAnOlderCaptureCannotBecomeCurrentByFinishingLater() {
+        let now = Date()
+        let newer = VisionSample(
+            seq: 8, capturedAt: now, judgedAt: now, reading: .empty
+        )
+        let older = VisionSample(
+            seq: 7,
+            capturedAt: now.addingTimeInterval(-1),
+            judgedAt: now.addingTimeInterval(1),
+            reading: .empty
+        )
+
+        XCTAssertFalse(RealtimeVoiceSession.isNewerVision(older, than: newer))
+        XCTAssertTrue(RealtimeVoiceSession.isNewerVision(newer, than: older))
+    }
+
+    func testContextCarriesSequenceAndMeasuredAge() {
+        let captured = Date(timeIntervalSince1970: 1_000)
+        let sample = VisionSample(
+            seq: 42,
+            capturedAt: captured,
+            judgedAt: captured.addingTimeInterval(0.8),
+            reading: SceneReading(
+                personPresent: true,
+                bearing: 0,
+                person: "a friend",
+                scene: "a friend holding a blue cup"
+            )
+        )
+
+        XCTAssertEqual(
+            RealtimeVoiceSession.visionContext(
+                for: sample,
+                presenceChanged: false,
+                sceneChanged: true,
+                at: captured.addingTimeInterval(1.25)
+            ),
+            "<vision seq=\"42\" age_ms=\"1250\">What you can see has just changed: a friend holding a blue cup.</vision>"
+        )
+    }
+
     func testHoldingSomethingUpCountsAsAChange() {
         XCTAssertTrue(
             RealtimeVoiceSession.sceneChanged(
@@ -34,6 +75,30 @@ final class VisionContextTests: XCTestCase {
             RealtimeVoiceSession.sceneChanged(
                 from: "man at a desk with a laptop",
                 to: "a man seated at his desk with a laptop"
+            )
+        )
+        XCTAssertFalse(
+            RealtimeVoiceSession.sceneChanged(
+                from: "a person at a desk showing a blue mug",
+                to: "a person seated in the room holding a blue cup"
+            )
+        )
+    }
+
+    func testAChangedColorCountsEvenWhenEveryOtherWordMatches() {
+        XCTAssertTrue(
+            RealtimeVoiceSession.sceneChanged(
+                from: "a person holding a red cup at a kitchen table",
+                to: "a person holding a blue cup at a kitchen table"
+            )
+        )
+    }
+
+    func testPuttingAwayTheShownObjectCountsAsAChange() {
+        XCTAssertTrue(
+            RealtimeVoiceSession.sceneChanged(
+                from: "a person holding a can of coconut water at a desk",
+                to: "a person sitting at a desk"
             )
         )
     }

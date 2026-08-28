@@ -73,7 +73,7 @@ final class WorldStore: ObservableObject {
             linkUp = true
             log.write(.link, hasBeenLost ? "body back" : "body found", seq: seq + 1)
             commit { $0.body = .here }
-            if hasBeenLost { record(.bodyBack, detail: "I can feel my body again") }
+            if hasBeenLost { record(.bodyBack, detail: "I can feel my wheels and touch again") }
         } else {
             refreshPresence()
         }

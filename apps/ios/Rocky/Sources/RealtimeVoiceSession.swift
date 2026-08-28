@@ -122,6 +122,10 @@ final class RealtimeVoiceSession: ObservableObject {
     /// The newest look Rocky has had, and anyone waiting for one newer than a given moment.
     private var latestVision: VisionSample?
     private var eyesOpen = false
+    /// Injected by `ContentView` so the phone's camera can immediately capture an explicit look
+    /// without making the voice session own AVFoundation. The resulting sample still returns via
+    /// `updateVision`, preserving one logged path for every observation.
+    private var requestFreshLook: ((Date) -> Void)?
     private struct VisionWaiter {
         let after: Date
         let resume: (VisionSample?) -> Void
@@ -131,6 +135,10 @@ final class RealtimeVoiceSession: ObservableObject {
     /// second plus a round trip to judge it means ~2.5s is the realistic case; past this it is
     /// better to answer from a slightly old look, and say so, than to keep a friend waiting.
     private static let lookTimeout: Duration = .milliseconds(3500)
+
+    func useFreshLookRequester(_ requester: @escaping (Date) -> Void) {
+        requestFreshLook = requester
+    }
 
     // MARK: - The world
     //
@@ -656,6 +664,13 @@ final class RealtimeVoiceSession: ObservableObject {
     /// debounced because holding something up is a real event that should not wait two frames.
     /// `look_now` covers the same ground on demand, for when a friend asks before this notices.
     func updateVision(_ sample: VisionSample) {
+        if !Self.isNewerVision(sample, than: latestVision), let latestVision {
+            log(
+                "vision: #\(sample.seq) discarded after #\(latestVision.seq) "
+                    + "(older capture finished later)"
+            )
+            return
+        }
         latestVision = sample
         resolveVisionWaiters(with: sample)
 
@@ -694,21 +709,39 @@ final class RealtimeVoiceSession: ObservableObject {
         lastAnnouncedPersonPresent = reading.personPresent
         lastAnnouncedScene = reading.scene
         lastVisionAnnouncedAt = now
-        let seen = reading.scene ?? reading.person ?? "a person"
-        let text: String
-        if !reading.personPresent {
-            text = reading.scene.map {
-                "<vision>No one is visible on your front camera right now. You can see: \($0).</vision>"
-            } ?? "<vision>No one is visible on your front camera right now.</vision>"
-        } else if presenceChanged {
-            text = "<vision>Someone just came into view on your front camera: \(seen).</vision>"
-        } else if sceneChanged {
-            text = "<vision>What you can see has just changed: \(seen).</vision>"
-        } else {
-            text = "<vision>Still visible on your front camera, an updated look: \(seen).</vision>"
-        }
+        let text = Self.visionContext(
+            for: sample, presenceChanged: presenceChanged, sceneChanged: sceneChanged, at: now
+        )
         insertWorldItem(id: Self.shortItemId("vision_"), text: text)
         log("vision: #\(sample.seq) told (\(presenceChanged ? "presence" : sceneChanged ? "scene" : "refresh")): \(text)")
+    }
+
+    nonisolated static func isNewerVision(_ sample: VisionSample, than latest: VisionSample?) -> Bool {
+        latest.map { sample.seq > $0.seq } ?? true
+    }
+
+    nonisolated static func visionContext(
+        for sample: VisionSample,
+        presenceChanged: Bool,
+        sceneChanged: Bool,
+        at now: Date = Date()
+    ) -> String {
+        let reading = sample.reading
+        let seen = reading.scene ?? reading.person ?? "a person"
+        let ageMs = max(0, Int(sample.age(at: now) * 1000))
+        let body: String
+        if !reading.personPresent {
+            body = reading.scene.map {
+                "No one is visible right now. You can see: \($0)."
+            } ?? "No one is visible right now."
+        } else if presenceChanged {
+            body = "Someone just came into view: \(seen)."
+        } else if sceneChanged {
+            body = "What you can see has just changed: \(seen)."
+        } else {
+            body = "Still visible, an updated look: \(seen)."
+        }
+        return "<vision seq=\"\(sample.seq)\" age_ms=\"\(ageMs)\">\(body)</vision>"
     }
 
     /// Whether two scene phrases describe different scenes, rather than the same one worded
@@ -718,11 +751,20 @@ final class RealtimeVoiceSession: ObservableObject {
     nonisolated static func sceneChanged(from previous: String?, to current: String?) -> Bool {
         guard let current, !current.isEmpty else { return false }
         guard let previous, !previous.isEmpty else { return true }
+        let beforeDetails = salientDetails(previous)
+        let afterDetails = salientDetails(current)
+        if beforeDetails != afterDetails, !beforeDetails.isEmpty || !afterDetails.isEmpty {
+            return true
+        }
         let before = significantWords(previous)
         let after = significantWords(current)
         guard !before.isEmpty, !after.isEmpty else { return before != after }
         let shared = Double(before.intersection(after).count)
-        return shared / Double(before.union(after).count) < sceneSimilarityThreshold
+        // Compare against the shorter description. Gemini often adds incidental room words to
+        // one phrasing; union/Jaccard treated those additions as a new scene even when every fact
+        // in the concise phrasing was preserved. Explicit colors and held/shown/worn details were
+        // already compared above, so this overlap can focus on the stable scene backbone.
+        return shared / Double(min(before.count, after.count)) < sceneSimilarityThreshold
     }
 
     private nonisolated static let sceneStopWords: Set<String> = [
@@ -730,13 +772,54 @@ final class RealtimeVoiceSession: ObservableObject {
         "from", "into", "onto", "near", "over", "some", "who", "while", "wearing", "seems", "looks",
     ]
 
+    /// Details whose appearance or disappearance is conversationally meaningful even when nearly
+    /// every other word remains the same. The general word-overlap score misses exactly changes
+    /// like “red cup” → “blue cup”; explicit attribute and show/hold phrases restore that signal.
+    private nonisolated static let visualAttributes: Set<String> = [
+        "black", "blue", "brown", "cyan", "gold", "gray", "green", "grey", "orange", "pink",
+        "purple", "red", "silver", "white", "yellow",
+    ]
+    private nonisolated static let interactionWords: Set<String> = [
+        "carry", "carrying", "hold", "holding", "show", "showing", "wear", "wearing",
+    ]
+
+    private nonisolated static func salientDetails(_ phrase: String) -> Set<String> {
+        let words = phrase.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+        var details = Set(words.map(canonicalSceneWord).filter(visualAttributes.contains))
+        for (index, word) in words.enumerated() where interactionWords.contains(word) {
+            // Capture the concrete phrase after hold/show/wear, while dropping framing words and
+            // the camera itself. Four words covers “can of coconut water” without swallowing the
+            // whole room description.
+            let tail = words.dropFirst(index + 1).prefix(5).map(canonicalSceneWord).filter {
+                $0.count > 2 && !sceneStopWords.contains($0) && $0 != "camera"
+            }
+            details.insert("interaction:" + tail.joined(separator: "_"))
+        }
+        return details
+    }
+
     private nonisolated static func significantWords(_ phrase: String) -> Set<String> {
         Set(
             phrase.lowercased()
                 .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-                .map(String.init)
+                .map { canonicalSceneWord(String($0)) }
                 .filter { $0.count > 2 && !sceneStopWords.contains($0) }
         )
+    }
+
+    private nonisolated static func canonicalSceneWord(_ word: String) -> String {
+        switch word {
+        case "carried", "carries", "carrying", "held", "holding", "holds", "showed", "showing", "shows":
+            "hold"
+        case "cellphone", "smartphone": "phone"
+        case "grey": "gray"
+        case "mug": "cup"
+        case "photo", "photograph": "picture"
+        case "seated", "sits": "sitting"
+        default: word
+        }
     }
 
     /// Whether Rocky's eyes are open at all, so `look_now` can say so honestly instead of waiting
@@ -1385,7 +1468,9 @@ final class RealtimeVoiceSession: ObservableObject {
         if name == "look_now" { return await lookNow() }
 
         guard let behavior, behavior.connected else {
-            return Self.encodeResult(["ok": false, "problem": "my body isn't with me right now"])
+            return Self.encodeResult([
+                "ok": false, "problem": "I cannot feel or move my wheels right now",
+            ])
         }
 
         switch name {
@@ -1501,6 +1586,12 @@ final class RealtimeVoiceSession: ObservableObject {
             return Self.encodeResult(["ok": false, "problem": "my eyes aren't open right now"])
         }
 
+        guard let requestFreshLook else {
+            log("look_now: no demand-driven camera requester is installed")
+            return Self.encodeResult(["ok": false, "problem": "I could not ask my eyes to look right now"])
+        }
+        log("look_now: requesting a frame captured after \(Self.timestamp(askedAt))")
+        requestFreshLook(askedAt)
         if let fresh = await vision(capturedAfter: askedAt, timeout: Self.lookTimeout) {
             log("look_now: fresh look #\(fresh.seq) after \(Self.ms(since: askedAt)) — \(fresh.reading.scene ?? "(nothing described)")")
             return Self.encodeLook(fresh, fresh: true)
@@ -1522,6 +1613,10 @@ final class RealtimeVoiceSession: ObservableObject {
             // question can be answered as what is in front of Rocky, and an older one cannot.
             "when": fresh ? "just now" : (age <= 1 ? "a moment ago" : "\(age) seconds ago"),
         ])
+    }
+
+    private nonisolated static func timestamp(_ date: Date) -> String {
+        String(format: "%.3f", date.timeIntervalSince1970)
     }
 
     /// What a movement tool returns, and deliberately all it returns.

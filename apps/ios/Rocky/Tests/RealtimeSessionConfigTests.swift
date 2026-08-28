@@ -52,7 +52,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
 
         XCTAssertEqual(names, ["look_now"])
         XCTAssertEqual(stripped["tool_choice"] as! String, "auto")
-        XCTAssertTrue((stripped["instructions"] as! String).contains("Your eyes are unaffected"))
+        XCTAssertTrue((stripped["instructions"] as! String).contains("You can still see normally"))
     }
 
     func testCorrectsTheBodyContextSoRockyDoesNotPromiseABodySheHasNot() {
@@ -63,7 +63,8 @@ final class RealtimeSessionConfigTests: XCTestCase {
         // Kept, not replaced: the persona itself still comes from session.ts. Only the body
         // claim is overridden, and it has to land last to win.
         XCTAssertTrue(instructions.hasPrefix("You are Rocky. It moves itself."))
-        XCTAssertTrue(instructions.contains("NOT CONNECTED RIGHT NOW"))
+        XCTAssertTrue(instructions.contains("WHAT YOU CAN FEEL RIGHT NOW"))
+        XCTAssertTrue(instructions.contains("Never say your body is unavailable"))
     }
 
     func testLeavesAnUnrecognisableConfigAlone() {
@@ -89,7 +90,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
         )
         XCTAssertEqual(voiceOnlySession["tool_choice"] as? String, "auto")
         XCTAssertTrue(
-            (voiceOnlySession["instructions"] as? String)?.contains("NOT CONNECTED RIGHT NOW") == true
+            (voiceOnlySession["instructions"] as? String)?.contains("WHAT YOU CAN FEEL RIGHT NOW") == true
         )
     }
 

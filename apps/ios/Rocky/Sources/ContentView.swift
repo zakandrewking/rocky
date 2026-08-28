@@ -75,6 +75,9 @@ struct ContentView: View {
         .preferredColorScheme(.dark)
         .onAppear {
             behavior.start()
+            voiceSession.useFreshLookRequester { [weak personCamera] moment in
+                personCamera?.requestFreshLook(capturedAfter: moment)
+            }
         }
         .onChange(of: behavior.connected) { _, found in
             voiceSession.bodyAvailabilityChanged(found)

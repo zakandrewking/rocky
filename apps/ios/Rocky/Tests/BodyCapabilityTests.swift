@@ -39,7 +39,7 @@ final class BodyCapabilityTests: XCTestCase {
         let none = OpenAIRealtimeMinter.withoutRobotBody(config())
 
         XCTAssertTrue(toolNames(none).isEmpty)
-        XCTAssertTrue(instructions(none).contains("NOT CONNECTED RIGHT NOW"))
+        XCTAssertTrue(instructions(none).contains("WHAT YOU CAN FEEL RIGHT NOW"))
     }
 
     /// The persona itself still comes from session.ts. Only the body claim is overridden, and it
@@ -48,8 +48,9 @@ final class BodyCapabilityTests: XCTestCase {
         let text = instructions(OpenAIRealtimeMinter.withoutRobotBody(config()))
 
         XCTAssertTrue(text.hasPrefix("You are Someone."))
-        XCTAssertTrue(text.contains("while this connection is absent"))
-        XCTAssertTrue(text.contains("Do not pretend or narrate imaginary movement"))
+        XCTAssertTrue(text.contains("my wheels are not responding"))
+        XCTAssertTrue(text.contains("Never say your body is unavailable"))
+        XCTAssertTrue(text.contains("You can still see normally"))
     }
 
     func testAnUnrecognisableConfigIsLeftAlone() {

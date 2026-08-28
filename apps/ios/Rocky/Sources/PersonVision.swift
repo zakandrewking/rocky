@@ -21,7 +21,7 @@ struct SceneReading: Equatable, Sendable {
     /// completely different facts to be given.
     let scene: String?
 
-    static let none = SceneReading(personPresent: false, bearing: nil, person: nil, scene: nil)
+    static let empty = SceneReading(personPresent: false, bearing: nil, person: nil, scene: nil)
 }
 
 /// One reading plus when it happened. The timestamps are what make "is this a look taken *after*
@@ -58,6 +58,7 @@ final class PersonVision {
     private static let host = "generativelanguage.googleapis.com"
     private static let model = "models/gemini-robotics-er-2-streaming-preview"
     private static let requestTimeout: Duration = .seconds(8)
+    private let label: String
 
     /// Asks for the whole frame, not just a person in it. The specificity instructions are
     /// load-bearing: "a drink" is useless to a friend asking "what am I holding?", while "a can of
@@ -81,7 +82,10 @@ final class PersonVision {
     private var socket: URLSessionWebSocketTask?
     private var epoch = 0
     private var setupComplete = false
-    private var setupContinuation: CheckedContinuation<Void, Error>?
+    /// More than one caller may await setup when the explicit-look lane is warming and a question
+    /// arrives immediately. All share the same socket handshake; no caller may replace another's
+    /// continuation.
+    private var setupContinuations: [CheckedContinuation<Void, Error>] = []
     private var turnContinuation: CheckedContinuation<SceneReading, Error>?
     private var turnText = ""
     private var turnStartedAt: Date?
@@ -91,6 +95,17 @@ final class PersonVision {
     private var setupGeneration = 0
     private var turnGeneration = 0
 
+    init(label: String = "passive") {
+        self.label = label
+    }
+
+    /// Opens and configures the Live connection without consuming a frame. `PersonCamera` uses
+    /// this to warm the explicit-look lane alongside the passive one, so the first `look_now`
+    /// does not pay an avoidable WebSocket setup round trip.
+    func prepare() async throws {
+        _ = try await connectIfNeeded()
+    }
+
     /// Sends one JPEG frame over the session (connecting and completing setup first if needed)
     /// and returns the parsed judgment for that frame.
     func read(frame jpegData: Data) async throws -> SceneReading {
@@ -98,6 +113,9 @@ final class PersonVision {
         turnGeneration += 1
         let generation = turnGeneration
         turnStartedAt = Date()
+        RockyLog.write(
+            "vision[\(label)]: turn g\(generation) sent (\(jpegData.count) JPEG bytes, epoch \(epoch))"
+        )
         return try await withCheckedThrowingContinuation { continuation in
             turnContinuation = continuation
             send(
@@ -116,9 +134,10 @@ final class PersonVision {
                 on: socket
             )
             armWatchdog { [weak self] in
-                guard let self, generation == self.turnGeneration else { return }
-                RockyLog.write("vision: turn timed out after \(Self.requestTimeout)")
-                self.failTurn(RockyError.timedOut("gemini vision turn"))
+                guard let self, generation == self.turnGeneration, self.turnContinuation != nil
+                else { return }
+                RockyLog.write("vision[\(self.label)]: turn g\(generation) timed out after \(Self.requestTimeout)")
+                self.resetConnection(after: RockyError.timedOut("gemini vision turn"))
             }
         }
     }
@@ -126,23 +145,34 @@ final class PersonVision {
     /// Closes the session. Safe to call whether or not one is open; the next `read` call
     /// reconnects from scratch.
     func disconnect() {
-        guard socket != nil else { return }
-        RockyLog.write("vision: disconnecting")
+        if socket != nil { RockyLog.write("vision[\(label)]: disconnecting epoch \(epoch)") }
         epoch += 1
+        setupGeneration += 1
+        turnGeneration += 1
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
         setupComplete = false
+        turnText = ""
+        turnStartedAt = nil
         failSetup(RockyError.disconnected)
         failTurn(RockyError.disconnected)
     }
 
     private func connectIfNeeded() async throws -> URLSessionWebSocketTask {
-        if let socket, setupComplete { return socket }
+        if let socket {
+            if setupComplete { return socket }
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, Error>) in
+                setupContinuations.append(continuation)
+            }
+            guard self.socket === socket, setupComplete else { throw RockyError.disconnected }
+            return socket
+        }
 
         guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "RockyGeminiKey") as? String,
             !apiKey.isEmpty
         else {
-            RockyLog.write("vision: no Gemini API key baked into this build")
+            RockyLog.write("vision[\(label)]: no Gemini API key baked into this build")
             throw RockyError.commandFailed(
                 "no Gemini API key baked into this build -- run apps/ios/scripts/generate.sh with GEMINI_API_KEY set in the repo root .env, then rebuild"
             )
@@ -160,11 +190,11 @@ final class PersonVision {
         receive(on: socket, epoch: currentEpoch)
 
         let connectStart = Date()
-        RockyLog.write("vision: opening a session with \(Self.model)")
+        RockyLog.write("vision[\(label)]: opening epoch \(currentEpoch) with \(Self.model)")
         setupGeneration += 1
         let generation = setupGeneration
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            setupContinuation = continuation
+            setupContinuations.append(continuation)
             send(
                 [
                     "setup": [
@@ -176,12 +206,15 @@ final class PersonVision {
                 on: socket
             )
             armWatchdog { [weak self] in
-                guard let self, generation == self.setupGeneration else { return }
-                RockyLog.write("vision: setup timed out after \(Self.requestTimeout)")
-                self.failSetup(RockyError.timedOut("gemini vision setup"))
+                guard let self, generation == self.setupGeneration, !self.setupContinuations.isEmpty
+                else { return }
+                RockyLog.write("vision[\(self.label)]: setup g\(generation) timed out after \(Self.requestTimeout)")
+                self.resetConnection(after: RockyError.timedOut("gemini vision setup"))
             }
         }
-        RockyLog.write("vision: session ready in \(Int(Date().timeIntervalSince(connectStart) * 1000))ms")
+        RockyLog.write(
+            "vision[\(label)]: epoch \(currentEpoch) ready in \(Int(Date().timeIntervalSince(connectStart) * 1000))ms"
+        )
         return socket
     }
 
@@ -199,9 +232,9 @@ final class PersonVision {
         socket.send(.string(json)) { [weak self] error in
             guard let error else { return }
             Task { @MainActor in
-                RockyLog.write("vision: send failed: \(error.localizedDescription)")
-                self?.failSetup(RockyError.commandFailed(error.localizedDescription))
-                self?.failTurn(RockyError.commandFailed(error.localizedDescription))
+                guard let self, self.socket === socket else { return }
+                RockyLog.write("vision[\(self.label)]: send failed: \(error.localizedDescription)")
+                self.resetConnection(after: RockyError.commandFailed(error.localizedDescription))
             }
         }
     }
@@ -218,7 +251,9 @@ final class PersonVision {
                         self.setupComplete = false
                     }
                     if !isCancel {
-                        RockyLog.write("vision: socket failed: \(error.localizedDescription)")
+                        RockyLog.write("vision[\(self.label)]: epoch \(epoch) socket failed: \(error.localizedDescription)")
+                        self.turnText = ""
+                        self.turnStartedAt = nil
                         self.failSetup(RockyError.commandFailed(error.localizedDescription))
                         self.failTurn(RockyError.commandFailed(error.localizedDescription))
                     }
@@ -245,9 +280,9 @@ final class PersonVision {
 
         if object["setupComplete"] != nil {
             setupComplete = true
-            let continuation = setupContinuation
-            setupContinuation = nil
-            continuation?.resume()
+            let continuations = setupContinuations
+            setupContinuations.removeAll()
+            for continuation in continuations { continuation.resume() }
             return
         }
 
@@ -269,28 +304,51 @@ final class PersonVision {
         if serverContent["turnComplete"] as? Bool == true {
             let text = turnText
             turnText = ""
-            let reading = Self.parseReading(text)
             // The model's own words, verbatim and timestamped by RockyLog. When a reading turns
             // out to be wrong or empty, this is the only line that says whether the model saw it
             // and phrased it badly or never saw it at all -- and the two have opposite fixes.
             let elapsed = turnStartedAt.map { "\(Int(Date().timeIntervalSince($0) * 1000))ms" } ?? "?"
             RockyLog.write(
-                "vision: reply in \(elapsed): \(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))"
+                "vision[\(label)]: turn g\(turnGeneration) reply in \(elapsed): \(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))"
             )
-            if reading == .none && !text.isEmpty {
-                RockyLog.write("vision: that reply parsed to nothing at all")
-            }
             turnStartedAt = nil
             let continuation = turnContinuation
             turnContinuation = nil
+            guard let reading = Self.parseReading(text) else {
+                RockyLog.write("vision[\(label)]: turn g\(turnGeneration) reply was not a valid observation")
+                continuation?.resume(
+                    throwing: RockyError.commandFailed("Gemini returned an invalid vision observation")
+                )
+                return
+            }
             continuation?.resume(returning: reading)
         }
     }
 
+    /// A timed-out Live turn has no reply id that can be correlated when it eventually arrives.
+    /// Keeping that socket would let the late answer resume the next frame's continuation. Close
+    /// the whole epoch before failing the waiter; callbacks from the old socket are then fenced by
+    /// `receive`'s epoch check and the next frame starts from a clean session.
+    private func resetConnection(after error: Error) {
+        RockyLog.write(
+            "vision[\(label)]: resetting epoch \(epoch) after \(error.localizedDescription)"
+        )
+        epoch += 1
+        setupGeneration += 1
+        turnGeneration += 1
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
+        setupComplete = false
+        turnText = ""
+        turnStartedAt = nil
+        failSetup(error)
+        failTurn(error)
+    }
+
     private func failSetup(_ error: Error) {
-        let continuation = setupContinuation
-        setupContinuation = nil
-        continuation?.resume(throwing: error)
+        let continuations = setupContinuations
+        setupContinuations.removeAll()
+        for continuation in continuations { continuation.resume(throwing: error) }
     }
 
     private func failTurn(_ error: Error) {
@@ -299,22 +357,23 @@ final class PersonVision {
         continuation?.resume(throwing: error)
     }
 
-    /// Tolerant on purpose: a reply that wraps its JSON in a sentence, or omits a field, should
-    /// still be understood; one that's unrecognisable should read as "saw nothing" rather than
-    /// crash the camera loop.
+    /// Tolerant on purpose about prose/code-fence wrapping and optional descriptive fields. The
+    /// presence verdict itself is required: an unrecognisable reply is not an empty room, it is no
+    /// observation at all. Returning nil keeps parser/model failures from becoming false evidence
+    /// that a person left.
     ///
     /// `scene` survives a `person_present: false` reading, unlike the person-only fields. That
     /// asymmetry is the point: an empty room with a drawing held up in it is not the same fact as
     /// an empty room.
-    nonisolated static func parseReading(_ text: String) -> SceneReading {
+    nonisolated static func parseReading(_ text: String) -> SceneReading? {
         guard let start = text.firstIndex(of: "{"), let end = text.lastIndex(of: "}"), start < end
-        else { return .none }
+        else { return nil }
         let slice = String(text[start...end])
         guard let data = slice.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return .none }
+        else { return nil }
 
-        let present = object["person_present"] as? Bool ?? false
+        guard let present = object["person_present"] as? Bool else { return nil }
         // "description" is the key the earlier person-only prompt used. Still read as a fallback
         // so a model reply in the old shape degrades to the old behaviour rather than to silence.
         let person = phrase(object["person"] ?? object["description"])

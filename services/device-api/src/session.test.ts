@@ -39,6 +39,8 @@ describe("createDeviceSessionConfig", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     expect(config.instructions).toContain(DEVICE_ADDENDUM);
     expect(config.instructions).toContain("Never offer to make a spreadsheet");
+    expect(config.instructions).toContain("Never say your body is unavailable");
+    expect(config.instructions).toContain("my wheels and touch went numb");
   });
 
   it("supports client-synthesized custom character templates", () => {
@@ -117,6 +119,8 @@ describe("createDeviceSessionConfig", () => {
     // The private sight tag had no rule at all until the same pass that added the tool, so it was
     // reaching Rocky as unexplained text with nothing saying not to read it out loud.
     expect(config.instructions).toContain("tagged <vision>");
+    expect(config.instructions).toContain("Only the note with the highest seq describes your");
+    expect(config.instructions).toContain("current view; older notes are past glimpses");
     expect(config.instructions).toContain("say plainly that you cannot see right now");
   });
 

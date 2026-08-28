@@ -60,7 +60,7 @@ final class BehaviorWorldSource {
             let confirmedStatus = action.status.isLive ? action.status : .accepted
             store.markAction(id, status: confirmedStatus, evidence: .confirmed)
         case .disconnected:
-            store.linkLost("I lost track of my body")
+            store.linkLost("My wheels and touch went numb")
         }
     }
 
