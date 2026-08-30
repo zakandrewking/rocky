@@ -39,6 +39,10 @@ targets:
         # (always use that, never `xcodegen generate` directly) -- never typed on the phone, never
         # committed. Empty string, not an error, when .env has no key yet.
         RockyOpenAIKey: "${ROCKY_OPENAI_KEY_IOS}"
+        # Feature-flagged conversational transport. `realtime` is the stable OpenAI/WebRTC path;
+        # `er2` streams the mic to Gemini Robotics ER 2 and renders its text with the same local
+        # ElevenLabs path. Credentials remain separately selectable and neither value is secret.
+        RockyVoiceEngine: "${ROCKY_VOICE_ENGINE_IOS}"
         # One-switch local voice selection. Keep both credential sets baked so changing
         # ROCKY_SPEECH_PROVIDER and redeploying is the whole rollback procedure.
         RockySpeechProvider: "${ROCKY_SPEECH_PROVIDER_IOS}"

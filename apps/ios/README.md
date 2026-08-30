@@ -6,16 +6,17 @@ mic/speaker/camera instead of a laptop's or the CyberPi's. See
 original "laptop is the brain" design, and [`apps/cyberpi`](../cyberpi/README.md) for the
 (independent, unaffected) native-firmware audio track this makes unnecessary for the robot body.
 
-Rocky talks over real OpenAI Realtime voice (`gpt-realtime-2.1` — GPT-Live checked and confirmed
-not API-accessible yet, see `TODOS.md`), connected directly to OpenAI over WebRTC
-(`stasel/WebRTC`, no relay server), the same architecture `apps/desktop` uses. Movement, mood,
+The stable voice engine is OpenAI Realtime (`gpt-realtime-2.1`), connected directly over WebRTC
+(`stasel/WebRTC`, no relay server). A build-time feature flag can instead route the microphone,
+conversation, and tool selection straight through Gemini Robotics ER 2 Live, whose streamed text
+is spoken by the same ElevenLabs implementation. Movement, mood,
 and temporary LED color are real body-language tools the model chooses for itself — everything
 the one robot payload
 ([`apps/robot/device/rocky_agent.py`](../robot/device/rocky_agent.py)) can answer, and nothing it
 can't. `AVAudioSession` runs in `.voiceChat` mode. Rocky's selected local voice, Eridian chords,
-and story effects render through the same injected WebRTC `RTCAudioDevice` that captures the microphone, so
-VoiceProcessingIO can remove Rocky's own local output while leaving the mic open for OpenAI
-semantic-VAD barge-in. No second capture engine or response-time microphone gate is involved.
+and story effects render through the same voice-processing audio graph that captures the
+microphone, so VoiceProcessingIO can remove Rocky's own local output while leaving the mic open
+for server VAD and barge-in. No second capture engine or response-time microphone gate is involved.
 
 **No laptop server at runtime.** The app mints its own ephemeral OpenAI secret directly
 (`OpenAIRealtimeMinter.swift`, hitting `POST /v1/realtime/client_secrets` straight from the
@@ -37,6 +38,8 @@ apps/ios/
 │   │   ├── RockyApp.swift        — @main entry point
 │   │   ├── ContentView.swift     — orb and debug state
 │   │   ├── RealtimeWebRTCClient.swift — peer connection, data channel, SDP exchange with OpenAI
+│   │   ├── ER2LiveVoiceClient.swift — Gemini Live audio/text/tool adapter for the prototype
+│   │   ├── RealtimeVoiceClient.swift — feature flag + common conversational transport seam
 │   │   ├── RealtimeEvents.swift  — typed slice of the data-channel event schema (tool calls)
 │   │   ├── RealtimeVoiceSession.swift — @MainActor session state + tool-call dispatch
 │   │   ├── RockyRTCAudioDevice.swift — shared full-duplex WebRTC/local-output AEC graph
@@ -118,6 +121,26 @@ of workspace credits while every normal Rocky reply is still rejected as `quota_
 is independent of the provider/model switch. Raise the key's own quota in ElevenLabs before using
 v3 Conversational. Flash remains available as `ROCKY_ELEVENLABS_MODEL=eleven_flash_v2_5` for an
 explicit latency/expressiveness comparison; no Hume or Flash fallback happens implicitly.
+
+### Switching the conversational engine
+
+`ROCKY_VOICE_ENGINE=realtime` is the stable default. Set `ROCKY_VOICE_ENGINE=er2` and regenerate
+or deploy to test the no-Realtime prototype. ER2 receives raw mono PCM at 16 kHz over its Live API,
+uses automatic activity detection, returns text, and calls the same blocking robot tools; the
+selected local provider (normally ElevenLabs v3) still produces the audible voice. The app's state
+chip includes `realtime` or `er2`, and turn logs name the engine, local speech boundaries, ER2 input
+transcription, model text timing, and ElevenLabs text-to-audio timing.
+
+For a one-off prototype build without editing `.env`:
+
+```sh
+ROCKY_VOICE_ENGINE=er2 bash apps/ios/scripts/deploy.sh <device-id>
+```
+
+Return to the stable path by deploying normally, or explicitly with
+`ROCKY_VOICE_ENGINE=realtime`. ER2 currently reconnects to apply a robot appearing/disappearing
+mid-session and treats ambiguous salience as silent context because that endpoint has no parallel
+out-of-band response lane; deterministic stop/safety interruptions remain unchanged.
 
 When the robot is connected, slim vertical controls at the left and right edges drive the official
 grabber build's dedicated S3 and S4 servo ports. These are native vertical drag tracks rather than

@@ -52,6 +52,16 @@ crashing.**
   count, and first-audio latency. Hume remains intact as a one-line rollback plus redeploy. The
   personal-device build still bakes its limited provider key; revisit with a token-minting service
   before distributing the app.
+- [x] Put a direct Gemini Robotics ER 2 + ElevenLabs voice prototype behind
+  `ROCKY_VOICE_ENGINE=er2`, leaving `realtime` as the stable default. The alternate transport
+  streams echo-cancelled 16 kHz PCM to ER2 Live, adapts its text/VAD/tool messages into the existing
+  turn machinery, and therefore keeps the same persona, body executor, world projection, pause,
+  barge-in, diagnostics, and ElevenLabs playback. OpenAI is never contacted in an ER2 session.
+  The shared VoiceProcessingIO graph gained a native microphone sink rather than starting a second
+  audio engine. ER2 tools are generated from the baked source-of-truth schemas as blocking Gemini
+  function declarations. Its current prototype compromises are explicit: body-tool changes apply
+  on reconnect, and genuinely ambiguous salience becomes quiet context because ER2 has no sideband
+  response lane; deterministic safety interruptions still run locally.
 - [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A

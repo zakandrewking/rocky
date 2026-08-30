@@ -24,6 +24,9 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
 
     private var sourceNode: AVAudioSourceNode?
     private var sinkNode: AVAudioSinkNode?
+    private var nativeSinkNode: AVAudioSinkNode?
+    private var nativeInputHandler: (@Sendable (Data) -> Void)?
+    private var nativeRecording = false
     private var inputConverter: RockyAudioConverter?
     private var observers: [NSObjectProtocol] = []
 
@@ -67,13 +70,31 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
     }
 
     func ensureRunning() {
-        guard let delegate = currentDelegate else { return }
-        delegate.dispatchSync { [weak self] in
-            self?.updateEngine()
+        if let delegate = currentDelegate {
+            delegate.dispatchSync { [weak self] in self?.updateEngine() }
+        } else {
+            updateEngine()
         }
         for player in players.values where !player.isPlaying {
             player.play()
         }
+    }
+
+    /// Starts ER2 microphone delivery on this same full-duplex, voice-processing graph. Keeping
+    /// ElevenLabs output and microphone capture here gives hardware AEC the playback reference
+    /// and avoids the two-engine microphone starvation observed in the earlier iOS experiment.
+    func startNativeRecording(_ handler: @escaping @Sendable (Data) -> Void) {
+        nativeInputHandler = handler
+        nativeRecording = true
+        installObservers()
+        updateEngine()
+    }
+
+    func stopNativeRecording() {
+        nativeRecording = false
+        nativeInputHandler = nil
+        updateEngine()
+        if currentDelegate == nil { removeObservers() }
     }
 
     private var currentDelegate: RTCAudioDeviceDelegate? {
@@ -95,9 +116,12 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
         rebuilding = true
         defer { rebuilding = false }
 
-        guard let delegate = currentDelegate, (shouldPlay || shouldRecord), !interrupted else {
+        let delegate = currentDelegate
+        let rtcActive = delegate != nil && (shouldPlay || shouldRecord)
+        guard (rtcActive || nativeRecording), !interrupted else {
             if engine.isRunning { engine.stop() }
             detachWebRTCNodes()
+            detachNativeInput()
             return
         }
 
@@ -119,7 +143,10 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
         // cycles, occasionally left the speaker format at 0 Hz, and failed with `!pla`
         // (AVAudioSession cannot start playing). The source/sink nodes below still honor ADM's
         // logical requests; only the hardware remains stable so AEC always has both sides.
-        let hardware = Self.hardwareDirections(shouldPlay: shouldPlay, shouldRecord: shouldRecord)
+        let hardware = Self.hardwareDirections(
+            shouldPlay: shouldPlay || nativeRecording,
+            shouldRecord: shouldRecord || nativeRecording
+        )
         let ioUnit = engine.outputNode.auAudioUnit
         if ioUnit.isInputEnabled != hardware.input || ioUnit.isOutputEnabled != hardware.output {
             if engine.isRunning { engine.stop() }
@@ -127,7 +154,7 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
             ioUnit.isOutputEnabled = hardware.output
         }
 
-        if shouldRecord, sinkNode == nil {
+        if let delegate, shouldRecord, sinkNode == nil {
             installInput(delegate: delegate)
         } else if !shouldRecord, let sinkNode {
             engine.detach(sinkNode)
@@ -135,11 +162,17 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
             inputConverter = nil
         }
 
-        if shouldPlay, sourceNode == nil {
+        if let delegate, shouldPlay, sourceNode == nil {
             installOutput(delegate: delegate)
         } else if !shouldPlay, let sourceNode {
             engine.detach(sourceNode)
             self.sourceNode = nil
+        }
+
+        if nativeRecording, nativeSinkNode == nil {
+            installNativeInput()
+        } else if !nativeRecording {
+            detachNativeInput()
         }
 
         guard !engine.isRunning else {
@@ -151,11 +184,61 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
             try engine.start()
             startPlayers()
             RockyLog.write(
-                "audio: shared graph started (input: \(shouldRecord ? "on" : "off"), output: \(shouldPlay ? "on" : "off"))"
+                "audio: shared graph started (input: \(shouldRecord || nativeRecording ? "on" : "off"), output: \(shouldPlay || nativeRecording ? "on" : "off"))"
             )
         } catch {
             RockyLog.write("audio: shared graph failed to start: \(error.localizedDescription)")
         }
+    }
+
+    private func installNativeInput() {
+        let format = engine.inputNode.outputFormat(forBus: 1)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            RockyLog.write("audio: ER2 graph has no valid microphone format")
+            return
+        }
+        let sourceRate = format.sampleRate
+        let commonFormat = format.commonFormat
+        let handler = nativeInputHandler
+        let sink = AVAudioSinkNode { _, frameCount, input in
+            guard let handler, frameCount > 0 else { return noErr }
+            let buffers = UnsafeMutableAudioBufferListPointer(
+                UnsafeMutablePointer(mutating: input)
+            )
+            guard let first = buffers.first, let raw = first.mData else { return noErr }
+            let outputCount = max(1, Int(Double(frameCount) * 16_000 / sourceRate))
+            let step = sourceRate / 16_000
+            var pcm = [Int16](repeating: 0, count: outputCount)
+            switch commonFormat {
+            case .pcmFormatFloat32:
+                let samples = raw.assumingMemoryBound(to: Float.self)
+                for index in 0..<outputCount {
+                    let source = min(Int(frameCount) - 1, Int(Double(index) * step))
+                    let bounded = min(max(samples[source], -1), 1)
+                    pcm[index] = Int16(clamping: Int((bounded * 32_767).rounded()))
+                }
+            case .pcmFormatInt16:
+                let samples = raw.assumingMemoryBound(to: Int16.self)
+                for index in 0..<outputCount {
+                    let source = min(Int(frameCount) - 1, Int(Double(index) * step))
+                    pcm[index] = samples[source]
+                }
+            default:
+                return kAudio_ParamError
+            }
+            handler(pcm.withUnsafeBytes { Data($0) })
+            return noErr
+        }
+        engine.attach(sink)
+        engine.connect(engine.inputNode, to: sink, format: format)
+        nativeSinkNode = sink
+        RockyLog.write("audio: ER2 microphone attached (\(Int(sourceRate)) Hz → 16000 Hz PCM)")
+    }
+
+    private func detachNativeInput() {
+        guard let nativeSinkNode else { return }
+        engine.detach(nativeSinkNode)
+        self.nativeSinkNode = nil
     }
 
     private func installInput(delegate: RTCAudioDeviceDelegate) {
@@ -259,15 +342,20 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
     }
 
     private func rebuildAfterConfigurationChange() {
-        guard let delegate = currentDelegate else { return }
-        delegate.dispatchAsync { [weak self] in
+        let rebuild = { [weak self] in
             guard let self else { return }
             if self.engine.isRunning { self.engine.stop() }
             self.detachWebRTCNodes()
+            self.detachNativeInput()
             self.reconnectLocalPlayers()
-            delegate.notifyAudioInputInterrupted()
-            delegate.notifyAudioOutputInterrupted()
+            self.currentDelegate?.notifyAudioInputInterrupted()
+            self.currentDelegate?.notifyAudioOutputInterrupted()
             self.updateEngine()
+        }
+        if let delegate = currentDelegate {
+            delegate.dispatchAsync(rebuild)
+        } else {
+            rebuild()
         }
     }
 

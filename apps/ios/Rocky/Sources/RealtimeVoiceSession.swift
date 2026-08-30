@@ -98,7 +98,8 @@ final class RealtimeVoiceSession: ObservableObject {
     /// socket happens to be ready.
     @Published private(set) var hasSpokenOnce = false
 
-    private let client = RealtimeWebRTCClient()
+    private let voiceEngine = VoiceEngine.configured
+    private lazy var client: any RealtimeVoiceClient = voiceEngine.makeClient()
     private var greeted = false
     /// What Rocky was last told about who's visible, so `updateVision` only speaks up on
     /// an actual change rather than every sampled frame.
@@ -295,10 +296,18 @@ final class RealtimeVoiceSession: ObservableObject {
             try await AudioSessionManager.configureForVoice()
             startLocalAudio()
             let hasBody = behavior?.connected == true
-            let secret = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasBody: hasBody)
+            let credential: String
+            if voiceEngine == .realtime {
+                credential = try await OpenAIRealtimeMinter.mintEphemeralSecret(hasBody: hasBody)
+            } else {
+                credential = (Bundle.main.object(forInfoDictionaryKey: "RockyGeminiKey") as? String) ?? ""
+                guard !credential.isEmpty else {
+                    throw RockyError.commandFailed(voiceEngine.missingCredentialMessage)
+                }
+            }
             sessionHasBody = hasBody
             log(
-                "minted secret in \(Self.ms(since: connectStart)) (body: \(hasBody ? "yes" : "none"), voice: \(speechSynthesizer?.providerName ?? "unavailable"))"
+                "engine \(client.engineName) ready in \(Self.ms(since: connectStart)) (body: \(hasBody ? "yes" : "none"), voice: \(speechSynthesizer?.providerName ?? "unavailable"))"
             )
             let negotiateStart = Date()
 
@@ -322,13 +331,13 @@ final class RealtimeVoiceSession: ObservableObject {
                 }
             }
 
-            try await client.connect(ephemeralSecret: secret)
-            // WebRTC has just taken the audio session for the microphone, which stops this
-            // engine; bring it back before Rocky has anything to say.
+            try await client.connect(credential: credential, hasBody: hasBody)
+            // The conversational transport has just attached its microphone path; bring the
+            // shared output graph back before Rocky has anything to say.
             RockyAudioEngine.shared.ensureRunning()
             state = .connected
             syncBodyAvailability()
-            log("webrtc negotiated in \(Self.ms(since: negotiateStart)), connected in \(Self.ms(since: connectStart)) total")
+            log("\(client.engineName) connected in \(Self.ms(since: negotiateStart)), \(Self.ms(since: connectStart)) total")
         } catch {
             state = .failed(error.localizedDescription)
             log("connect failed after \(Self.ms(since: connectStart)): \(error.localizedDescription)")
@@ -548,6 +557,16 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func sendSalienceRequest(_ ticket: SalienceTicket, _ prompt: String) {
         guard client.isDataChannelOpen else { return }
+        guard client.supportsOutOfBandResponses else {
+            log("ER2 prototype: resolving ambiguous salience as context (no sideband lane)")
+            _ = salience.resolve(
+                ticketId: ticket.id,
+                decision: "just_know",
+                reason: "ER2 prototype has no out-of-band judgment lane",
+                moment: currentMoment()
+            )
+            return
+        }
         client.send(
             OutOfBandResponseEvent(
                 metadata: ["purpose": "salience", "ticket": ticket.id],
@@ -671,7 +690,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func replaceBackgroundedConnection(reason: String) async {
         let retainedBehavior = behavior
-        log("\(reason); replacing the suspended WebRTC session")
+        log("\(reason); replacing the suspended \(client.engineName) session")
         disconnect()
         openingInstructions = Self.resumePrompt
         await connect(behavior: retainedBehavior)
@@ -680,9 +699,14 @@ final class RealtimeVoiceSession: ObservableObject {
     /// Keeps the conversation but changes whether Rocky is offered physical tools. This makes a
     /// robot found after startup or during a pause usable without creating a new voice session.
     func bodyAvailabilityChanged(_ hasBody: Bool) {
-        guard state == .connected || state == .paused, sessionHasBody != hasBody,
-            let update = OpenAIRealtimeMinter.bodySessionUpdate(hasBody: hasBody)
-        else { return }
+        guard state == .connected || state == .paused, sessionHasBody != hasBody else { return }
+        guard client.supportsDynamicBodyConfiguration else {
+            sessionHasBody = hasBody
+            log("body capability changed; \(client.engineName) will apply it on the next reconnect")
+            if hasBody { wakeBodyIfStill(reason: "robot found") }
+            return
+        }
+        guard let update = OpenAIRealtimeMinter.bodySessionUpdate(hasBody: hasBody) else { return }
         guard client.send(jsonObject: update) else {
             log("body capability update waiting for the data channel")
             return

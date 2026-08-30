@@ -243,9 +243,8 @@ struct ContentView: View {
 
     // MARK: - Conversation control
 
-    private var hasBakedOpenAIKey: Bool {
-        !((Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String) ?? "").isEmpty
-    }
+    private var voiceEngine: VoiceEngine { .configured }
+    private var hasVoiceCredential: Bool { voiceEngine.hasCredential }
 
     /// Voice state only. Robot connection has its own control and deliberately does not reach the
     /// orb -- a missing robot is not a voice error.
@@ -267,7 +266,7 @@ struct ContentView: View {
     }
 
     private var orbTappable: Bool {
-        hasBakedOpenAIKey && !starting && voiceSession.state != .connecting
+        hasVoiceCredential && !starting && voiceSession.state != .connecting
     }
 
     private var orbLabel: String {
@@ -336,7 +335,7 @@ struct ContentView: View {
         case .paused: "paused"
         case .failed: "failed"
         }
-        return "\(bodyDescription) v:\(voice)\(hasBakedOpenAIKey ? "" : " k:missing")"
+        return "\(bodyDescription) v:\(voice) \(voiceEngine.rawValue)\(hasVoiceCredential ? "" : " k:missing")"
     }
 
     private var stateChip: some View {
@@ -399,8 +398,8 @@ struct ContentView: View {
             if case .failed(let message) = voiceSession.state {
                 Text("voice: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
             }
-            if !hasBakedOpenAIKey {
-                Text("No OpenAI key baked in — run apps/ios/scripts/generate.sh with OPENAI_API_KEY set, then rebuild.")
+            if !hasVoiceCredential {
+                Text(voiceEngine.missingCredentialMessage)
                     .foregroundStyle(RockyTheme.amber)
                     .fixedSize(horizontal: false, vertical: true)
             }

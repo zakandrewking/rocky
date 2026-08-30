@@ -40,6 +40,7 @@ export ROCKY_ELEVENLABS_VOICE_ID_IOS="$(read_env ELEVENLABS_VOICE_ID)"
 export ROCKY_ELEVENLABS_MODEL_IOS="$(read_env ROCKY_ELEVENLABS_MODEL)"
 export ROCKY_SPEECH_PROVIDER_IOS="$(read_env ROCKY_SPEECH_PROVIDER)"
 export ROCKY_GEMINI_KEY_IOS="$(read_env GEMINI_API_KEY)"
+export ROCKY_VOICE_ENGINE_IOS="${ROCKY_VOICE_ENGINE:-$(read_env ROCKY_VOICE_ENGINE)}"
 
 # ElevenLabs is the current release voice. The explicit setting remains one line in .env so a
 # Hume rollback is deliberate and visible rather than coupled to which credentials happen to exist.
@@ -48,6 +49,9 @@ if [ -z "$ROCKY_SPEECH_PROVIDER_IOS" ]; then
 fi
 if [ -z "$ROCKY_ELEVENLABS_MODEL_IOS" ]; then
   export ROCKY_ELEVENLABS_MODEL_IOS="eleven_v3_conversational"
+fi
+if [ -z "$ROCKY_VOICE_ENGINE_IOS" ]; then
+  export ROCKY_VOICE_ENGINE_IOS="realtime"
 fi
 
 # Passed through to the dump script below.
@@ -66,6 +70,10 @@ if [ -n "$ROCKY_OPENAI_KEY_IOS" ]; then
 fi
 if [ "$ROCKY_SPEECH_PROVIDER_IOS" != "elevenlabs" ] && [ "$ROCKY_SPEECH_PROVIDER_IOS" != "hume" ]; then
   echo "ERROR: ROCKY_SPEECH_PROVIDER must be elevenlabs or hume" >&2
+  exit 1
+fi
+if [ "$ROCKY_VOICE_ENGINE_IOS" != "realtime" ] && [ "$ROCKY_VOICE_ENGINE_IOS" != "er2" ]; then
+  echo "ERROR: ROCKY_VOICE_ENGINE must be realtime or er2" >&2
   exit 1
 fi
 if [ "$ROCKY_ELEVENLABS_MODEL_IOS" != "eleven_v3_conversational" ] && [ "$ROCKY_ELEVENLABS_MODEL_IOS" != "eleven_flash_v2_5" ]; then
@@ -88,6 +96,7 @@ if [ -n "$ROCKY_GEMINI_KEY_IOS" ]; then
 else
   echo "==> No GEMINI_API_KEY in .env -- the camera panel can open but detection will fail"
 fi
+echo "==> Voice engine: $ROCKY_VOICE_ENGINE_IOS"
 
 echo "==> Regenerating Rocky/Resources/RealtimeSessionConfig.json from session.ts"
 node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/dump-session-config.mjs

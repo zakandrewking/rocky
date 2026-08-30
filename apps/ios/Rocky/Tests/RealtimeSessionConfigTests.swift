@@ -100,4 +100,33 @@ final class RealtimeSessionConfigTests: XCTestCase {
 
         XCTAssertTrue(instructions?.contains("You are Rocky") == true)
     }
+
+    func testER2SetupReusesThePersonaAndConvertsToolsToBlockingGeminiDeclarations() throws {
+        let message = try ER2LiveVoiceClient.setupMessage(hasBody: true)
+        let setup = try XCTUnwrap(message["setup"] as? [String: Any])
+        XCTAssertEqual(setup["model"] as? String, "models/gemini-robotics-er-2-streaming-preview")
+        XCTAssertNotNil(setup["inputAudioTranscription"])
+
+        let instruction = try XCTUnwrap(setup["systemInstruction"] as? [String: Any])
+        let parts = try XCTUnwrap(instruction["parts"] as? [[String: Any]])
+        XCTAssertTrue((parts.first?["text"] as? String)?.contains("You are Rocky") == true)
+        XCTAssertTrue((parts.first?["text"] as? String)?.contains("ElevenLabs voice") == true)
+
+        let groups = try XCTUnwrap(setup["tools"] as? [[String: Any]])
+        let tools = try XCTUnwrap(groups.first?["functionDeclarations"] as? [[String: Any]])
+        XCTAssertEqual(tools.count, 9)
+        XCTAssertTrue(tools.allSatisfy { $0["behavior"] as? String == "BLOCKING" })
+        let firstSchema = try XCTUnwrap(tools.first?["parameters"] as? [String: Any])
+        XCTAssertEqual(firstSchema["type"] as? String, "OBJECT")
+        XCTAssertNil(firstSchema["additionalProperties"])
+    }
+
+    func testER2VoiceOnlySetupKeepsEyesButDropsBodyTools() throws {
+        let message = try ER2LiveVoiceClient.setupMessage(hasBody: false)
+        let setup = try XCTUnwrap(message["setup"] as? [String: Any])
+        let groups = try XCTUnwrap(setup["tools"] as? [[String: Any]])
+        let tools = try XCTUnwrap(groups.first?["functionDeclarations"] as? [[String: Any]])
+
+        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["look_now"])
+    }
 }
