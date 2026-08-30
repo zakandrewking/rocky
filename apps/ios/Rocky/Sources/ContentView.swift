@@ -27,8 +27,9 @@ enum RobotSearchStatus {
 /// (OrbView / RockyTheme, both ported from that app's styles.css) and a small monospaced state
 /// chip pinned to the bottom corner that expands into details -- desktop's `.debug-state`.
 ///
-/// The orb is the conversation control. Robot discovery remains invisible; the only manual body
-/// controls are the two requested accessory-servo sliders at the screen edges.
+/// The orb owns conversation only. Robot discovery starts with the app and has its own visible
+/// connect/retry control, so driving and accessory controls never depend on whether Rocky is
+/// currently talking.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
     /// The one robot integration: finds the board, watches what it does, and passes Rocky's
@@ -62,24 +63,31 @@ struct ContentView: View {
                 Spacer()
             }
 
-            HStack {
-                ServoSideControl(port: "S3", connected: behavior.connected) {
-                    commandAngle, physicalAngle, immediate in
-                    behavior.setServo(
-                        port: "S3", angle: commandAngle,
-                        physicalAngle: physicalAngle, immediately: immediate
-                    )
+            if behavior.connected {
+                HStack {
+                    ServoSideControl(port: "S3") { angle, immediate in
+                        behavior.setServo(port: "S3", angle: angle, immediately: immediate)
+                    }
+                    Spacer(minLength: 0)
+                    ServoSideControl(port: "S4") { angle, immediate in
+                        behavior.setServo(port: "S4", angle: angle, immediately: immediate)
+                    }
                 }
-                Spacer(minLength: 0)
-                ServoSideControl(port: "S4", connected: behavior.connected) {
-                    commandAngle, physicalAngle, immediate in
-                    behavior.setServo(
-                        port: "S4", angle: commandAngle,
-                        physicalAngle: physicalAngle, immediately: immediate
-                    )
-                }
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 10)
+
+            if behavior.connected && !detailsOpen {
+                VStack {
+                    Spacer()
+                    ManualDriveControls(connected: behavior.connected) {
+                        throttle, steering, active in
+                        behavior.setManualDrive(
+                            throttle: throttle, steering: steering, active: active
+                        )
+                    }
+                }
+                .padding(.bottom, 18)
+            }
 
             VStack {
                 Spacer()
@@ -90,7 +98,7 @@ struct ContentView: View {
             }
             .padding(14)
 
-            if personCamera.isRunning {
+            if voiceSession.state == .connected && personCamera.isRunning {
                 VStack {
                     HStack {
                         Spacer(minLength: 0)
@@ -162,9 +170,8 @@ struct ContentView: View {
         !((Bundle.main.object(forInfoDictionaryKey: "RockyOpenAIKey") as? String) ?? "").isEmpty
     }
 
-    /// Voice state only. Finding the robot is background work the user should never watch, so it
-    /// deliberately does not reach the orb -- a missing robot is not an error, just a Rocky with
-    /// no body (exactly what apps/desktop is).
+    /// Voice state only. Robot connection has its own control and deliberately does not reach the
+    /// orb -- a missing robot is not a voice error.
     ///
     /// `starting` is set on the tap itself, before any awaiting, so the stone reacts to being
     /// touched immediately; and loading continues until Rocky's first word is actually audible,
@@ -287,7 +294,7 @@ struct ContentView: View {
 
     private var detailBody: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tap the stone to talk. Rocky finds his body on the same Wi-Fi; voice still works when it is away.")
+            Text("Tap the stone to talk. Robot connection is separate and its controls work while conversation is paused.")
                 .foregroundStyle(RockyTheme.mintBright.opacity(0.72))
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -295,8 +302,24 @@ struct ContentView: View {
                 .foregroundStyle(RockyTheme.mint.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
 
+            if !behavior.connected {
+                Button {
+                    RockyLog.write("behavior: person requested a fresh robot connection")
+                    behavior.reconnect()
+                } label: {
+                    Label(
+                        behavior.searchFinished ? "connect robot…" : "connecting to robot…",
+                        systemImage: "antenna.radiowaves.left.and.right"
+                    )
+                }
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(RockyTheme.amberBright.opacity(0.82))
+                .disabled(!behavior.searchFinished && behavior.host == nil)
+                .accessibilityHint("Searches the local network again")
+            }
+
             if behavior.connected {
-                Text("Rocky is present in his own body. Movement is autonomous body language; mode and mood above are what he currently feels.")
+                Text("Robot control is ready. The sliders temporarily take over; autonomy resumes shortly after the drive controls are released.")
                     .foregroundStyle(RockyTheme.mint.opacity(0.7))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -458,6 +481,132 @@ struct ContentView: View {
         // ever sees to a file, pulled off the device after a test session the same way crash
         // reports are (see RockyLog.swift's header for the exact command).
         RockyLog.write(line)
+    }
+}
+
+/// Two spring-return controls with a device-side watchdog behind them. While either thumb is down,
+/// a 10 Hz heartbeat owns the wheels; releasing the final thumb sends an immediate stop and starts
+/// the board's short, stationary handoff back to its autonomous state machine.
+private struct ManualDriveControls: View {
+    let connected: Bool
+    let send: (_ throttle: Double, _ steering: Double, _ active: Bool) -> Void
+
+    @State private var throttle = 0.0
+    @State private var steering = 0.0
+    @State private var throttleHeld = false
+    @State private var steeringHeld = false
+    @State private var heartbeat: Task<Void, Never>?
+
+    private var active: Bool { throttleHeld || steeringHeld }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            driveRow(
+                title: "DRIVE", low: "BACK", high: "FWD",
+                value: $throttle,
+                editingChanged: { setEditing($0, axis: .throttle) }
+            )
+            driveRow(
+                title: "STEER", low: "LEFT", high: "RIGHT",
+                value: $steering,
+                editingChanged: { setEditing($0, axis: .steering) }
+            )
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(width: 220)
+        .background {
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .fill(RockyTheme.ink.opacity(0.7))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 17, style: .continuous)
+                        .stroke(RockyTheme.mint.opacity(connected ? 0.14 : 0.07), lineWidth: 1)
+                }
+        }
+        .opacity(connected ? 1 : 0.55)
+        .onChange(of: connected) { _, isConnected in
+            if !isConnected { resetWithoutSending() }
+        }
+        .onDisappear { releaseAll() }
+    }
+
+    private enum Axis { case throttle, steering }
+
+    private func driveRow(
+        title: String,
+        low: String,
+        high: String,
+        value: Binding<Double>,
+        editingChanged: @escaping (Bool) -> Void
+    ) -> some View {
+        VStack(spacing: 1) {
+            HStack {
+                Text(low)
+                Spacer()
+                Text(title).foregroundStyle(RockyTheme.amberBright.opacity(0.82))
+                Spacer()
+                Text(high)
+            }
+            .font(.system(size: 8, weight: .bold, design: .monospaced))
+            .foregroundStyle(RockyTheme.mint.opacity(0.58))
+
+            Slider(value: value, in: -1...1, onEditingChanged: editingChanged)
+                .tint(RockyTheme.amberBright)
+                .disabled(!connected)
+                .accessibilityLabel(title == "DRIVE" ? "Drive forward and backward" : "Steer left and right")
+                .accessibilityValue("\(Int(value.wrappedValue * 100)) percent")
+        }
+    }
+
+    private func setEditing(_ editing: Bool, axis: Axis) {
+        guard connected else { return }
+        switch axis {
+        case .throttle:
+            throttleHeld = editing
+            if !editing { throttle = 0 }
+        case .steering:
+            steeringHeld = editing
+            if !editing { steering = 0 }
+        }
+
+        if active {
+            send(throttle, steering, true)
+            startHeartbeatIfNeeded()
+        } else {
+            heartbeat?.cancel()
+            heartbeat = nil
+            send(0, 0, false)
+        }
+    }
+
+    private func startHeartbeatIfNeeded() {
+        guard heartbeat == nil else { return }
+        heartbeat = Task { @MainActor in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .milliseconds(100))
+                } catch {
+                    return
+                }
+                guard connected, active else { return }
+                send(throttle, steering, true)
+            }
+        }
+    }
+
+    private func releaseAll() {
+        let shouldSend = connected && active
+        resetWithoutSending()
+        if shouldSend { send(0, 0, false) }
+    }
+
+    private func resetWithoutSending() {
+        heartbeat?.cancel()
+        heartbeat = nil
+        throttleHeld = false
+        steeringHeld = false
+        throttle = 0
+        steering = 0
     }
 }
 

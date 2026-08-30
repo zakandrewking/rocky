@@ -77,8 +77,7 @@ final class BehaviorMonitor: ObservableObject {
     /// never allow more than one unacknowledged command per port. Finger-up replaces whatever
     /// intermediate position is waiting rather than joining a stale movement queue.
     private struct ServoTarget: Equatable {
-        let commandAngle: Int
-        let physicalAngle: Int
+        let angle: Int
     }
     private var pendingServoTargets: [String: ServoTarget] = [:]
     private var servoSendTasks: [String: Task<Void, Never>] = [:]
@@ -86,6 +85,8 @@ final class BehaviorMonitor: ObservableObject {
     private var servoSentTargets: [String: ServoTarget] = [:]
     private var servoInFlight: [String: String] = [:]
     private var servoAckTimeoutTasks: [String: Task<Void, Never>] = [:]
+    private var manualDriveSentAt: [String: Date] = [:]
+    private var lastManualDriveLogAt = Date.distantPast
 
     init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768) {
         self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
@@ -335,6 +336,10 @@ final class BehaviorMonitor: ObservableObject {
                 handleServoAcknowledgement(message)
                 return
             }
+            if message["of"] as? String == "manual_drive" {
+                handleManualDriveAcknowledgement(message)
+                return
+            }
             if message["of"] as? String == "mood", let confirmed = message["mood"] as? String {
                 mood = confirmed
                 if requestedMood == confirmed { requestedMood = nil }
@@ -372,6 +377,7 @@ final class BehaviorMonitor: ObservableObject {
         servoSentAt.removeAll()
         servoSentTargets.removeAll()
         servoInFlight.removeAll()
+        manualDriveSentAt.removeAll()
     }
 
     private func handleServoAcknowledgement(_ message: [String: Any]) {
@@ -379,9 +385,7 @@ final class BehaviorMonitor: ObservableObject {
         let angle = message["angle"] as? Int ?? -1
         let id = message["id"] as? String ?? ""
         let target = servoSentTargets.removeValue(forKey: id)
-        let angleDescription = target.map {
-            "\($0.physicalAngle)° physical (command \($0.commandAngle)°)"
-        } ?? "command \(angle)°"
+        let angleDescription = target.map { "\($0.angle)°" } ?? "\(angle)°"
         let elapsed = servoSentAt.removeValue(forKey: id).map {
             " in \(Int(Date().timeIntervalSince($0) * 1_000))ms"
         } ?? ""
@@ -394,6 +398,41 @@ final class BehaviorMonitor: ObservableObject {
         if servoAngles[port] != nil { servoAngles[port] = angle }
         RockyLog.write("servo: board accepted \(port) \(angleDescription)\(elapsed)")
         finishServoCommand(port: port, id: id)
+    }
+
+    private func handleManualDriveAcknowledgement(_ message: [String: Any]) {
+        let id = message["id"] as? String ?? ""
+        let elapsed = manualDriveSentAt.removeValue(forKey: id).map {
+            " in \(Int(Date().timeIntervalSince($0) * 1_000))ms"
+        } ?? ""
+        if message["ok"] as? Bool == false {
+            RockyLog.write(
+                "manual drive: board failed\(elapsed): "
+                    + (message["error"] as? String ?? "unknown board error")
+            )
+            return
+        }
+        let active = message["active"] as? Bool ?? false
+        let left = message["left_rpm"] as? Int ?? 0
+        let right = message["right_rpm"] as? Int ?? 0
+        let blocked = message["blocked"] as? Bool == true
+        let obstacle = (message["obstacle_cm"] as? NSNumber)?.doubleValue
+        let now = Date()
+        if blocked {
+            RockyLog.write(
+                "manual drive: forward command blocked by obstacle"
+                    + (obstacle.map { " at \(Int($0))cm" } ?? "") + elapsed
+            )
+            lastManualDriveLogAt = now
+        } else if !active || now.timeIntervalSince(lastManualDriveLogAt) >= 1 {
+            let handoff = message["handoff_ms"] as? Int
+            RockyLog.write(
+                active
+                    ? "manual drive: board accepted left=\(left) right=\(right) RPM\(elapsed)"
+                    : "manual drive: stopped; autonomy resumes in \(handoff ?? 0)ms\(elapsed)"
+            )
+            lastManualDriveLogAt = now
+        }
     }
 
     private func finishServoCommand(port: String, id: String) {
@@ -484,24 +523,17 @@ final class BehaviorMonitor: ObservableObject {
 
     /// Sets an accessory servo without letting a 60fps drag flood the board's single-threaded
     /// observer pump. Intermediate positions are coalesced; finger-up (`immediately`) always wins.
-    func setServo(
-        port: String, angle: Int, physicalAngle: Int? = nil, immediately: Bool = false
-    ) {
+    func setServo(port: String, angle: Int, immediately: Bool = false) {
         let port = port.uppercased()
         guard port == "S3" || port == "S4" else {
             RockyLog.write("servo: rejected unsupported port \(port)")
             return
         }
         let bounded = max(0, min(180, angle))
-        let maximumPhysicalAngle = port == "S3" ? 270 : 180
-        let target = ServoTarget(
-            commandAngle: bounded,
-            physicalAngle: max(0, min(maximumPhysicalAngle, physicalAngle ?? bounded))
-        )
+        let target = ServoTarget(angle: bounded)
         guard connected else {
             RockyLog.write(
-                "servo: ignored \(port) \(target.physicalAngle)° physical "
-                    + "(command \(bounded)°) while robot disconnected"
+                "servo: ignored \(port) \(bounded)° while robot disconnected"
             )
             return
         }
@@ -529,12 +561,10 @@ final class BehaviorMonitor: ObservableObject {
         servoSentAt[id] = Date()
         servoSentTargets[id] = target
         send([
-            "type": "servo", "port": port, "angle": target.commandAngle,
-            "physical_angle": target.physicalAngle, "id": id,
+            "type": "servo", "port": port, "angle": target.angle, "id": id,
         ])
         RockyLog.write(
-            "servo: sent \(port) \(target.physicalAngle)° physical "
-                + "(command \(target.commandAngle)°; \(id))"
+            "servo: sent \(port) \(target.angle)° (\(id))"
         )
         servoAckTimeoutTasks[port]?.cancel()
         servoAckTimeoutTasks[port] = Task { @MainActor [weak self] in
@@ -545,10 +575,43 @@ final class BehaviorMonitor: ObservableObject {
             self.servoSentTargets.removeValue(forKey: id)
             self.servoAckTimeoutTasks.removeValue(forKey: port)
             RockyLog.write(
-                "servo: \(port) \(target.physicalAngle)° physical "
-                    + "(command \(target.commandAngle)°) timed out after 3000ms (\(id))"
+                "servo: \(port) \(target.angle)° timed out after 3000ms (\(id))"
             )
             if self.pendingServoTargets[port] != nil { self.flushServo(port) }
+        }
+    }
+
+    /// A 10 Hz heartbeat lets the board's 350ms watchdog distinguish a held control from a lost
+    /// phone. The board owns wheel mixing and the delayed return to autonomy.
+    func setManualDrive(throttle: Double, steering: Double, active: Bool) {
+        let boundedThrottle = max(-1, min(1, throttle))
+        let boundedSteering = max(-1, min(1, steering))
+        guard connected else {
+            if active { RockyLog.write("manual drive: ignored while robot disconnected") }
+            return
+        }
+        let id = "drive-\(UUID().uuidString)"
+        manualDriveSentAt[id] = Date()
+        if manualDriveSentAt.count > 24 {
+            manualDriveSentAt = Dictionary(
+                uniqueKeysWithValues: manualDriveSentAt
+                    .sorted { $0.value > $1.value }
+                    .prefix(12)
+                    .map { ($0.key, $0.value) }
+            )
+        }
+        send([
+            "type": "manual_drive", "throttle": boundedThrottle,
+            "steering": boundedSteering, "active": active, "id": id,
+        ])
+        if active, Date().timeIntervalSince(lastManualDriveLogAt) >= 1 {
+            RockyLog.write(
+                "manual drive: sent throttle=\(Int(boundedThrottle * 100))% "
+                    + "steering=\(Int(boundedSteering * 100))% (\(id))"
+            )
+            lastManualDriveLogAt = Date()
+        } else if !active {
+            RockyLog.write("manual drive: released; requested stop and delayed handoff (\(id))")
         }
     }
 

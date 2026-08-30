@@ -78,9 +78,11 @@ generate` directly) reads `OPENAI_API_KEY` out of the repo root `.env` and bakes
 built app's Info.plist (`RockyOpenAIKey`) via XcodeGen's environment-variable expansion. It also
 regenerates `RealtimeSessionConfig.json` from `services/device-api`: Rocky's fixed persona with
 its safety, body, and tool rules. Nothing is typed on the phone; nothing is committed. The robot's
-own IP is auto-discovered too (`BehaviorMonitor.swift`) — there is no manual IP field or
-connect/disconnect control at all; the robot connection is invisible infrastructure the same way
-it is on desktop.
+own IP is auto-discovered too (`BehaviorMonitor.swift`). Discovery starts when the app opens and
+does not depend on starting a voice conversation or successfully reaching the Realtime API. If a
+sweep fails, expand the status/log row and use **connect robot…** to retry; resuming a paused voice
+session also opportunistically requests the same reconnect. All three triggers use the same
+beacon-plus-bounded-LAN-sweep mechanism, and no manual IP is needed.
 
 ### UI
 
@@ -89,18 +91,23 @@ the one voice, using his Hume voice. A tappable status row below the orb expands
 area (mirroring desktop's debug chip) with connection status, warnings, the last tool call, the
 CyberPi payload-push button, the camera panel button, and the scrolling log.
 
-When the autonomous robot is connected, slim vertical controls at the left and right edges drive
-the mBot2 Shield's S3 and S4 accessory-servo ports. Slider traffic is coalesced to at most one
-board command per port every 80ms and permits only one unacknowledged command per port; the final
-finger-up position replaces any waiting intermediate value. S3 presents the attached wide-travel
-servo's physical 0–270° range (135° center), mapped onto CyberOS's API-valid 0–180 command span;
-S4 remains a direct 0–180° control. The gear above either slider opens live sliders for persistent
-minimum/center/maximum and direction calibration. The limits cannot cross the center, and moving a
-calibration slider moves that endpoint immediately so linkage-safe travel can be found by feel.
-The session log records both physical and command angles, command id, acknowledgement latency, and
-board errors.
-These two explicit hardware-test controls are intentionally separate from Rocky's conversational
-movement tools and world model.
+When the robot is connected, slim vertical controls at the left and right edges drive the official
+grabber build's dedicated S3 and S4 servo ports. Slider traffic is coalesced to at most one board
+command per port every 80ms and permits only one unacknowledged command per port; the final
+finger-up position replaces any waiting intermediate value. The gear above either slider opens
+live, persistent Min/Max and direction calibration. There is no Center control. A calibration-only
+90° action places an unloaded servo at the known reference needed before physically reinstalling
+its horn. Moving either endpoint then moves the servo live so linkage-safe travel can be found by
+feel. The session log records command ids, angles, acknowledgement latency, and board errors.
+
+Two spring-return sliders at the bottom control forward/backward throttle and left/right steering.
+While either thumb is down, a 10Hz heartbeat gives the person exclusive wheel control. Finger-up
+stops immediately; the board remains stopped for 700ms and then returns to whatever autonomous
+behavior would otherwise apply. A 350ms board-side watchdog stops a lost phone/Wi-Fi stream, and
+the existing close-obstacle reflex still blocks forward collisions while allowing reverse. All
+robot controls disappear when the robot is disconnected and remain available when voice is
+paused, failed, or out of API credit. Conversely, voice and its rounded camera preview work without
+the robot. This gives four natural states: neither connected, voice only, robot only, or both.
 
 ### Seeing a person, with a second model
 

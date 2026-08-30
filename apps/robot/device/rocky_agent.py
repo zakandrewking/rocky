@@ -246,6 +246,9 @@ EVENT_SERVICE = "rocky-behavior"  # the app's existing robot discovery ignores i
 EVENT_BEACON_INTERVAL_MS = 1000
 SNAPSHOT_INTERVAL_MS = 500  # so a client that connects mid-flee still learns the current mode
 EVENT_HISTORY = 24  # ring buffer size; transitions are seconds apart, so this is minutes of it
+MANUAL_DRIVE_MAX_RPM = 150
+MANUAL_DRIVE_WATCHDOG_MS = 350  # missed phone heartbeats stop the wheels before autonomy resumes
+MANUAL_DRIVE_HANDOFF_MS = 700  # a short, visibly-still beat between a hand and autonomous motion
 # ==============================================================================================
 
 LAPTOP_HOST = "192.168.1.138"  # this Mac's current LAN IP -- check `ipconfig getifaddr en0`
@@ -363,6 +366,13 @@ _state = {
     "base_light": (0, 150, 255),
     "light_override": None,
     "light_until": None,
+    # Human drive sliders outrank every autonomous and intentional-motion path. The watchdog is
+    # device-side so a lost phone or Wi-Fi packet cannot leave the last wheel command running.
+    "manual_drive_active": False,
+    "manual_drive_until": 0,
+    "manual_handoff_until": 0,
+    "manual_left_rpm": 0,
+    "manual_right_rpm": 0,
 }
 
 
@@ -492,6 +502,11 @@ def _apply_intent(message, now):
     if kind == "stop":
         # The one imperative. A person saying "stop" means now, and it is also the safety path.
         mbot2.drive_speed(0, 0)
+        _state["manual_drive_active"] = False
+        _state["manual_drive_until"] = 0
+        _state["manual_handoff_until"] = 0
+        _state["manual_left_rpm"] = 0
+        _state["manual_right_rpm"] = 0
         _state["gesture_queue"] = []
         _state["level"] = 0.0
         _state["rpm"] = 0
@@ -499,6 +514,103 @@ def _apply_intent(message, now):
         _state["return_to"] = "listening"
         _state["intentional_motion"] = False
         _enter("settling", now, "stopped by voice")  # via settling so the next read is clean
+        return
+
+    if kind == "manual_drive":
+        action_id = str(message.get("id", ""))
+        active = bool(message.get("active", False))
+        if not active:
+            mbot2.drive_speed(0, 0)
+            _state["manual_drive_active"] = False
+            _state["manual_left_rpm"] = 0
+            _state["manual_right_rpm"] = 0
+            _state["manual_handoff_until"] = utime.ticks_add(now, MANUAL_DRIVE_HANDOFF_MS)
+            _emit(
+                {
+                    "type": "ack",
+                    "t": now,
+                    "of": "manual_drive",
+                    "id": action_id,
+                    "ok": True,
+                    "active": False,
+                    "handoff_ms": MANUAL_DRIVE_HANDOFF_MS,
+                    "left_rpm": 0,
+                    "right_rpm": 0,
+                }
+            )
+            return
+
+        try:
+            throttle = max(-1.0, min(1.0, float(message.get("throttle", 0))))
+            steering = max(-1.0, min(1.0, float(message.get("steering", 0))))
+        except Exception:
+            throttle = 0.0
+            steering = 0.0
+        # This chassis drives forward with opposite encoder-motor signs; equal signs spin it.
+        left = throttle + steering
+        right = -throttle + steering
+        peak = max(1.0, abs(left), abs(right))
+        left_rpm = int(round(MANUAL_DRIVE_MAX_RPM * left / peak))
+        right_rpm = int(round(MANUAL_DRIVE_MAX_RPM * right / peak))
+        if abs(left_rpm) < 5:
+            left_rpm = 0
+        if abs(right_rpm) < 5:
+            right_rpm = 0
+        # Manual means the person, not autonomy, owns the wheels. The one exception is the same
+        # front-facing hard stop used by autonomous driving: the phone cannot see a chair leg and
+        # a delayed Wi-Fi release must never turn into a collision. Reverse remains available.
+        blocked = False
+        obstacle_cm = None
+        if throttle > 0 and HAS_ULTRASONIC:
+            try:
+                obstacle_cm = _distance_cm()
+            except Exception as error:
+                # Fail closed for forward manual motion. A sensor glitch should stop the command,
+                # not escape the observer pump and leave the preceding wheel heartbeat in force.
+                blocked = True
+                _report_error_once("manual_drive_distance_failed", error)
+            if blocked or 0 <= obstacle_cm < OBSTACLE_STOP_CM:
+                left_rpm = 0
+                right_rpm = 0
+                blocked = True
+        _state["gesture_queue"] = []
+        _state["intentional_motion"] = False
+        _state["manual_drive_active"] = True
+        _state["manual_drive_until"] = utime.ticks_add(now, MANUAL_DRIVE_WATCHDOG_MS)
+        _state["manual_handoff_until"] = 0
+        _state["manual_left_rpm"] = left_rpm
+        _state["manual_right_rpm"] = right_rpm
+        try:
+            mbot2.drive_speed(left_rpm, right_rpm)
+        except Exception as error:
+            _state["manual_drive_active"] = False
+            mbot2.drive_speed(0, 0)
+            _emit(
+                {
+                    "type": "ack",
+                    "t": now,
+                    "of": "manual_drive",
+                    "id": action_id,
+                    "ok": False,
+                    "error": str(error),
+                }
+            )
+            _report_error_once("manual_drive_failed", error)
+            return
+        _emit(
+            {
+                "type": "ack",
+                "t": now,
+                "of": "manual_drive",
+                "id": action_id,
+                "ok": True,
+                "active": True,
+                "left_rpm": left_rpm,
+                "right_rpm": right_rpm,
+                "blocked": blocked,
+                "obstacle_cm": obstacle_cm,
+            }
+        )
         return
 
     if kind == "mood":
@@ -557,10 +669,8 @@ def _apply_intent(message, now):
         return
 
     if kind == "servo":
-        # Manual accessory controls are deliberately narrow: the phone may address only the two
-        # requested mBot2 Shield servo sockets, and both sides clamp the ordinary hobby-servo
-        # range. This is command-time only -- no servo call is added to boot/init, where a stuck
-        # hardware call could take the OTA recovery path down with it.
+        # The official grabber build uses the dedicated S3/S4 sockets. Keep this command-time only:
+        # no servo call belongs in boot/init, where a stuck hardware call could block OTA recovery.
         port = str(message.get("port", "")).upper()
         if port not in ("S3", "S4"):
             return
@@ -570,7 +680,6 @@ def _apply_intent(message, now):
             angle = 90
         action_id = str(message.get("id", ""))
         try:
-            # CyberOS' published mBot2 surface is servo_set(angle, "S3"/"S4").
             mbot2.servo_set(angle, port)
         except Exception as error:
             # Unlike the generic once-only telemetry error, this reply correlates every failed
@@ -1299,6 +1408,35 @@ def tick():
         _pump_observers(now)
         _decay_mood(now)
         _tick_light(now)
+        if _state["manual_drive_active"]:
+            if utime.ticks_diff(now, _state["manual_drive_until"]) >= 0:
+                mbot2.drive_speed(0, 0)
+                _state["manual_drive_active"] = False
+                _state["manual_left_rpm"] = 0
+                _state["manual_right_rpm"] = 0
+                _state["manual_handoff_until"] = utime.ticks_add(
+                    now, MANUAL_DRIVE_HANDOFF_MS
+                )
+                _send_telemetry(',"event":"manual_drive_watchdog"')
+            else:
+                mbot2.drive_speed(
+                    _state["manual_left_rpm"], _state["manual_right_rpm"]
+                )
+                return
+        if _state["manual_handoff_until"]:
+            if utime.ticks_diff(now, _state["manual_handoff_until"]) < 0:
+                mbot2.drive_speed(0, 0)
+                return
+            _state["manual_handoff_until"] = 0
+            _state["level"] = 0.0
+            _state["rpm"] = 0
+            _state["drive_started"] = None
+            _state["return_to"] = "listening"
+            _state["reflect_baseline"] = [None, None, None, None]
+            # Resume the autonomous state machine quietly; manual driving is control input, not a
+            # body event Rocky should interrupt the conversation to narrate.
+            _state["mode"] = "listening"
+            _state["mode_start"] = now
         if _state["mood"] == "still":
             if _state["mode"] == "listening":
                 gesture = _take_gesture(now)
