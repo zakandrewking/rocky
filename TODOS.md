@@ -28,7 +28,7 @@ crashing.**
   makes any reported post-release motion measurable instead of inferred.
 - [x] Add voice-independent manual robot control to iOS: spring-return throttle and steering
   tracks sit beside the edge servo controls, appear only while the robot link is connected, take
-  exclusive ownership over autonomous motor writes, heartbeat quietly at 10Hz, and stop immediately
+  exclusive ownership over autonomous motor writes, heartbeat quietly at 5Hz, and stop immediately
   on release or after a 650ms lost-heartbeat
   watchdog. The board stays stopped for 700ms before returning to autonomy. Manual input fully
   overrides the autonomous obstacle reflex while held. Robot discovery runs
@@ -36,6 +36,11 @@ crashing.**
   expanded status/log popup. Voice/camera and robot controls therefore form four independent UI
   states: neither, voice+preview only, robot controls only, or both. App backgrounding explicitly
   releases the wheels and foregrounding replaces the possibly suspended robot TCP connection.
+- [x] Remove post-release wheel motion caused by observer backlog: live correlated traces showed
+  stop commands taking 2.1–2.5s to be read after held-drive packets. The CyberPi now drains up to
+  1024 bytes of compact control messages per tick instead of 256, while the phone retains the
+  deliberately quiet 5Hz heartbeat. Finger-up therefore reaches the front of the board's work
+  promptly without weakening the 650ms lost-stream watchdog.
 - [x] Write the plan: architecture, the three original open questions answered (OTA is not what
   the initial source claimed; obstacle avoidance is a device-side reflex, not a firmware toggle;
   route-planning lives on the laptop), spatial mapping via ultrasonic rotate-and-ping, and a

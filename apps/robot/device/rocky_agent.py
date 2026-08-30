@@ -917,7 +917,10 @@ def _pump_observers(now):
         return
 
     try:
-        chunk = _state["evt_conn"].recv(256)
+        # Drain several compact slider/heartbeat messages per motion tick. Reading only 256 bytes
+        # let stale held-drive packets accumulate ahead of the safety-critical finger-up stop;
+        # live traces measured 2.1-2.5s before that stop was even applied and acknowledged.
+        chunk = _state["evt_conn"].recv(1024)
     except Exception:
         chunk = None
     if chunk:

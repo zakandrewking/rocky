@@ -108,7 +108,7 @@ Two spring-return vertical controls sit beside the servo controls: drive on the 
 on the right. Throttle has a 14% center dead zone; steering has a wider 20% dead zone and a gentler
 progressive response so small center movements neither reverse nor over-turn the robot. Input logs
 record relative finger travel, raw slider value, shaped output, transmitted command, board ACK,
-and release timing. While either thumb is down, a quiet 10Hz heartbeat gives the person exclusive wheel
+and release timing. While either thumb is down, a quiet 5Hz heartbeat gives the person exclusive wheel
 control; only touch transitions ask the board for acknowledgements. Finger-up
 stops immediately; the board remains stopped for 700ms and then returns to whatever autonomous
 behavior would otherwise apply. A 650ms board-side watchdog stops a lost phone/Wi-Fi stream, and

@@ -453,7 +453,7 @@ struct ContentView: View {
 }
 
 /// Servo and drive controls share the screen edges so both hands can operate naturally. Drive is
-/// refreshed quietly at 10 Hz; only touch transitions request ACKs, leaving the robot's narrow
+/// refreshed quietly at 5 Hz; only touch transitions request ACKs, leaving the robot's narrow
 /// command stream responsive to servo changes.
 private struct ManualDriveControls: View {
     let connected: Bool
@@ -530,7 +530,7 @@ private struct ManualDriveControls: View {
         heartbeat = Task { @MainActor in
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(for: .milliseconds(100))
+                    try await Task.sleep(for: .milliseconds(200))
                 } catch {
                     return
                 }
