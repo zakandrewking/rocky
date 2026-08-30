@@ -36,15 +36,13 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
     private var audioBytesSent = 0
     private var lastAudioUploadLogAt: Date?
 
-    // ER2 did not close automatic audio turns in the first device sessions. Explicit activity
-    // boundaries are therefore generated only while the assistant is completely idle. Thinking,
-    // playback, and a short speaker-tail cooldown are all hard gates against self-interruption.
+    // Local energy is diagnostics only. ER2's own VAD owns conversational turns; device traces
+    // proved that allowing this detector to emit events can mistake startup or speaker energy for
+    // the person. Playback state is retained solely to summarize echo/AEC levels in the log.
     private var speechFrames = 0
     private var silenceFrames = 0
     private var locallySpeaking = false
     private var localPlaybackActive = false
-    private var assistantTurnActive = false
-    private var energyCooldownUntil = Date.distantPast
     private var gatedPlaybackFrames = 0
     private var gatedPlaybackPeakRMS = 0.0
 
@@ -178,23 +176,6 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
         }
     }
 
-    func setAssistantTurnActive(_ active: Bool) {
-        let endedActivity = locked { () -> Bool in
-            guard assistantTurnActive != active else { return false }
-            assistantTurnActive = active
-            speechFrames = 0
-            silenceFrames = 0
-            if !active { energyCooldownUntil = Date().addingTimeInterval(0.4) }
-            guard active, locallySpeaking else { return false }
-            locallySpeaking = false
-            return true
-        }
-        if endedActivity {
-            send(["realtimeInput": ["activityEnd": [:]]])
-            emit(["type": "input_audio_buffer.speech_stopped"])
-        }
-    }
-
     func close() {
         let previous: URLSessionWebSocketTask? = locked {
             epoch += 1
@@ -210,8 +191,6 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             speechFrames = 0
             silenceFrames = 0
             localPlaybackActive = false
-            assistantTurnActive = false
-            energyCooldownUntil = .distantPast
             gatedPlaybackFrames = 0
             gatedPlaybackPeakRMS = 0
             audioFramesSent = 0
@@ -261,11 +240,6 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                 ]]
             ],
             "inputAudioTranscription": [:],
-            "realtimeInputConfig": [
-                "automaticActivityDetection": [
-                    "disabled": true,
-                ]
-            ],
         ]
         if !tools.isEmpty { setup["tools"] = [["functionDeclarations": tools]] }
         return ["setup": setup]
@@ -312,18 +286,18 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                 "audio: ER2 mic upload active: \(upload.0) frames, \(upload.1 / 1024) KiB sent"
             )
         }
-        updateLocalActivity(pcm, now: now)
+        updateLocalActivity(pcm)
         send([
             "realtimeInput": [
-                "audio": [
+                "mediaChunks": [[
                     "data": pcm.base64EncodedString(),
                     "mimeType": "audio/pcm;rate=16000",
-                ]
+                ]]
             ]
         ])
     }
 
-    private func updateLocalActivity(_ pcm: Data, now: Date) {
+    private func updateLocalActivity(_ pcm: Data) {
         let rms: Double = pcm.withUnsafeBytes { raw in
             let count = raw.count / 2
             guard count > 0 else { return 0 }
@@ -336,20 +310,17 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             }
             return sqrt(sum / Double(count))
         }
-        guard let event = localActivityEvent(rms: rms, now: now) else { return }
+        guard let event = localActivityEvent(rms: rms) else { return }
         if event == "input_audio_buffer.speech_started" {
-            RockyLog.write("voice: ER2 explicit activity started (RMS \(String(format: "%.4f", rms)))")
-            send(["realtimeInput": ["activityStart": [:]]])
+            RockyLog.write("audio: ER2 local speech candidate started (RMS \(String(format: "%.4f", rms)); diagnostic only)")
         } else {
-            RockyLog.write("voice: ER2 explicit activity ended after local silence")
-            send(["realtimeInput": ["activityEnd": [:]]])
+            RockyLog.write("audio: ER2 local speech candidate ended (diagnostic only)")
         }
-        emit(["type": event])
     }
 
-    func localActivityEvent(rms: Double, now: Date = Date()) -> String? {
+    func localActivityEvent(rms: Double) -> String? {
         locked {
-            if localPlaybackActive || assistantTurnActive || now < energyCooldownUntil {
+            if localPlaybackActive {
                 gatedPlaybackFrames += 1
                 gatedPlaybackPeakRMS = max(gatedPlaybackPeakRMS, rms)
                 speechFrames = 0
@@ -429,6 +400,8 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             switch result {
             case .failure(let error):
                 let cancelled = (error as NSError).code == NSURLErrorCancelled
+                let closeCode = socket.closeCode.rawValue
+                let closeReason = socket.closeReason.flatMap { String(data: $0, encoding: .utf8) }
                 let wasOpen = self.locked { () -> Bool in
                     let wasOpen = self.open
                     self.open = false
@@ -436,7 +409,10 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                     return wasOpen
                 }
                 if !cancelled {
-                    RockyLog.write("voice: ER2 epoch \(epoch) socket failed: \(error.localizedDescription)")
+                    RockyLog.write(
+                        "voice: ER2 epoch \(epoch) socket failed: \(error.localizedDescription) "
+                            + "(close \(closeCode): \(closeReason ?? "no reason"))"
+                    )
                     if wasOpen { self.onConnectionStateChange?(false) }
                 }
             case .success(let message):

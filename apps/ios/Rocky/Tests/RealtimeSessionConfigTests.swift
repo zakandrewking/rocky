@@ -106,9 +106,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
         let setup = try XCTUnwrap(message["setup"] as? [String: Any])
         XCTAssertEqual(setup["model"] as? String, "models/gemini-robotics-er-2-streaming-preview")
         XCTAssertNotNil(setup["inputAudioTranscription"])
-        let input = try XCTUnwrap(setup["realtimeInputConfig"] as? [String: Any])
-        let vad = try XCTUnwrap(input["automaticActivityDetection"] as? [String: Any])
-        XCTAssertEqual(vad["disabled"] as? Bool, true)
+        XCTAssertNil(setup["realtimeInputConfig"])
 
         let instruction = try XCTUnwrap(setup["systemInstruction"] as? [String: Any])
         let parts = try XCTUnwrap(instruction["parts"] as? [[String: Any]])
@@ -133,26 +131,21 @@ final class RealtimeSessionConfigTests: XCTestCase {
         XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["look_now"])
     }
 
-    func testER2ExplicitActivityOnlyRunsWhileAssistantIsIdle() {
+    func testER2LocalActivityIsGatedOnlyForPlaybackDiagnostics() {
         let client = ER2LiveVoiceClient()
-        client.setAssistantTurnActive(true)
-        for _ in 0..<4 { XCTAssertNil(client.localActivityEvent(rms: 0.25)) }
-
         client.setLocalPlaybackActive(true)
         for _ in 0..<4 { XCTAssertNil(client.localActivityEvent(rms: 0.25)) }
 
         client.setLocalPlaybackActive(false)
-        client.setAssistantTurnActive(false)
-        let afterCooldown = Date().addingTimeInterval(1)
-        XCTAssertNil(client.localActivityEvent(rms: 0.25, now: afterCooldown))
-        XCTAssertNil(client.localActivityEvent(rms: 0.25, now: afterCooldown))
+        XCTAssertNil(client.localActivityEvent(rms: 0.25))
+        XCTAssertNil(client.localActivityEvent(rms: 0.25))
         XCTAssertEqual(
-            client.localActivityEvent(rms: 0.25, now: afterCooldown),
+            client.localActivityEvent(rms: 0.25),
             "input_audio_buffer.speech_started"
         )
-        for _ in 0..<44 { XCTAssertNil(client.localActivityEvent(rms: 0, now: afterCooldown)) }
+        for _ in 0..<44 { XCTAssertNil(client.localActivityEvent(rms: 0)) }
         XCTAssertEqual(
-            client.localActivityEvent(rms: 0, now: afterCooldown),
+            client.localActivityEvent(rms: 0),
             "input_audio_buffer.speech_stopped"
         )
     }

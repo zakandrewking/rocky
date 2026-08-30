@@ -24,14 +24,11 @@ protocol RealtimeVoiceClient: AnyObject, Sendable {
     func setRemoteAudioEnabled(_ enabled: Bool)
     /// Lets transports distinguish nearby speech from Rocky's own locally-rendered voice.
     func setLocalPlaybackActive(_ active: Bool)
-    /// Gates client-side turn detection across model thinking as well as audible playback.
-    func setAssistantTurnActive(_ active: Bool)
     func close()
 }
 
 extension RealtimeVoiceClient {
     func setLocalPlaybackActive(_: Bool) {}
-    func setAssistantTurnActive(_: Bool) {}
 }
 
 enum VoiceEngine: String {
