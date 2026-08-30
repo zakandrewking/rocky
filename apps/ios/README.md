@@ -89,7 +89,7 @@ beacon-plus-bounded-LAN-sweep mechanism, and no manual IP is needed.
 The circular stone (`orb` in `ContentView.swift`) starts and pauses conversation. Rocky is always
 the one voice, using his Hume voice. A tappable status row below the orb expands into a detail
 area (mirroring desktop's debug chip) with connection status, warnings, the last tool call, the
-CyberPi payload-push button, the camera panel button, and the scrolling log.
+camera panel button, and the scrolling log.
 
 When the robot is connected, slim vertical controls at the left and right edges drive the official
 grabber build's dedicated S3 and S4 servo ports. Slider traffic is coalesced to at most one board
@@ -250,10 +250,6 @@ after the one-time setup above. Free-account signing expires after about 7 days;
 - **Laptop → iPhone**: `scripts/deploy.sh` above. A real rebuild + reinstall each time, not a live
   patch — slower per-iteration than the CyberPi side below, but there's no simpler way to change
   actual Swift/UI code on a real device outside the App Store.
-- **iPhone → CyberPi**: `CyberPiPusher.swift`, wired into the app's "Push Payload to CyberPi…"
-  button. Same wire protocol as `apps/robot/scripts/push.mjs` — connects to `bootstrap.py`'s OTA
-  port (8766), writes the picked file's bytes, half-closes, reads back the one-line reply. No
-  laptop involved once `bootstrap.py` is on the board.
 - **Laptop → CyberPi**: unchanged, already solved — `apps/robot/scripts/push.mjs`.
 
 Deliberately not built: an in-app interpreter (e.g. JavaScriptCore) for live-patching *app* logic

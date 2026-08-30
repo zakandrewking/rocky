@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 /// Discovery has a real intermediate state: the sweep can find an address before the TCP stream
 /// is ready. Treating `searchFinished && !connected` as "not found" made that healthy gap become a
@@ -41,7 +40,6 @@ struct ContentView: View {
     /// `PersonCamera`'s header for the reasoning.
     @StateObject private var personCamera = PersonCamera()
     @State private var log: [String] = []
-    @State private var showPayloadPicker = false
     @State private var showBodyPanel = false
     @State private var showCameraPanel = false
     @State private var detailsOpen = false
@@ -294,10 +292,6 @@ struct ContentView: View {
 
     private var detailBody: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Tap the stone to talk. Robot connection is separate and its controls work while conversation is paused.")
-                .foregroundStyle(RockyTheme.mintBright.opacity(0.72))
-                .fixedSize(horizontal: false, vertical: true)
-
             Text(robotStatus)
                 .foregroundStyle(RockyTheme.mint.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
@@ -352,14 +346,6 @@ struct ContentView: View {
                 .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
                 .sheet(isPresented: $showCameraPanel) {
                     PersonCameraView(camera: personCamera)
-                }
-
-            Button("push payload to cyberpi…") { showPayloadPicker = true }
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
-                .disabled(behavior.host == nil)
-                .fileImporter(isPresented: $showPayloadPicker, allowedContentTypes: [.item]) { result in
-                    Task { await handlePayloadPicked(result) }
                 }
 
             if !log.isEmpty {
@@ -446,28 +432,6 @@ struct ContentView: View {
             appendLog("voice: connect failed: \(message)")
         } else {
             appendLog("voice: connected")
-        }
-    }
-
-    /// Pushes a picked payload straight to the CyberPi's bootstrap.py OTA listener (port 8766,
-    /// separate from the motion agent's port 8765 used above) -- same host, no laptop involved.
-    private func handlePayloadPicked(_ result: Result<URL, Error>) async {
-        switch result {
-        case .failure(let error):
-            appendLog("payload pick failed: \(error.localizedDescription)")
-        case .success(let url):
-            guard let host = behavior.host else {
-                appendLog("no robot found to push to")
-                return
-            }
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let reply = try await CyberPiPusher.push(fileAt: url, to: host)
-                appendLog("pushed \(url.lastPathComponent): \(reply)")
-            } catch {
-                appendLog("push failed: \(error.localizedDescription)")
-            }
         }
     }
 
