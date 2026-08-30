@@ -65,7 +65,11 @@ crashing.**
   the prototype's local energy detector hearing the first ElevenLabs syllable as a barge-in. Local
   energy VAD is now gated only while Rocky's audio is playing (the PCM microphone keeps streaming),
   with Gemini interruption/transcription as the authoritative barge-in signal and gated frame/peak
-  RMS summaries in the log so any remaining AEC behavior is measurable.
+  RMS summaries in the log so any remaining AEC behavior is measurable. A second device trace then
+  caught an audio-graph startup transient before playback, proving energy alone is not a safe speech
+  start under either condition. ER2 starts are now exclusively server-confirmed; local energy only
+  detects silence after such a start. The first-audio watchdog also checks actual player chunks and
+  queued PCM before retrying, so stale response bookkeeping cannot cancel audio demonstrably heard.
 - [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A

@@ -130,17 +130,21 @@ final class RealtimeSessionConfigTests: XCTestCase {
         XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["look_now"])
     }
 
-    func testER2LocalEnergyCannotMistakeRockysPlaybackForBargeIn() {
+    func testER2LocalEnergyCanNeverInventASpeechStart() {
         let client = ER2LiveVoiceClient()
-        client.setLocalPlaybackActive(true)
+        XCTAssertNil(client.localActivityEvent(rms: 0.25))
+        XCTAssertNil(client.localActivityEvent(rms: 0.25))
+        XCTAssertNil(client.localActivityEvent(rms: 0.25))
 
+        client.setLocalPlaybackActive(true)
         XCTAssertNil(client.localActivityEvent(rms: 0.25))
         XCTAssertNil(client.localActivityEvent(rms: 0.25))
         XCTAssertNil(client.localActivityEvent(rms: 0.25))
 
         client.setLocalPlaybackActive(false)
-        XCTAssertNil(client.localActivityEvent(rms: 0.25))
-        XCTAssertNil(client.localActivityEvent(rms: 0.25))
-        XCTAssertEqual(client.localActivityEvent(rms: 0.25), "input_audio_buffer.speech_started")
+        XCTAssertTrue(client.confirmServerSpeechStart())
+        XCTAssertFalse(client.confirmServerSpeechStart())
+        for _ in 0..<44 { XCTAssertNil(client.localActivityEvent(rms: 0)) }
+        XCTAssertEqual(client.localActivityEvent(rms: 0), "input_audio_buffer.speech_stopped")
     }
 }

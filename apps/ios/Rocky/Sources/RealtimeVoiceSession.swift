@@ -1035,10 +1035,14 @@ final class RealtimeVoiceSession: ObservableObject {
         speechPlayer = player
         speechSynthesizer.onAudio = { [weak self] base64, isLastChunk in
             guard let self else { return }
-            if self.firstAudioAt == nil, let started = self.responseStartedAt {
+            if self.firstAudioAt == nil {
                 self.firstAudioAt = Date()
                 self.audioStartedAt = Date()
-                self.log("\(provider) first audio after \(Self.ms(since: started)) (text→voice latency)")
+                if let started = self.responseStartedAt {
+                    self.log("\(provider) first audio after \(Self.ms(since: started)) (text→voice latency)")
+                } else {
+                    self.log("\(provider) first audio arrived after response lifecycle was already cleared")
+                }
             }
             if isLastChunk {
                 self.speechSawLastChunk = true
@@ -1182,6 +1186,16 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func handleMissingFirstAudio() {
         guard firstAudioAt == nil, !speechUtteranceText.isEmpty else { return }
+        if let player = speechPlayer, player.speaking || player.chunksThisResponse > 0 {
+            firstAudioAt = Date()
+            firstAudioWatchdog?.cancel()
+            firstAudioWatchdog = nil
+            log(
+                "first-audio watchdog suppressed: player has \(player.chunksThisResponse) "
+                    + "chunk(s), \(Int(player.millisecondsUntilPlaybackEnd))ms queued"
+            )
+            return
+        }
         guard !retriedThisResponse else {
             log("\(speechSynthesizer?.providerName ?? "voice") produced no audio after retry, giving up on this turn")
             finishResponse(reason: "no audio after retry")
