@@ -20,9 +20,15 @@ crashing.**
   no longer exposed. This stays on the official grabber build's dedicated S3/S4 sockets; S1/S2 raw
   PWM was investigated and rejected as the wrong default wiring. The board call is command-time
   only, not boot-time, and non-S3/S4 ports are rejected.
+- [x] Stabilize all four edge controls after live input traces exposed absolute touch-down mapping:
+  make every drag relative to its current thumb position, give all four cards identical rail/overall
+  height, add throttle/steering center dead zones and progressive curves, and send shaped rather
+  than raw drive values. Diagnostic logs now connect finger travel and raw/shaped values to sent
+  drive/servo targets, ACK latency, servo slew state, and physical target-reached latency; this also
+  makes any reported post-release motion measurable instead of inferred.
 - [x] Add voice-independent manual robot control to iOS: spring-return throttle and steering
   tracks sit beside the edge servo controls, appear only while the robot link is connected, take
-  exclusive ownership over autonomous motor writes, heartbeat quietly at 5Hz, and stop immediately
+  exclusive ownership over autonomous motor writes, heartbeat quietly at 10Hz, and stop immediately
   on release or after a 650ms lost-heartbeat
   watchdog. The board stays stopped for 700ms before returning to autonomy. Manual input fully
   overrides the autonomous obstacle reflex while held. Robot discovery runs

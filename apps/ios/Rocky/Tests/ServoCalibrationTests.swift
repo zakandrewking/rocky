@@ -55,4 +55,37 @@ final class ServoCalibrationTests: XCTestCase {
             )
         }
     }
+
+    func testRelativeDragStartsFromCurrentValueInsteadOfFingerLocation() {
+        XCTAssertEqual(
+            VerticalControlMath.relativePosition(startingAt: 0.4, translationY: 0, height: 160),
+            0.4
+        )
+        XCTAssertEqual(
+            VerticalControlMath.relativePosition(startingAt: 0, translationY: -40, height: 160),
+            0.5
+        )
+        XCTAssertEqual(
+            VerticalControlMath.relativePosition(startingAt: 0.8, translationY: -160, height: 160),
+            1
+        )
+    }
+
+    func testDriveResponseHasStableCenterAndFullRange() {
+        XCTAssertEqual(DriveControlResponse.throttle(0.14), 0)
+        XCTAssertEqual(DriveControlResponse.throttle(-0.14), 0)
+        XCTAssertEqual(DriveControlResponse.steering(0.20), 0)
+        XCTAssertEqual(DriveControlResponse.steering(-0.20), 0)
+        XCTAssertEqual(DriveControlResponse.throttle(1), 1)
+        XCTAssertEqual(DriveControlResponse.throttle(-1), -1)
+        XCTAssertEqual(DriveControlResponse.steering(1), 1)
+        XCTAssertEqual(DriveControlResponse.steering(-1), -1)
+    }
+
+    func testSteeringIsGentlerThanThrottleAwayFromCenter() {
+        XCTAssertLessThan(
+            abs(DriveControlResponse.steering(0.4)),
+            abs(DriveControlResponse.throttle(0.4))
+        )
+    }
 }

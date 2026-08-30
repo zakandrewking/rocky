@@ -93,17 +93,22 @@ the scrolling log.
 
 When the robot is connected, slim vertical controls at the left and right edges drive the official
 grabber build's dedicated S3 and S4 servo ports. These are native vertical drag tracks rather than
-rotated horizontal sliders, so touch coordinates cannot jump between unrelated angles. Traffic is
+rotated horizontal sliders, and each drag is relative to the thumb's existing position: touching
+anywhere on a rail cannot jump it to an unrelated angle. All four control cards use the same rail
+and overall height. Traffic is
 coalesced to at most one board command per port every 100ms; acknowledgements are logged but never
 hold up the newest target. The final finger-up position is sent immediately. The board then slews
 from its current position toward only the newest target by 8° per 20Hz motion tick (about 160°/s),
 so uneven Wi-Fi delivery or a quick finger movement cannot become a mechanical snap or stale
 movement queue. Previously saved Min/Max and direction settings remain applied, but calibration is
 not exposed in the everyday UI. The session log records command ids, targets, acknowledgement
-latency, and board errors.
+latency, whether the board is still slewing, physical target-reached latency, and board errors.
 
 Two spring-return vertical controls sit beside the servo controls: drive on the left and steering
-on the right. While either thumb is down, a quiet 5Hz heartbeat gives the person exclusive wheel
+on the right. Throttle has a 14% center dead zone; steering has a wider 20% dead zone and a gentler
+progressive response so small center movements neither reverse nor over-turn the robot. Input logs
+record relative finger travel, raw slider value, shaped output, transmitted command, board ACK,
+and release timing. While either thumb is down, a quiet 10Hz heartbeat gives the person exclusive wheel
 control; only touch transitions ask the board for acknowledgements. Finger-up
 stops immediately; the board remains stopped for 700ms and then returns to whatever autonomous
 behavior would otherwise apply. A 650ms board-side watchdog stops a lost phone/Wi-Fi stream, and

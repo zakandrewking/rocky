@@ -1035,6 +1035,8 @@ def _tick_servos():
         try:
             mbot2.servo_set(next_angle, port)
             _state["servo_positions"][port] = next_angle
+            if next_angle == target:
+                _emit({"type": "servo_position", "port": port, "angle": next_angle})
         except Exception as error:
             _report_error_once("servo_slew_failed_" + port, error)
 

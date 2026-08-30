@@ -453,7 +453,7 @@ struct ContentView: View {
 }
 
 /// Servo and drive controls share the screen edges so both hands can operate naturally. Drive is
-/// refreshed quietly at 5 Hz; only touch transitions request ACKs, leaving the robot's narrow
+/// refreshed quietly at 10 Hz; only touch transitions request ACKs, leaving the robot's narrow
 /// command stream responsive to servo changes.
 private struct ManualDriveControls: View {
     let connected: Bool
@@ -469,6 +469,8 @@ private struct ManualDriveControls: View {
     @State private var heartbeat: Task<Void, Never>?
 
     private var active: Bool { throttleHeld || steeringHeld }
+    private var outputThrottle: Double { DriveControlResponse.throttle(throttle) }
+    private var outputSteering: Double { DriveControlResponse.steering(steering) }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -476,11 +478,13 @@ private struct ManualDriveControls: View {
                 sendServo("S3", angle, immediate)
             }
             DriveAxisSideControl(
-                title: "DRIVE", high: "FWD", low: "BACK", value: $throttle
+                title: "DRIVE", high: "FWD", low: "BACK", value: $throttle,
+                response: DriveControlResponse.throttle
             ) { setEditing($0, axis: .throttle) }
             Spacer(minLength: 0)
             DriveAxisSideControl(
-                title: "STEER", high: "RIGHT", low: "LEFT", value: $steering
+                title: "STEER", high: "RIGHT", low: "LEFT", value: $steering,
+                response: DriveControlResponse.steering
             ) { setEditing($0, axis: .steering) }
             ServoSideControl(port: "S4") { angle, immediate in
                 sendServo("S4", angle, immediate)
@@ -505,8 +509,14 @@ private struct ManualDriveControls: View {
             if !editing { steering = 0 }
         }
 
+        RockyLog.write(
+            "control[drive mix]: \(editing ? "engaged" : "released") "
+                + "rawThrottle=\(formatted(throttle)) outputThrottle=\(formatted(outputThrottle)) "
+                + "rawSteering=\(formatted(steering)) outputSteering=\(formatted(outputSteering))"
+        )
+
         if active {
-            sendDrive(throttle, steering, true, true)
+            sendDrive(outputThrottle, outputSteering, true, true)
             startHeartbeatIfNeeded()
         } else {
             heartbeat?.cancel()
@@ -520,12 +530,12 @@ private struct ManualDriveControls: View {
         heartbeat = Task { @MainActor in
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(for: .milliseconds(200))
+                    try await Task.sleep(for: .milliseconds(100))
                 } catch {
                     return
                 }
                 guard connected, active else { return }
-                sendDrive(throttle, steering, true, false)
+                sendDrive(outputThrottle, outputSteering, true, false)
             }
         }
     }
@@ -543,6 +553,10 @@ private struct ManualDriveControls: View {
         steeringHeld = false
         throttle = 0
         steering = 0
+    }
+
+    private func formatted(_ value: Double) -> String {
+        String(format: "%.3f", value)
     }
 }
 

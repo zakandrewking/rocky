@@ -84,6 +84,7 @@ final class BehaviorMonitor: ObservableObject {
     private var servoSentAt: [String: Date] = [:]
     private var servoSentTargets: [String: ServoTarget] = [:]
     private var servoLastAcceptedSentAt: [String: Date] = [:]
+    private var servoPhysicalTargets: [String: (angle: Int, sentAt: Date)] = [:]
     private var latestServoID: [String: String] = [:]
     private var servoAckTimeoutTasks: [String: Task<Void, Never>] = [:]
     private var manualDriveSentAt: [String: Date] = [:]
@@ -342,6 +343,19 @@ final class BehaviorMonitor: ObservableObject {
             if requestedMood == mood { requestedMood = nil }
             RockyLog.write("behavior: robot says hello (mode \(mode), mood \(mood))")
             onBoardMessage?(.hello(mode: mode, mood: mood))
+        case "servo_position":
+            let port = message["port"] as? String ?? "?"
+            let angle = message["angle"] as? Int ?? -1
+            if servoAngles[port] != nil { servoAngles[port] = angle }
+            let elapsed = servoPhysicalTargets[port].flatMap { target in
+                target.angle == angle
+                    ? " in \(Int(Date().timeIntervalSince(target.sentAt) * 1_000))ms"
+                    : nil
+            } ?? ""
+            if servoPhysicalTargets[port]?.angle == angle {
+                servoPhysicalTargets.removeValue(forKey: port)
+            }
+            RockyLog.write("servo: board reached \(port) \(angle)°\(elapsed)")
         case "ack":
             if message["of"] as? String == "servo" {
                 handleServoAcknowledgement(message)
@@ -388,6 +402,7 @@ final class BehaviorMonitor: ObservableObject {
         servoSentAt.removeAll()
         servoSentTargets.removeAll()
         servoLastAcceptedSentAt.removeAll()
+        servoPhysicalTargets.removeAll()
         latestServoID.removeAll()
         manualDriveSentAt.removeAll()
     }
@@ -412,12 +427,19 @@ final class BehaviorMonitor: ObservableObject {
             return
         }
         let superseded = sentAt.map { $0 < (servoLastAcceptedSentAt[port] ?? .distantPast) } ?? true
+        let moving = message["moving"] as? Bool == true
         if !superseded, let sentAt {
             servoLastAcceptedSentAt[port] = sentAt
             if servoAngles[port] != nil { servoAngles[port] = angle }
+            if moving {
+                servoPhysicalTargets[port] = (angle, sentAt)
+            } else {
+                servoPhysicalTargets.removeValue(forKey: port)
+            }
         }
         RockyLog.write(
             "servo: board accepted \(port) \(angleDescription)\(elapsed)"
+                + (moving ? " (slewing)" : " (at target)")
                 + (superseded ? " (superseded ACK; state unchanged)" : "")
         )
     }

@@ -125,6 +125,18 @@ class ServoIntentTests(unittest.TestCase):
         self.assertEqual(mbot2.servo_calls[-1], (26, "S3"))
         self.assertEqual(errors, [])
 
+    def test_reports_when_slew_physically_reaches_target(self):
+        mbot2 = FakeMbot2()
+        apply_intent, emitted, _errors, _state = load_apply_intent(mbot2)
+
+        apply_intent({"type": "servo", "port": "S3", "angle": 10, "id": "first"}, 1)
+        apply_intent({"type": "servo", "port": "S3", "angle": 18, "id": "next"}, 2)
+        apply_intent.tick_servos()
+
+        self.assertEqual(
+            emitted[-1], {"type": "servo_position", "port": "S3", "angle": 18}
+        )
+
 
 class ManualDriveIntentTests(unittest.TestCase):
     def test_drive_mix_preempts_autonomy(self):
