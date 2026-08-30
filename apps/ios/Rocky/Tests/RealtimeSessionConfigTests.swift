@@ -149,4 +149,14 @@ final class RealtimeSessionConfigTests: XCTestCase {
             "input_audio_buffer.speech_stopped"
         )
     }
+
+    func testER2MicrophoneUsesTheDedicatedLiveAudioEnvelope() throws {
+        let message = ER2LiveVoiceClient.audioMessage(Data([0x00, 0x80, 0xFF, 0x7F]))
+        let realtime = try XCTUnwrap(message["realtimeInput"] as? [String: Any])
+        let audio = try XCTUnwrap(realtime["audio"] as? [String: Any])
+
+        XCTAssertNil(realtime["mediaChunks"])
+        XCTAssertEqual(audio["data"] as? String, "AID/fw==")
+        XCTAssertEqual(audio["mimeType"] as? String, "audio/pcm;rate=16000")
+    }
 }

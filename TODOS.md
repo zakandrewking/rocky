@@ -73,10 +73,14 @@ crashing.**
   The following trace proved PCM callbacks were alive but ER2 automatic VAD never transcribed or
   closed a user turn. A generic-Live explicit-activity experiment cleanly detected the next spoken
   turn but ER2 closed the socket immediately after `activityEnd`. The ER2-specific guide and SDK
-  source settled the wire contract: its documented `send_realtime_input(media=Blob(...))` path
-  serializes as one `realtimeInput.mediaChunks` blob and uses automatic VAD. Rocky now matches that
-  exact path. Logs retain five-second uploaded frame/byte counts, local RMS as diagnostic-only data,
-  and WebSocket close code/reason so attachment, transport, acoustics, and rejection are distinct.
+  source showed that its documented `send_realtime_input(media=Blob(...))` path serializes as one
+  `realtimeInput.mediaChunks` blob. The next real trace supplied the missing distinction: ER2
+  accepted more than 1,000 of those frames without closing the socket, but produced no VAD,
+  transcription, or response event. Google's current Live wire guide instead uses the dedicated
+  `realtimeInput.audio` field for microphone PCM. Rocky now uses that specialized envelope with
+  automatic VAD and no explicit activity messages. Logs retain five-second uploaded frame/byte
+  counts, local RMS as diagnostic-only data, and WebSocket close code/reason so attachment,
+  transport, acoustics, and rejection are distinct.
 - [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A

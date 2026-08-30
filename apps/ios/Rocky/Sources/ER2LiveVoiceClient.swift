@@ -287,14 +287,22 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             )
         }
         updateLocalActivity(pcm)
-        send([
+        send(Self.audioMessage(pcm))
+    }
+
+    /// The dedicated Live audio field is significant, even though the SDK also exposes a legacy
+    /// generic `media` overload which serializes as `mediaChunks`. A real ER2 device session
+    /// accepted mediaChunks and kept the socket alive, but never passed those bytes through audio
+    /// VAD. Google's current Live wire example uses this specialized envelope for microphone PCM.
+    nonisolated static func audioMessage(_ pcm: Data) -> [String: Any] {
+        [
             "realtimeInput": [
-                "mediaChunks": [[
+                "audio": [
                     "data": pcm.base64EncodedString(),
                     "mimeType": "audio/pcm;rate=16000",
-                ]]
+                ]
             ]
-        ])
+        ]
     }
 
     private func updateLocalActivity(_ pcm: Data) {
