@@ -35,6 +35,8 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
     private var audioFramesSent = 0
     private var audioBytesSent = 0
     private var lastAudioUploadLogAt: Date?
+    private var transcriptionFlushGeneration = 0
+    private var transcriptionFlushTask: Task<Void, Never>?
 
     // Local energy is diagnostics only. ER2's own VAD owns conversational turns; device traces
     // proved that allowing this detector to emit events can mistake startup or speaker energy for
@@ -196,6 +198,9 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             audioFramesSent = 0
             audioBytesSent = 0
             lastAudioUploadLogAt = nil
+            transcriptionFlushGeneration += 1
+            transcriptionFlushTask?.cancel()
+            transcriptionFlushTask = nil
             return previous
         }
         let stopAudio = locked { () -> Bool in
@@ -231,6 +236,15 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
         var setup: [String: Any] = [
             "model": model,
             "generationConfig": ["responseModalities": ["TEXT"]],
+            "realtimeInputConfig": [
+                "automaticActivityDetection": [
+                    "disabled": false,
+                    "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
+                    "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
+                    "prefixPaddingMs": 200,
+                    "silenceDurationMs": 600,
+                ]
+            ],
             "systemInstruction": [
                 "parts": [[
                     "text": instructions + """
@@ -461,6 +475,7 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                 let text = transcription["text"] as? String, !text.isEmpty
             {
                 RockyLog.write("voice: ER2 heard: \(text)")
+                scheduleTranscriptionFlush()
             }
             var delta = ""
             if let turn = content["modelTurn"] as? [String: Any],
@@ -471,6 +486,7 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                 delta = transcription["text"] as? String ?? ""
             }
             if !delta.isEmpty {
+                cancelTranscriptionFlush()
                 let responseID = beginResponseIfNeeded()
                 locked { responseText += delta }
                 emit(["type": "response.output_text.delta", "response_id": responseID, "delta": delta])
@@ -486,6 +502,7 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
         if let toolCall = object["toolCall"] as? [String: Any],
             let calls = toolCall["functionCalls"] as? [[String: Any]], !calls.isEmpty
         {
+            cancelTranscriptionFlush()
             let responseID = beginResponseIfNeeded()
             let output: [[String: Any]] = calls.compactMap { call in
                 guard let id = call["id"] as? String, let name = call["name"] as? String else {
@@ -583,6 +600,41 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             let event = try? JSONDecoder().decode(RealtimeServerEvent.self, from: data)
         else { return }
         onEvent?(event)
+    }
+
+    /// Google's documented hybrid-VAD path uses automatic server VAD for robust speech starts,
+    /// then sends audioStreamEnd when client evidence says the utterance is over. Input
+    /// transcription is stronger evidence than our local energy threshold: the real room trace
+    /// had full transcripts while both the local and server silence detectors remained open.
+    private func scheduleTranscriptionFlush() {
+        let generation = locked { () -> Int in
+            transcriptionFlushGeneration += 1
+            transcriptionFlushTask?.cancel()
+            let generation = transcriptionFlushGeneration
+            transcriptionFlushTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(800))
+                guard !Task.isCancelled else { return }
+                let shouldFlush = self?.locked {
+                    self?.transcriptionFlushGeneration == generation
+                        && self?.open == true
+                        && self?.microphoneEnabled == true
+                        && self?.activeResponseID == nil
+                } ?? false
+                guard shouldFlush else { return }
+                RockyLog.write("voice: ER2 hybrid VAD flushing transcribed turn after 800ms")
+                self?.send(["realtimeInput": ["audioStreamEnd": true]])
+            }
+            return generation
+        }
+        _ = generation
+    }
+
+    private func cancelTranscriptionFlush() {
+        locked {
+            transcriptionFlushGeneration += 1
+            transcriptionFlushTask?.cancel()
+            transcriptionFlushTask = nil
+        }
     }
 
     @discardableResult

@@ -86,7 +86,13 @@ crashing.**
   continuation consumed 10.7 seconds; the user paused 1.2 seconds before its eventual text reached
   TTS. The ER2 prototype now omits demand-driven `look_now` structurally while retaining passive
   visual context, so ordinary voice turns cannot disappear behind that camera path. Body tools
-  remain available when the robot is connected.
+  remain available when the robot is connected. The next no-tool trace transcribed two complete
+  utterances but still never finalized the turn, proving residual room/AEC energy can hold ER2's
+  default end detector open. Rocky now configures automatic VAD explicitly (high start/end
+  sensitivity, 600ms silence) and uses Google's documented hybrid-VAD escape hatch: each input
+  transcript schedules an 800ms-debounced `audioStreamEnd`, cancelled if generation begins or a
+  newer transcript arrives. Automatic VAD still owns speech starts, and the audio stream can resume
+  immediately, but a recognized utterance can no longer wait forever for quieter room energy.
 - [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A
