@@ -97,8 +97,10 @@ command per port every 80ms and permits only one unacknowledged command per port
 finger-up position replaces any waiting intermediate value. The gear above either slider opens
 live, persistent Min/Max and direction calibration. There is no Center control. A calibration-only
 90° action places an unloaded servo at the known reference needed before physically reinstalling
-its horn. Moving either endpoint then moves the servo live so linkage-safe travel can be found by
-feel. The session log records command ids, angles, acknowledgement latency, and board errors.
+its horn. **Begin safely around 90°** then narrows the live range to 85–95°, so each endpoint can
+be expanded outward gradually instead of jumping immediately to a previously saved extreme.
+Moving either endpoint moves the servo live so linkage-safe travel can be found by feel. The
+session log records command ids, angles, acknowledgement latency, and board errors.
 
 Two spring-return sliders at the bottom control forward/backward throttle and left/right steering.
 While either thumb is down, a 10Hz heartbeat gives the person exclusive wheel control. Finger-up

@@ -148,15 +148,20 @@ private struct ServoCalibrationView: View {
                     Toggle("Reverse direction", isOn: $reversed)
                 }
                 Section {
-                    Button("Reset to 0–180°") {
-                        minimum = 0
-                        maximum = 180
+                    Button("Begin safely around 90°") {
+                        minimum = 85
+                        maximum = 95
                         reversed = false
+                        RockyLog.write(
+                            "servo: \(port) calibration narrowed to 85–95° for safe expansion"
+                        )
+                        test(90, true)
                     }
                 } footer: {
                     Text(
                         "With the horn removed, use the alignment action first. Then reinstall the "
-                            + "horn and move Min and Max slowly; stop before buzzing or binding."
+                            + "horn, begin safely around 90°, and expand Min and Max slowly. Stop "
+                            + "before buzzing or binding."
                     )
                 }
             }
