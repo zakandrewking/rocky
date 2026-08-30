@@ -55,10 +55,10 @@ function pushWithNode() {
 
 function pushWithNativeClient() {
   return new Promise((resolve, reject) => {
-    // CyberPi's loader reads until EOF before installing. BSD nc otherwise keeps its write side
-    // open after child.stdin.end(), leaving both processes waiting forever; -N performs the
-    // required shutdown(2) while retaining the read side for the board's acknowledgement.
-    const child = spawn("nc", ["-N", "-w", "12", host, String(port)], {
+    // Apple's normal connectx path can reproduce Node's false EHOSTUNREACH even while the board
+    // is reachable. -O selects the old connect(2) path. Verified locally with a full payload-size
+    // transfer: stdin EOF reaches the receiver and nc keeps reading its acknowledgement.
+    const child = spawn("nc", ["-O", "-w", "12", host, String(port)], {
       stdio: ["pipe", "pipe", "pipe"],
     });
     let reply = "";
