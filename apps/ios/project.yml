@@ -39,7 +39,11 @@ targets:
         # (always use that, never `xcodegen generate` directly) -- never typed on the phone, never
         # committed. Empty string, not an error, when .env has no key yet.
         RockyOpenAIKey: "${ROCKY_OPENAI_KEY_IOS}"
-        # Rocky's actual voice (Hume Octave). Both empty means fall back to OpenAI's own voice.
+        # One-switch local voice selection. Keep both credential sets baked so changing
+        # ROCKY_SPEECH_PROVIDER and redeploying is the whole rollback procedure.
+        RockySpeechProvider: "${ROCKY_SPEECH_PROVIDER_IOS}"
+        RockyElevenLabsKey: "${ROCKY_ELEVENLABS_KEY_IOS}"
+        RockyElevenLabsVoiceId: "${ROCKY_ELEVENLABS_VOICE_ID_IOS}"
         RockyHumeKey: "${ROCKY_HUME_KEY_IOS}"
         RockyHumeVoiceId: "${ROCKY_HUME_VOICE_ID_IOS}"
         # Person-detection vision calls (PersonVision.swift, Gemini Robotics-ER) -- a separate

@@ -40,7 +40,7 @@ final class LocalPcmPlayer {
     }
 
     func push(base64: String, isLastChunk: Bool) {
-        guard let decoded = Self.decodePCM16LE(base64), !decoded.isEmpty else { return }
+        guard let decoded = Self.decodePCM16LE(base64), !decoded.isEmpty || isLastChunk else { return }
         let samples = Self.resample(decoded, from: sourceSampleRate, to: outputSampleRate)
         RockyAudioEngine.shared.ensureRunning()
 
@@ -50,7 +50,9 @@ final class LocalPcmPlayer {
             let channel = buffer.floatChannelData?[0]
         else { return }
         buffer.frameLength = frameCount
-        samples.withUnsafeBufferPointer { channel.update(from: $0.baseAddress!, count: samples.count) }
+        if !samples.isEmpty {
+            samples.withUnsafeBufferPointer { channel.update(from: $0.baseAddress!, count: samples.count) }
+        }
         if padding > 0 {
             channel.advanced(by: samples.count).update(repeating: 0, count: padding)
         }

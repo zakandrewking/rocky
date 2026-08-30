@@ -12,8 +12,8 @@ not API-accessible yet, see `TODOS.md`), connected directly to OpenAI over WebRT
 and temporary LED color are real body-language tools the model chooses for itself — everything
 the one robot payload
 ([`apps/robot/device/rocky_agent.py`](../robot/device/rocky_agent.py)) can answer, and nothing it
-can't. `AVAudioSession` runs in `.voiceChat` mode. Rocky's Hume voice, Eridian chords, and story
-effects render through the same injected WebRTC `RTCAudioDevice` that captures the microphone, so
+can't. `AVAudioSession` runs in `.voiceChat` mode. Rocky's selected local voice, Eridian chords,
+and story effects render through the same injected WebRTC `RTCAudioDevice` that captures the microphone, so
 VoiceProcessingIO can remove Rocky's own local output while leaving the mic open for OpenAI
 semantic-VAD barge-in. No second capture engine or response-time microphone gate is involved.
 
@@ -87,9 +87,33 @@ beacon-plus-bounded-LAN-sweep mechanism, and no manual IP is needed.
 ### UI
 
 The circular stone (`orb` in `ContentView.swift`) starts and pauses conversation. Rocky is always
-the one voice, using his Hume voice. A tappable status row below the orb expands into a detail
+the one voice; the build defaults to Rocky1 through ElevenLabs v3 Conversational. A tappable status row below the orb expands into a detail
 area (mirroring desktop's debug chip) with connection status, warnings, the last tool call, and
 the scrolling log.
+
+### Switching the speech provider
+
+The iOS build carries both local-speech implementations. The ignored repo-root `.env` chooses one:
+
+```dotenv
+ROCKY_SPEECH_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=...
+ELEVENLABS_VOICE_ID=...
+```
+
+To return to Hume, change only `ROCKY_SPEECH_PROVIDER=hume`; the existing `HUME_API_KEY` and
+`HUME_VOICE_ID` remain untouched. Then run `pnpm ios:deploy`. Generation rejects misspelled
+provider names, and the expanded in-app log names the selected provider, socket lifecycle,
+text-to-first-audio latency, audio chunk count, final turn marker, and provider errors. Both
+providers close their socket on barge-in so audio from an interrupted reply cannot arrive in the
+next one.
+
+Like the OpenAI and Gemini keys in this personal-device build, the ElevenLabs key is baked into
+the app. Use a tightly quota-limited key and do not distribute the build.
+
+ElevenLabs currently returns `quota_exceeded` for v3 Conversational on a free-tier account even
+when ordinary Flash synthesis and the workspace credit balance are healthy. Until the account has
+v3 Conversational API entitlement, select Hume so the installed app remains usable.
 
 When the robot is connected, slim vertical controls at the left and right edges drive the official
 grabber build's dedicated S3 and S4 servo ports. These are native vertical drag tracks rather than

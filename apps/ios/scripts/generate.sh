@@ -2,7 +2,7 @@
 # Wraps `xcodegen generate` with the two things plain xcodegen can't do:
 #   1. Bake secrets from the repo root .env into the built app's Info.plist (see project.yml's
 #      Rocky* keys) so the phone needs no laptop server at runtime: OPENAI_API_KEY to mint its own
-#      ephemeral Realtime secret, the Hume credentials for Rocky's actual voice, and
+#      ephemeral Realtime secret, the selected local speech provider's credentials, and
 #      GEMINI_API_KEY for the front-camera person-detection calls (PersonVision.swift, Gemini
 #      Robotics-ER) -- deliberately a different model/provider than the voice session. Personal-
 #      use tradeoff: unlike services/device-api's whole reason for existing, these keys are not
@@ -10,7 +10,8 @@
 #   2. Regenerate Rocky/Resources/RealtimeSessionConfig.json from the character registry and
 #      session builder in services/device-api, so Rocky's session stays defined in one place.
 # Anything missing from .env is baked as empty rather than failing -- the app still builds and
-# degrades honestly (no OpenAI key: no voice at all; no Hume key: OpenAI's own voice instead).
+# degrades honestly (no OpenAI key: no session; incomplete selected speech credentials: a clear
+# in-app error naming what must be regenerated).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -34,7 +35,16 @@ read_env() {
 export ROCKY_OPENAI_KEY_IOS="$(read_env OPENAI_API_KEY)"
 export ROCKY_HUME_KEY_IOS="$(read_env HUME_API_KEY)"
 export ROCKY_HUME_VOICE_ID_IOS="$(read_env HUME_VOICE_ID)"
+export ROCKY_ELEVENLABS_KEY_IOS="$(read_env ELEVENLABS_API_KEY)"
+export ROCKY_ELEVENLABS_VOICE_ID_IOS="$(read_env ELEVENLABS_VOICE_ID)"
+export ROCKY_SPEECH_PROVIDER_IOS="$(read_env ROCKY_SPEECH_PROVIDER)"
 export ROCKY_GEMINI_KEY_IOS="$(read_env GEMINI_API_KEY)"
+
+# ElevenLabs is the current release voice. The explicit setting remains one line in .env so a
+# Hume rollback is deliberate and visible rather than coupled to which credentials happen to exist.
+if [ -z "$ROCKY_SPEECH_PROVIDER_IOS" ]; then
+  export ROCKY_SPEECH_PROVIDER_IOS="elevenlabs"
+fi
 
 # Passed through to the dump script below.
 #
@@ -50,10 +60,20 @@ done
 if [ -n "$ROCKY_OPENAI_KEY_IOS" ]; then
   echo "==> Baking OPENAI_API_KEY from .env (personal-device use only)"
 fi
-if [ -n "$ROCKY_HUME_KEY_IOS" ] && [ -n "$ROCKY_HUME_VOICE_ID_IOS" ]; then
-  echo "==> Hume credentials found (Rocky's voice)"
+if [ "$ROCKY_SPEECH_PROVIDER_IOS" != "elevenlabs" ] && [ "$ROCKY_SPEECH_PROVIDER_IOS" != "hume" ]; then
+  echo "ERROR: ROCKY_SPEECH_PROVIDER must be elevenlabs or hume" >&2
+  exit 1
+fi
+if [ "$ROCKY_SPEECH_PROVIDER_IOS" = "elevenlabs" ]; then
+  if [ -n "$ROCKY_ELEVENLABS_KEY_IOS" ] && [ -n "$ROCKY_ELEVENLABS_VOICE_ID_IOS" ]; then
+    echo "==> Speech provider: ElevenLabs v3 Conversational"
+  else
+    echo "==> Speech provider: ElevenLabs, but credentials are incomplete"
+  fi
+elif [ -n "$ROCKY_HUME_KEY_IOS" ] && [ -n "$ROCKY_HUME_VOICE_ID_IOS" ]; then
+  echo "==> Speech provider: Hume"
 else
-  echo "==> No Hume credentials in .env -- Rocky will have no voice"
+  echo "==> Speech provider: Hume, but credentials are incomplete"
 fi
 if [ -n "$ROCKY_GEMINI_KEY_IOS" ]; then
   echo "==> Gemini credentials found (front-camera person detection)"

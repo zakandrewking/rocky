@@ -2,9 +2,9 @@ import XCTest
 
 @testable import Rocky
 
-/// Mirrors apps/desktop/src/shared/speechChunks.test.ts. The sizes here are tuned, not arbitrary
-/// -- feeding Hume one short sentence at a time made the voice audibly change character between
-/// fragments -- so drift shows up as a worse-sounding Rocky, not an error.
+/// Mirrors apps/desktop/src/shared/speechChunks.test.ts. The sizes here are tuned, not arbitrary:
+/// feeding a local voice one short sentence at a time changes delivery between fragments, so drift
+/// shows up as a worse-sounding Rocky, not an error.
 final class SpeechChunksTests: XCTestCase {
     private func sentence(_ length: Int) -> String {
         String(repeating: "word ", count: max(1, length / 5)).trimmingCharacters(in: .whitespaces) + "."

@@ -158,7 +158,7 @@ final class RealtimeVoiceSession: ObservableObject {
     private var sessionHasBody: Bool?
     private var worldTicker: Task<Void, Never>?
 
-    /// Rocky's local speech stream, synthesized through Hume.
+    /// Rocky's selected local speech stream (ElevenLabs by default, Hume via one build setting).
     private var speechSynthesizer: (any LocalSpeechSynthesizing)?
     private var speechPlayer: LocalPcmPlayer?
     private var storySounds: StorySoundEffects?
@@ -263,10 +263,11 @@ final class RealtimeVoiceSession: ObservableObject {
     func connect(behavior: BehaviorMonitor?) async {
         self.behavior = behavior
         guard state == .disconnected || isFailed else { return }
-        speechSynthesizer = HumeSpeech()
+        speechSynthesizer = LocalSpeechFactory.make()
         guard speechSynthesizer != nil else {
-            state = .failed("Hume credentials are missing from this build; regenerate and reinstall the app")
-            log("connect stopped: Hume voice unavailable")
+            let message = LocalSpeechFactory.missingConfigurationMessage
+            state = .failed(message)
+            log("connect stopped: \(LocalSpeechFactory.configuredProvider.rawValue) voice unavailable")
             return
         }
         state = .connecting
@@ -960,6 +961,9 @@ final class RealtimeVoiceSession: ObservableObject {
         }
         speechSynthesizer.onError = { [weak self] message in
             self?.log("\(provider) error: \(message)")
+        }
+        speechSynthesizer.onDebug = { [weak self] message in
+            self?.log("\(provider): \(message)")
         }
         player.onSpeakingChange = { [weak self] speaking in
             self?.handleSpeakingChange(speaking)

@@ -398,21 +398,21 @@ fixes the pre-existing collision between a tool-call follow-up and `narrate()`.
 verdict interrupt/urgent
   ↓ response.cancel { response_id }        ← when model generation is still live
   ↓ output_audio_buffer.clear              ← WebRTC buffered playback, when present
-  ↓ stopLocalAudio() + hume.cancel()       ← the Hume path plays outside WebRTC entirely
+  ↓ stopLocalAudio() + voice.cancel()      ← local speech plays outside WebRTC entirely
   ↓ conversation.item.truncate { item_id, content_index: 0, audio_end_ms }
   ↓ project the event (+ a fresh state snapshot)
   ↓ response.create { instructions: immediate reflex, no machinery words }
 ```
 
 An utterance remains active until audio actually drains, not merely until Realtime finishes
-generating it. If Hume is still synthesizing or playing after `response.done`, the same verdict
+generating it. If local speech is still synthesizing or playing after `response.done`, the same verdict
 stops its local queue and starts the immediate response without waiting for a server cancellation.
 That is what makes a reflexive “Whoa” interrupt instead of arriving behind the sentence it reacted
 to. An `afterUtterance` verdict takes a separate remembered-reaction path: past tense, with no
 fresh-surprise interjection.
 
 `audio_end_ms` is measured from `output_audio_buffer.started` for the model-voiced path. The
-assistant `item_id` comes from `response.output_item.added`. Hume text is played locally and is
+assistant `item_id` comes from `response.output_item.added`. Synthesized text is played locally and is
 stopped locally, so it has no server audio item to truncate. If no WebRTC item id was seen,
 truncation is skipped — cancelling already prevents the ungenerated remainder from existing.
 

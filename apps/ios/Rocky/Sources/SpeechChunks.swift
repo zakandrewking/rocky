@@ -1,11 +1,11 @@
 import Foundation
 
-/// Decides how much of Rocky's streaming text to hand Hume at a time, ported from
+/// Decides how much of Rocky's streaming text to hand the local voice provider at a time, ported from
 /// apps/desktop/src/shared/speechChunks.ts.
 ///
-/// The sizes are tuned, not arbitrary: feeding Hume one short sentence at a time made the voice
-/// audibly change character between fragments, so chunks accumulate whole sentences until they
-/// are worth speaking as one breath.
+/// The sizes are tuned, not arbitrary: feeding a synthesizer one short sentence at a time makes
+/// delivery change character between fragments, so chunks accumulate whole sentences until they
+/// are worth speaking as one breath. ElevenLabs v3 also benefits from enough text for prosody.
 enum SpeechChunks {
     static let minChunkLength = 180
     static let maxChunkLength = 340

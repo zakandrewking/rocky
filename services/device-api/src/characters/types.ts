@@ -22,13 +22,12 @@ export interface CharacterCadence {
  * How a character is actually voiced.
  *
  * `openai` uses the Realtime model's own speech: one round trip, noticeably lower latency, and no
- * second service to fail. `hume` puts the model in text-only mode and synthesises separately --
- * which is how Rocky gets a voice that is specifically his, at the cost of a second hop.
+ * second service to fail. `local` puts the model in text-only mode and lets the client select a
+ * synthesizer -- ElevenLabs v3 for the current iOS release, with Hume retained as a rollback.
  */
 export type CharacterVoice =
   | { readonly provider: "openai"; readonly name: string }
-  | { readonly provider: "hume" }
-  /** Text returned to a client-owned synthesizer such as ElevenLabs. */
+  /** Text returned to a client-owned synthesizer such as ElevenLabs or Hume. */
   | { readonly provider: "local" };
 
 export interface Character {

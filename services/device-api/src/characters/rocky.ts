@@ -187,8 +187,8 @@ export const ROCKY: Character = {
   id: "rocky",
   name: "Rocky",
   summary: "An Eridian engineer visiting Earth. Broken grammar, literal, warm, base six.",
-  // Rocky's voice is a specific saved Hume voice; nothing OpenAI ships sounds like him.
-  voice: { provider: "hume" },
+  // iOS selects Rocky1 on ElevenLabs by default and retains Hume as a one-setting rollback.
+  voice: { provider: "local" },
   cadence,
   persona,
 };

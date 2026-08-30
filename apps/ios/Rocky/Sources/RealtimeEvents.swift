@@ -8,8 +8,8 @@ struct RealtimeServerEvent: Decodable, Sendable {
     let type: String
     let response: ResponseObject?
     let error: ErrorObject?
-    /// Streaming text for `response.output_text.delta` and transcript deltas -- what feeds Hume
-    /// and the Eridian chord layer when Rocky speaks in her own voice.
+    /// Streaming text for `response.output_text.delta` and transcript deltas -- what feeds the
+    /// selected local speech provider and the Eridian chord layer.
     let delta: String?
     /// The whole utterance on `response.output_text.done`.
     let text: String?

@@ -17,6 +17,7 @@ final class HumeSpeech: LocalSpeechSynthesizing {
 
     var onAudio: ((_ base64: String, _ isLastChunk: Bool) -> Void)?
     var onError: ((String) -> Void)?
+    var onDebug: ((String) -> Void)?
 
     private let apiKey: String
     private let voiceId: String
@@ -55,6 +56,7 @@ final class HumeSpeech: LocalSpeechSynthesizing {
 
     /// Closing the socket is how Hume is told to stop talking.
     func cancel() {
+        if socket != nil { onDebug?("socket closed for cancellation") }
         epoch += 1
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
@@ -78,6 +80,7 @@ final class HumeSpeech: LocalSpeechSynthesizing {
 
         let socket = URLSession.shared.webSocketTask(with: components.url!)
         self.socket = socket
+        onDebug?("opening streaming socket")
         socket.resume()
         receive(on: socket, epoch: epoch)
         return socket

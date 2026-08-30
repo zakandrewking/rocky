@@ -421,7 +421,7 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
     extras.push(`SAVED FAMILY MEMORY — PRIVATE LOCAL CONTEXT\n${memoryContext.trim()}`);
   }
 
-  // Hume and runtime-created ElevenLabs personalities need words for the client synthesizer;
+  // Client-selected ElevenLabs/Hume speech needs words for its local synthesizer;
   // OpenAI-voiced characters receive audio directly from Realtime. Clients read this field back,
   // so it must reflect the character rather than a client-side guess.
   const usesLocalSpeech = character.voice.provider !== "openai";

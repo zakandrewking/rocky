@@ -41,6 +41,19 @@ crashing.**
   1024 bytes of compact control messages per tick instead of 256, while the phone retains the
   deliberately quiet 5Hz heartbeat. Finger-up therefore reaches the front of the board's work
   promptly without weakening the 650ms lost-stream watchdog.
+- [x] Make Rocky's iOS speech provider swappable and add Rocky1 on ElevenLabs
+  `eleven_v3_conversational`: a single ignored `.env` value selects `elevenlabs` or `hume`, while
+  both implementations keep the same PCM player, interruption, and turn lifecycle. ElevenLabs uses
+  the v3-only Text-to-Dialogue WebSocket with 24 kHz raw PCM, exact final-turn markers, a 10-second
+  keepalive, epoch-protected cancellation, and logs for socket lifecycle, provider errors, chunk
+  count, and first-audio latency. Hume remains intact as a one-line rollback plus redeploy. The
+  personal-device build still bakes its limited provider key; revisit with a token-minting service
+  before distributing the app.
+- [ ] Activate ElevenLabs in the installed release after the account has v3 Conversational API
+  entitlement. A live 2026-08-30 probe proved the key and Rocky1 voice work with Flash and the
+  workspace has free credits remaining, but the TTD v3 Conversational socket returns
+  `quota_exceeded`; the phone therefore remains explicitly set to Hume rather than shipping a
+  silent default. Change `ROCKY_SPEECH_PROVIDER=elevenlabs` and run `pnpm ios:deploy` after upgrade.
 - [x] Replace queued live-control commands with a latest-state protocol after the larger TCP read
   proved to be only a mitigation. iOS now publishes one epoch/sequence-stamped UDP state for drive,
   steering, S3, and S4; the CyberPi drains a bounded batch and applies only the newest. Finger-up is
