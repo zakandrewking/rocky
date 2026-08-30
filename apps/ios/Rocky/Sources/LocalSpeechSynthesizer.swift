@@ -24,15 +24,34 @@ enum LocalSpeechProvider: String {
     }
 }
 
+enum ElevenLabsSpeechModel: String {
+    case conversationalV3 = "eleven_v3_conversational"
+    case flashV25 = "eleven_flash_v2_5"
+
+    static func configured(_ value: String?) -> Self {
+        Self(rawValue: value ?? "") ?? .conversationalV3
+    }
+}
+
 @MainActor
 enum LocalSpeechFactory {
     static var configuredProvider: LocalSpeechProvider {
         LocalSpeechProvider.configured(Bundle.main.object(forInfoDictionaryKey: "RockySpeechProvider") as? String)
     }
 
+    static var configuredElevenLabsModel: ElevenLabsSpeechModel {
+        ElevenLabsSpeechModel.configured(
+            Bundle.main.object(forInfoDictionaryKey: "RockyElevenLabsModel") as? String
+        )
+    }
+
     static func make() -> (any LocalSpeechSynthesizing)? {
         switch configuredProvider {
-        case .elevenlabs: ElevenLabsSpeech()
+        case .elevenlabs:
+            switch configuredElevenLabsModel {
+            case .conversationalV3: ElevenLabsSpeech()
+            case .flashV25: ElevenLabsFlashSpeech()
+            }
         case .hume: HumeSpeech()
         }
     }

@@ -37,6 +37,7 @@ export ROCKY_HUME_KEY_IOS="$(read_env HUME_API_KEY)"
 export ROCKY_HUME_VOICE_ID_IOS="$(read_env HUME_VOICE_ID)"
 export ROCKY_ELEVENLABS_KEY_IOS="$(read_env ELEVENLABS_API_KEY)"
 export ROCKY_ELEVENLABS_VOICE_ID_IOS="$(read_env ELEVENLABS_VOICE_ID)"
+export ROCKY_ELEVENLABS_MODEL_IOS="$(read_env ROCKY_ELEVENLABS_MODEL)"
 export ROCKY_SPEECH_PROVIDER_IOS="$(read_env ROCKY_SPEECH_PROVIDER)"
 export ROCKY_GEMINI_KEY_IOS="$(read_env GEMINI_API_KEY)"
 
@@ -44,6 +45,9 @@ export ROCKY_GEMINI_KEY_IOS="$(read_env GEMINI_API_KEY)"
 # Hume rollback is deliberate and visible rather than coupled to which credentials happen to exist.
 if [ -z "$ROCKY_SPEECH_PROVIDER_IOS" ]; then
   export ROCKY_SPEECH_PROVIDER_IOS="elevenlabs"
+fi
+if [ -z "$ROCKY_ELEVENLABS_MODEL_IOS" ]; then
+  export ROCKY_ELEVENLABS_MODEL_IOS="eleven_v3_conversational"
 fi
 
 # Passed through to the dump script below.
@@ -64,9 +68,13 @@ if [ "$ROCKY_SPEECH_PROVIDER_IOS" != "elevenlabs" ] && [ "$ROCKY_SPEECH_PROVIDER
   echo "ERROR: ROCKY_SPEECH_PROVIDER must be elevenlabs or hume" >&2
   exit 1
 fi
+if [ "$ROCKY_ELEVENLABS_MODEL_IOS" != "eleven_v3_conversational" ] && [ "$ROCKY_ELEVENLABS_MODEL_IOS" != "eleven_flash_v2_5" ]; then
+  echo "ERROR: ROCKY_ELEVENLABS_MODEL must be eleven_v3_conversational or eleven_flash_v2_5" >&2
+  exit 1
+fi
 if [ "$ROCKY_SPEECH_PROVIDER_IOS" = "elevenlabs" ]; then
   if [ -n "$ROCKY_ELEVENLABS_KEY_IOS" ] && [ -n "$ROCKY_ELEVENLABS_VOICE_ID_IOS" ]; then
-    echo "==> Speech provider: ElevenLabs v3 Conversational"
+    echo "==> Speech provider: ElevenLabs ($ROCKY_ELEVENLABS_MODEL_IOS)"
   else
     echo "==> Speech provider: ElevenLabs, but credentials are incomplete"
   fi

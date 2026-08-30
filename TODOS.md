@@ -49,11 +49,13 @@ crashing.**
   count, and first-audio latency. Hume remains intact as a one-line rollback plus redeploy. The
   personal-device build still bakes its limited provider key; revisit with a token-minting service
   before distributing the app.
-- [ ] Activate ElevenLabs in the installed release after the account has v3 Conversational API
-  entitlement. A live 2026-08-30 probe proved the key and Rocky1 voice work with Flash and the
-  workspace has free credits remaining, but the TTD v3 Conversational socket returns
-  `quota_exceeded`; the phone therefore remains explicitly set to Hume rather than shipping a
-  silent default. Change `ROCKY_SPEECH_PROVIDER=elevenlabs` and run `pnpm ios:deploy` after upgrade.
+- [ ] Raise the ElevenLabs API key's custom quota before the next real Rocky1 conversation. Live
+  2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
+  Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A
+  32-character Flash line alone required 16; ordinary Rocky replies cannot fit. The installed
+  release selects `eleven_v3_conversational`, so increasing the same key's quota takes effect
+  without another app build. Keep the cap bounded, but large enough for several thousand reply
+  characters rather than several words.
 - [x] Replace queued live-control commands with a latest-state protocol after the larger TCP read
   proved to be only a mitigation. iOS now publishes one epoch/sequence-stamped UDP state for drive,
   steering, S3, and S4; the CyberPi drains a bounded batch and applies only the newest. Finger-up is

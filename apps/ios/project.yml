@@ -44,6 +44,7 @@ targets:
         RockySpeechProvider: "${ROCKY_SPEECH_PROVIDER_IOS}"
         RockyElevenLabsKey: "${ROCKY_ELEVENLABS_KEY_IOS}"
         RockyElevenLabsVoiceId: "${ROCKY_ELEVENLABS_VOICE_ID_IOS}"
+        RockyElevenLabsModel: "${ROCKY_ELEVENLABS_MODEL_IOS}"
         RockyHumeKey: "${ROCKY_HUME_KEY_IOS}"
         RockyHumeVoiceId: "${ROCKY_HUME_VOICE_ID_IOS}"
         # Person-detection vision calls (PersonVision.swift, Gemini Robotics-ER) -- a separate

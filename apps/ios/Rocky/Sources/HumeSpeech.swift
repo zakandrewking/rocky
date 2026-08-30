@@ -21,7 +21,7 @@ final class HumeSpeech: LocalSpeechSynthesizing {
 
     private let apiKey: String
     private let voiceId: String
-    private var socket: URLSessionWebSocketTask?
+    private var socket: SpeechWebSocket?
     /// Bumped on every cancel/close so a socket that was already in flight can't deliver audio
     /// into the conversation that replaced it. The desktop original has exactly this race.
     private var epoch = 0
@@ -48,21 +48,18 @@ final class HumeSpeech: LocalSpeechSynthesizing {
         guard let data = try? JSONSerialization.data(withJSONObject: message),
             let json = String(data: data, encoding: .utf8)
         else { return }
-        socket.send(.string(json)) { [weak self] error in
-            guard let error else { return }
-            Task { @MainActor in self?.onError?(error.localizedDescription) }
-        }
+        socket.send(json: json)
     }
 
     /// Closing the socket is how Hume is told to stop talking.
     func cancel() {
         if socket != nil { onDebug?("socket closed for cancellation") }
         epoch += 1
-        socket?.cancel(with: .goingAway, reason: nil)
+        socket?.cancel()
         socket = nil
     }
 
-    private func connectIfNeeded() -> URLSessionWebSocketTask {
+    private func connectIfNeeded() -> SpeechWebSocket {
         if let socket { return socket }
 
         var components = URLComponents(string: "wss://api.hume.ai/v0/tts/stream/input")!
@@ -78,32 +75,25 @@ final class HumeSpeech: LocalSpeechSynthesizing {
             .init(name: "version", value: "2"),
         ]
 
-        let socket = URLSession.shared.webSocketTask(with: components.url!)
+        let socket = SpeechWebSocket(url: components.url!)
+        let socketEpoch = epoch
         self.socket = socket
         onDebug?("opening streaming socket")
-        socket.resume()
-        receive(on: socket, epoch: epoch)
-        return socket
-    }
-
-    private func receive(on socket: URLSessionWebSocketTask, epoch: Int) {
-        socket.receive { [weak self] result in
-            Task { @MainActor in
-                guard let self, epoch == self.epoch else { return }
-                switch result {
-                case .failure(let error):
-                    // Cancelling is how this client stops Hume talking, so the resulting error is
-                    // expected bookkeeping, not a fault worth reporting.
-                    if (error as NSError).code != NSURLErrorCancelled {
-                        self.onError?(error.localizedDescription)
-                    }
-                    if self.socket === socket { self.socket = nil }
-                case .success(let message):
-                    if case .string(let json) = message { self.handle(json) }
-                    self.receive(on: socket, epoch: epoch)
-                }
-            }
+        socket.onDebug = { [weak self] message in
+            guard let self, socketEpoch == self.epoch else { return }
+            self.onDebug?(message)
         }
+        socket.onError = { [weak self] message in
+            guard let self, socketEpoch == self.epoch else { return }
+            self.socket = nil
+            self.onError?(message)
+        }
+        socket.onMessage = { [weak self] message in
+            guard let self, socketEpoch == self.epoch else { return }
+            if case .string(let json) = message { self.handle(json) }
+        }
+        socket.start()
+        return socket
     }
 
     /// Frames are JSON lines; anything that isn't an audio frame (timestamps, metadata, or

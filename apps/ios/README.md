@@ -99,6 +99,7 @@ The iOS build carries both local-speech implementations. The ignored repo-root `
 ROCKY_SPEECH_PROVIDER=elevenlabs
 ELEVENLABS_API_KEY=...
 ELEVENLABS_VOICE_ID=...
+ROCKY_ELEVENLABS_MODEL=eleven_v3_conversational
 ```
 
 To return to Hume, change only `ROCKY_SPEECH_PROVIDER=hume`; the existing `HUME_API_KEY` and
@@ -111,9 +112,12 @@ next one.
 Like the OpenAI and Gemini keys in this personal-device build, the ElevenLabs key is baked into
 the app. Use a tightly quota-limited key and do not distribute the build.
 
-ElevenLabs currently returns `quota_exceeded` for v3 Conversational on a free-tier account even
-when ordinary Flash synthesis and the workspace credit balance are healthy. Until the account has
-v3 Conversational API entitlement, select Hume so the installed app remains usable.
+The selected API key needs a realistic credit quota. A live diagnosis found that a 10-credit
+per-key cap allows only about 20 characters with the current models: the account may have plenty
+of workspace credits while every normal Rocky reply is still rejected as `quota_exceeded`. This
+is independent of the provider/model switch. Raise the key's own quota in ElevenLabs before using
+v3 Conversational. Flash remains available as `ROCKY_ELEVENLABS_MODEL=eleven_flash_v2_5` for an
+explicit latency/expressiveness comparison; no Hume or Flash fallback happens implicitly.
 
 When the robot is connected, slim vertical controls at the left and right edges drive the official
 grabber build's dedicated S3 and S4 servo ports. These are native vertical drag tracks rather than
