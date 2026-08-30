@@ -95,21 +95,21 @@ When the robot is connected, slim vertical controls at the left and right edges 
 grabber build's dedicated S3 and S4 servo ports. These are native vertical drag tracks rather than
 rotated horizontal sliders, and each drag is relative to the thumb's existing position: touching
 anywhere on a rail cannot jump it to an unrelated angle. All four control cards use the same rail
-and overall height. Traffic is
-coalesced to at most one board command per port every 100ms; acknowledgements are logged but never
-hold up the newest target. The final finger-up position is sent immediately. The board then slews
-from its current position toward only the newest target by 8° per 20Hz motion tick (about 160°/s),
-so uneven Wi-Fi delivery or a quick finger movement cannot become a mechanical snap or stale
-movement queue. Previously saved Min/Max and direction settings remain applied, but calibration is
-not exposed in the everyday UI. The session log records command ids, targets, acknowledgement
-latency, whether the board is still slewing, physical target-reached latency, and board errors.
+and overall height. Input is coalesced before publishing a complete, sequence-numbered control
+state over UDP. The board drains available datagrams and applies only the newest sequence, so an
+old target can never wait in line and move the servo later. The servo's own controller performs
+continuous mechanical travel; the CyberPi no longer imposes a loop-timed angle staircase that
+stuttered whenever sensor work delayed the loop. Previously saved Min/Max and direction settings
+remain applied, but calibration is not exposed in the everyday UI.
 
 Two spring-return vertical controls sit beside the servo controls: drive on the left and steering
 on the right. Throttle has a 14% center dead zone; steering has a wider 20% dead zone and a gentler
 progressive response so small center movements neither reverse nor over-turn the robot. Input logs
 record relative finger travel, raw slider value, shaped output, transmitted command, board ACK,
 and release timing. While either thumb is down, a quiet 5Hz heartbeat gives the person exclusive wheel
-control; only touch transitions ask the board for acknowledgements. Finger-up
+control. Finger-up publishes three newest-state stop datagrams 60ms apart; the board also retains
+its 650ms lost-stream watchdog. Only touch transitions request an applied-state report over the
+separate ordered TCP diagnostics channel. Finger-up
 stops immediately; the board remains stopped for 700ms and then returns to whatever autonomous
 behavior would otherwise apply. A 650ms board-side watchdog stops a lost phone/Wi-Fi stream, and
 manual control overrides autonomous obstacle reactions while a thumb is held. All robot controls
@@ -118,6 +118,13 @@ paused, failed, or out of API credit. Conversely, voice and its rounded camera p
 the robot. Leaving the app releases manual driving, and returning forces a fresh robot connection
 instead of trusting a socket that iOS may have suspended. This gives four natural states: neither
 connected, voice only, robot only, or both.
+
+The split transport is intentional: TCP remains responsible for discovery, autonomous events,
+voice intentions, and diagnostics where reliable ordering is useful. The four live controls use
+UDP because freshness matters more than delivery—every packet is a full state, contains an app
+epoch and increasing sequence, and supersedes everything before it. Logs correlate reported
+sequences from phone send to board application without putting those acknowledgements in the
+control path.
 
 ### Seeing a person, with a second model
 

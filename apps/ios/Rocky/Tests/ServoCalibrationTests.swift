@@ -71,6 +71,20 @@ final class ServoCalibrationTests: XCTestCase {
         )
     }
 
+    func testIncrementalDragClampsTouchIdentityDiscontinuities() {
+        let ordinary = VerticalControlMath.incrementalPosition(
+            current: 0.2, deltaY: -4, height: 160
+        )
+        XCTAssertEqual(ordinary.position, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(ordinary.acceptedDeltaY, -4)
+
+        let reset = VerticalControlMath.incrementalPosition(
+            current: 0.8, deltaY: 147, height: 160
+        )
+        XCTAssertEqual(reset.position, 0.65, accuracy: 0.0001)
+        XCTAssertEqual(reset.acceptedDeltaY, 12)
+    }
+
     func testDriveResponseHasStableCenterAndFullRange() {
         XCTAssertEqual(DriveControlResponse.throttle(0.14), 0)
         XCTAssertEqual(DriveControlResponse.throttle(-0.14), 0)

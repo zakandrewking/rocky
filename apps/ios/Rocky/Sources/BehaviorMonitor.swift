@@ -46,6 +46,8 @@ final class BehaviorMonitor: ObservableObject {
 
     @Published private(set) var host: String?
     @Published private(set) var connected = false
+    @Published private(set) var controlReady = false
+    var controlsConnected: Bool { connected && controlReady }
     /// True once the sweep has finished, however it ended -- so nothing has to guess whether
     /// "no robot" means "none there" or "still looking".
     @Published private(set) var searchFinished = false
@@ -64,18 +66,19 @@ final class BehaviorMonitor: ObservableObject {
 
     private let beaconPort: NWEndpoint.Port
     private let eventPort: NWEndpoint.Port
+    private let controlPort: NWEndpoint.Port = 8769
     private var listener: NWListener?
     private var connection: NWConnection?
+    private var controlConnection: NWConnection?
     private var scanTask: Task<Void, Never>?
     private var buffer = ""
     /// Lifecycle mood commands can cross on the wire when pause is tapped twice quickly. Keep the
     /// newest request separate from confirmed telemetry so resume can reverse an in-flight still
     /// without pretending the board has already applied either command.
     private var requestedMood: String?
-    /// Slider drags can produce a value every display frame. The CyberPi control loop reads only
-    /// one small TCP chunk per tick, so coalesce each port independently. Acknowledgements are
-    /// diagnostic evidence, never flow control: one delayed ACK must not hold the newest physical
-    /// target hostage or release a queue of stale positions later.
+    /// Slider drags can produce a value every display frame, so coalesce each servo independently
+    /// before publishing a complete newest-state datagram. Applied reports are diagnostic evidence,
+    /// never flow control.
     private struct ServoTarget: Equatable {
         let angle: Int
     }
@@ -89,6 +92,14 @@ final class BehaviorMonitor: ObservableObject {
     private var servoAckTimeoutTasks: [String: Task<Void, Never>] = [:]
     private var manualDriveSentAt: [String: Date] = [:]
     private var lastManualDriveLogAt = Date.distantPast
+    private let controlEpoch = Int64(Date().timeIntervalSince1970 * 1_000)
+    private var controlSequence = 0
+    private var controlServoTargets: [String: Int] = [:]
+    private var controlThrottle = 0.0
+    private var controlSteering = 0.0
+    private var controlDriveActive = false
+    private var controlSentAt: [Int: (at: Date, reason: String)] = [:]
+    private var controlStopRepeatTask: Task<Void, Never>?
 
     init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768) {
         self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
@@ -129,6 +140,9 @@ final class BehaviorMonitor: ObservableObject {
         guard !connected, scanTask == nil else { return }
         connection?.cancel()
         connection = nil
+        controlConnection?.cancel()
+        controlConnection = nil
+        controlReady = false
         buffer = ""
         searchFinished = false
         RockyLog.write("behavior: trying to reconnect to the robot")
@@ -149,6 +163,9 @@ final class BehaviorMonitor: ObservableObject {
         scanTask = nil
         connection?.cancel()
         connection = nil
+        controlConnection?.cancel()
+        controlConnection = nil
+        controlReady = false
         connected = false
         requestedMood = nil
         cancelServoSends()
@@ -270,6 +287,7 @@ final class BehaviorMonitor: ObservableObject {
                 case .ready:
                     self.connected = true
                     RockyLog.write("behavior: watching the robot at \(host):\(port)")
+                    self.startControlChannel(host: host)
                     self.receive()
                 case .failed, .cancelled:
                     if self.connected {
@@ -277,6 +295,9 @@ final class BehaviorMonitor: ObservableObject {
                         self.onBoardMessage?(.disconnected)
                     }
                     self.connected = false
+                    self.controlConnection?.cancel()
+                    self.controlConnection = nil
+                    self.controlReady = false
                     self.requestedMood = nil
                     self.cancelServoSends()
                     self.connection = nil
@@ -298,6 +319,9 @@ final class BehaviorMonitor: ObservableObject {
                     self.connected = false
                     self.requestedMood = nil
                     self.cancelServoSends()
+                    self.controlConnection?.cancel()
+                    self.controlConnection = nil
+                    self.controlReady = false
                     self.connection?.cancel()
                     self.connection = nil
                     return
@@ -305,6 +329,34 @@ final class BehaviorMonitor: ObservableObject {
                 self.receive()
             }
         }
+    }
+
+    private func startControlChannel(host: String) {
+        controlConnection?.cancel()
+        controlReady = false
+        let control = NWConnection(
+            host: NWEndpoint.Host(host), port: controlPort, using: .udp
+        )
+        controlConnection = control
+        control.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor in
+                guard let self, self.controlConnection === control else { return }
+                switch state {
+                case .ready:
+                    self.controlReady = true
+                    RockyLog.write(
+                        "control: newest-state UDP ready at \(host):\(self.controlPort.rawValue)"
+                    )
+                case .failed(let error):
+                    self.controlReady = false
+                    RockyLog.write("control: UDP channel failed: \(error.localizedDescription)")
+                    self.controlConnection = nil
+                default:
+                    break
+                }
+            }
+        }
+        control.start(queue: .main)
     }
 
     // MARK: - What the robot says
@@ -356,6 +408,8 @@ final class BehaviorMonitor: ObservableObject {
                 servoPhysicalTargets.removeValue(forKey: port)
             }
             RockyLog.write("servo: board reached \(port) \(angle)°\(elapsed)")
+        case "control_applied":
+            handleControlApplied(message)
         case "ack":
             if message["of"] as? String == "servo" {
                 handleServoAcknowledgement(message)
@@ -405,6 +459,30 @@ final class BehaviorMonitor: ObservableObject {
         servoPhysicalTargets.removeAll()
         latestServoID.removeAll()
         manualDriveSentAt.removeAll()
+        controlStopRepeatTask?.cancel()
+        controlStopRepeatTask = nil
+        controlSentAt.removeAll()
+        controlServoTargets.removeAll()
+        controlThrottle = 0
+        controlSteering = 0
+        controlDriveActive = false
+    }
+
+    private func handleControlApplied(_ message: [String: Any]) {
+        let sequence = (message["seq"] as? NSNumber)?.intValue ?? -1
+        let trace = controlSentAt.removeValue(forKey: sequence)
+        let elapsed = trace.map { " in \(Int(Date().timeIntervalSince($0.at) * 1_000))ms" } ?? ""
+        let active = message["active"] as? Bool == true
+        let left = message["left_rpm"] as? Int ?? 0
+        let right = message["right_rpm"] as? Int ?? 0
+        var details: [String] = []
+        if let s3 = message["s3"] as? Int { details.append("S3=\(s3)°") }
+        if let s4 = message["s4"] as? Int { details.append("S4=\(s4)°") }
+        RockyLog.write(
+            "control: board applied seq=\(sequence)\(elapsed) reason=\(trace?.reason ?? "untracked") "
+                + (active ? "wheels=\(left)/\(right)RPM" : "wheels=stopped")
+                + (details.isEmpty ? "" : " " + details.joined(separator: " "))
+        )
     }
 
     private func handleServoAcknowledgement(_ message: [String: Any]) {
@@ -556,8 +634,7 @@ final class BehaviorMonitor: ObservableObject {
         RockyLog.write("behavior: light returned to automatic (\(id))")
     }
 
-    /// Sets an accessory servo without letting a 60fps drag flood the board's single-threaded
-    /// observer pump. Intermediate positions are coalesced; finger-up (`immediately`) always wins.
+    /// Coalesces 60fps touch input before publishing one complete newest-state UDP frame.
     func setServo(port: String, angle: Int, immediately: Bool = false) {
         let port = port.uppercased()
         guard port == "S3" || port == "S4" else {
@@ -590,38 +667,12 @@ final class BehaviorMonitor: ObservableObject {
     private func flushServo(_ port: String) {
         servoSendTasks.removeValue(forKey: port)
         guard let target = pendingServoTargets.removeValue(forKey: port) else { return }
-        let id = "servo-\(port)-\(UUID().uuidString)"
-        latestServoID[port] = id
-        servoSentAt[id] = Date()
-        servoSentTargets[id] = target
-        if servoSentAt.count > 40 {
-            let retained = Set(servoSentAt.sorted { $0.value > $1.value }.prefix(24).map(\.key))
-            servoSentAt = servoSentAt.filter { retained.contains($0.key) }
-            servoSentTargets = servoSentTargets.filter { retained.contains($0.key) }
-        }
-        send([
-            "type": "servo", "port": port, "angle": target.angle, "id": id,
-        ])
-        RockyLog.write(
-            "servo: sent \(port) \(target.angle)° (\(id))"
-        )
-        servoAckTimeoutTasks[port]?.cancel()
-        servoAckTimeoutTasks[port] = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, let self, self.latestServoID[port] == id else { return }
-            self.latestServoID.removeValue(forKey: port)
-            self.servoSentAt.removeValue(forKey: id)
-            self.servoSentTargets.removeValue(forKey: id)
-            self.servoAckTimeoutTasks.removeValue(forKey: port)
-            RockyLog.write(
-                "servo: \(port) \(target.angle)° timed out after 3000ms (\(id))"
-            )
-        }
+        controlServoTargets[port] = target.angle
+        sendControlState(report: true, reason: "\(port)=\(target.angle)°")
     }
 
-    /// Heartbeats deliberately omit an id: asking the single-threaded board to ACK every held-
-    /// finger refresh flooded the return stream and delayed servo commands by seconds. Touch-down
-    /// and release remain correlated; quiet refreshes only renew the device watchdog.
+    /// Quiet UDP heartbeats renew the board watchdog without adding work to the ordered TCP
+    /// stream. Touch transitions request a correlated applied-state report over TCP.
     func setManualDrive(
         throttle: Double, steering: Double, active: Bool, correlated: Bool = true
     ) {
@@ -631,30 +682,63 @@ final class BehaviorMonitor: ObservableObject {
             if active { RockyLog.write("manual drive: ignored while robot disconnected") }
             return
         }
-        var payload: [String: Any] = [
-            "type": "manual_drive", "throttle": boundedThrottle,
-            "steering": boundedSteering, "active": active,
-        ]
-        var id: String?
-        if correlated {
-            let actionID = "drive-\(UUID().uuidString)"
-            id = actionID
-            payload["id"] = actionID
-            manualDriveSentAt[actionID] = Date()
-        }
-        send(payload)
+        controlThrottle = boundedThrottle
+        controlSteering = boundedSteering
+        controlDriveActive = active
+        if active { controlStopRepeatTask?.cancel() }
+        sendControlState(
+            report: correlated,
+            reason: active ? "drive engaged" : "drive released"
+        )
         if active, Date().timeIntervalSince(lastManualDriveLogAt) >= 1 {
             RockyLog.write(
                 "manual drive: sent throttle=\(Int(boundedThrottle * 100))% "
                     + "steering=\(Int(boundedSteering * 100))%"
-                    + (id.map { " (\($0))" } ?? " (heartbeat)")
+                    + (correlated ? " (reported state)" : " (heartbeat)")
             )
             lastManualDriveLogAt = Date()
         } else if !active {
-            RockyLog.write(
-                "manual drive: released; requested stop and delayed handoff"
-                    + (id.map { " (\($0))" } ?? "")
-            )
+            RockyLog.write("manual drive: released; repeating newest-state stop")
+            scheduleRepeatedStopFrames()
+        }
+    }
+
+    private func sendControlState(report: Bool, reason: String) {
+        guard connected, let controlConnection else { return }
+        controlSequence += 1
+        let sequence = controlSequence
+        var payload: [String: Any] = [
+            "type": "control", "epoch": controlEpoch, "seq": sequence,
+            "active": controlDriveActive, "throttle": controlThrottle,
+            "steering": controlSteering,
+        ]
+        if let angle = controlServoTargets["S3"] { payload["s3"] = angle }
+        if let angle = controlServoTargets["S4"] { payload["s4"] = angle }
+        if report {
+            payload["report"] = true
+            controlSentAt[sequence] = (Date(), reason)
+            if controlSentAt.count > 40 {
+                let newest = controlSentAt.sorted { $0.key > $1.key }.prefix(24)
+                controlSentAt = Dictionary(
+                    uniqueKeysWithValues: newest.map { ($0.key, $0.value) }
+                )
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        controlConnection.send(content: data, completion: .idempotent)
+        if report {
+            RockyLog.write("control: sent seq=\(sequence) reason=\(reason)")
+        }
+    }
+
+    private func scheduleRepeatedStopFrames() {
+        controlStopRepeatTask?.cancel()
+        controlStopRepeatTask = Task { @MainActor [weak self] in
+            for _ in 0..<2 {
+                do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
+                guard let self, !self.controlDriveActive else { return }
+                self.sendControlState(report: false, reason: "repeated stop")
+            }
         }
     }
 

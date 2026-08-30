@@ -63,9 +63,9 @@ struct ContentView: View {
                 Spacer()
             }
 
-            if behavior.connected && !detailsOpen {
+            if behavior.controlsConnected && !detailsOpen {
                 ManualDriveControls(
-                    connected: behavior.connected,
+                    connected: behavior.controlsConnected,
                     sendServo: { port, angle, immediate in
                         behavior.setServo(port: port, angle: angle, immediately: immediate)
                     },

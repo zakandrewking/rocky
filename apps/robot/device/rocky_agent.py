@@ -240,6 +240,7 @@ DIZZY_COOLDOWN_MS = 20000  # bump detection off for this long once the limit is 
 DIZZY_STREAK_RESET_MS = 30000  # a bump this long after the last one starts a fresh streak
 
 EVENT_PORT = 8768  # separate from rocky_agent's 8765 (motion) and 8766 (OTA) so both can exist
+CONTROL_PORT = 8769  # UDP latest-state channel; never queues live controls behind TCP telemetry
 EVENT_BEACON_PORT = 41900  # same port rocky_agent beacons on, but a different service name, so
 EVENT_SERVICE = "rocky-behavior"  # the app's existing robot discovery ignores it rather than
 # connecting to a motion agent that is not running.
@@ -346,6 +347,12 @@ _state = {
     "evt_last_retry": 0,
     "evt_last_snapshot": 0,
     "evt_buffer": "",
+    # Live controls use lossy newest-state UDP by design. An epoch rejects packets from an older
+    # app launch; sequence numbers reject reordering within the current launch.
+    "control_socket": None,
+    "control_last_retry": 0,
+    "control_epoch": -1,
+    "control_seq": -1,
     # Phase B/C: Rocky's own physical choices. Every first gesture takes over immediately;
     # routines retain only their later correlated beats. "stop" is the one human imperative.
     "dizzy_streak": 0,
@@ -857,7 +864,129 @@ def _open_observer_sockets():
         _report_error_once("event_beacon_failed", error)
 
 
+def _open_control_socket():
+    """Open the disposable latest-state channel independently of the TCP observer."""
+    try:
+        control = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        control.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        control.bind(("0.0.0.0", CONTROL_PORT))
+        control.settimeout(0)
+        _state["control_socket"] = control
+    except Exception as error:
+        _state["control_socket"] = None
+        _report_error_once("control_socket_failed", error)
+
+
 OBSERVER_RETRY_MS = 3000
+
+
+def _apply_control_frame(message, now):
+    """Apply one complete newest-state frame; no earlier frame is ever queued for later."""
+    try:
+        epoch = int(message.get("epoch", -1))
+        sequence = int(message.get("seq", -1))
+    except Exception:
+        return
+    if epoch < _state["control_epoch"]:
+        return
+    if epoch == _state["control_epoch"] and sequence <= _state["control_seq"]:
+        return
+    _state["control_epoch"] = epoch
+    _state["control_seq"] = sequence
+
+    servo_results = {}
+    for port, key in (("S3", "s3"), ("S4", "s4")):
+        if key not in message:
+            continue
+        try:
+            angle = max(0, min(180, int(message[key])))
+            # A hobby servo already travels continuously toward its PWM target. The previous
+            # 8°-per-main-loop staircase added visible pauses whenever sensors delayed that loop.
+            if _state["servo_targets"][port] != angle:
+                mbot2.servo_set(angle, port)
+                _state["servo_targets"][port] = angle
+                _state["servo_positions"][port] = angle
+            servo_results[key] = angle
+        except Exception as error:
+            _report_error_once("control_servo_failed_" + port, error)
+
+    active = bool(message.get("active", False))
+    left_rpm = 0
+    right_rpm = 0
+    if active:
+        try:
+            throttle = max(-1.0, min(1.0, float(message.get("throttle", 0))))
+            steering = max(-1.0, min(1.0, float(message.get("steering", 0))))
+        except Exception:
+            throttle = 0.0
+            steering = 0.0
+        left = throttle + steering
+        right = -throttle + steering
+        peak = max(1.0, abs(left), abs(right))
+        left_rpm = int(round(MANUAL_DRIVE_MAX_RPM * left / peak))
+        right_rpm = int(round(MANUAL_DRIVE_MAX_RPM * right / peak))
+        if abs(left_rpm) < 5:
+            left_rpm = 0
+        if abs(right_rpm) < 5:
+            right_rpm = 0
+        _state["gesture_queue"] = []
+        _state["intentional_motion"] = False
+        _state["manual_drive_active"] = True
+        _state["manual_drive_until"] = utime.ticks_add(now, MANUAL_DRIVE_WATCHDOG_MS)
+        _state["manual_handoff_until"] = 0
+        _state["manual_left_rpm"] = left_rpm
+        _state["manual_right_rpm"] = right_rpm
+        mbot2.drive_speed(left_rpm, right_rpm)
+    elif _state["manual_drive_active"]:
+        mbot2.drive_speed(0, 0)
+        _state["manual_drive_active"] = False
+        _state["manual_left_rpm"] = 0
+        _state["manual_right_rpm"] = 0
+        _state["manual_handoff_until"] = utime.ticks_add(now, MANUAL_DRIVE_HANDOFF_MS)
+
+    if message.get("report"):
+        reply = {
+            "type": "control_applied",
+            "seq": sequence,
+            "active": active,
+            "left_rpm": left_rpm,
+            "right_rpm": right_rpm,
+        }
+        reply.update(servo_results)
+        _emit(reply)
+
+
+def _pump_controls(now):
+    """Drain UDP and apply only the newest valid datagram observed in this tick."""
+    control = _state["control_socket"]
+    if control is None:
+        if utime.ticks_diff(now, _state["control_last_retry"]) >= OBSERVER_RETRY_MS:
+            _state["control_last_retry"] = now
+            _open_control_socket()
+        return
+    newest = None
+    # Bound work even under hostile LAN traffic. Normal use sends only 5-10 small frames/sec.
+    for _unused in range(12):
+        try:
+            payload, _addr = control.recvfrom(512)
+        except Exception:
+            break
+        try:
+            candidate = ujson.loads(payload.decode("utf-8"))
+            if candidate.get("type") != "control":
+                continue
+            candidate_epoch = int(candidate.get("epoch", -1))
+            candidate_seq = int(candidate.get("seq", -1))
+            newest_epoch = int(newest.get("epoch", -1)) if newest is not None else -1
+            newest_seq = int(newest.get("seq", -1)) if newest is not None else -1
+            if candidate_epoch > newest_epoch or (
+                candidate_epoch == newest_epoch and candidate_seq > newest_seq
+            ):
+                newest = candidate
+        except Exception as error:
+            _report_error_once("control_frame_invalid", error)
+    if newest is not None:
+        _apply_control_frame(newest, now)
 
 
 def _pump_observers(now):
@@ -1136,6 +1265,7 @@ def _boot():
     _state["booted"] = True
     _connect_telemetry()
     _open_observer_sockets()
+    _open_control_socket()
     # One-time capability report -- "did it even import" was invisible before, and a bump never
     # firing could equally mean "no sensor" or "wrong threshold." No point guessing which.
     _send_telemetry(
@@ -1429,6 +1559,7 @@ def tick():
     now = utime.ticks_ms()
     try:
         _pump_observers(now)
+        _pump_controls(now)
         _decay_mood(now)
         _tick_light(now)
         _tick_servos()

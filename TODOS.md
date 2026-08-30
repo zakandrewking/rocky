@@ -41,6 +41,14 @@ crashing.**
   1024 bytes of compact control messages per tick instead of 256, while the phone retains the
   deliberately quiet 5Hz heartbeat. Finger-up therefore reaches the front of the board's work
   promptly without weakening the 650ms lost-stream watchdog.
+- [x] Replace queued live-control commands with a latest-state protocol after the larger TCP read
+  proved to be only a mitigation. iOS now publishes one epoch/sequence-stamped UDP state for drive,
+  steering, S3, and S4; the CyberPi drains a bounded batch and applies only the newest. Finger-up is
+  repeated three times, stale/reordered frames are rejected, and the device watchdog remains the
+  final stop boundary. TCP is retained for discovery, autonomous/voice intentions, and correlated
+  `control_applied` diagnostics. Servo targets now go directly to the hobby servo's continuous
+  controller instead of advancing in a main-loop-timed 8° staircase. Incremental touch tracking
+  also clamps the translation-reset discontinuity captured in the S4 trace.
 - [x] Write the plan: architecture, the three original open questions answered (OTA is not what
   the initial source claimed; obstacle avoidance is a device-side reflex, not a firmware toggle;
   route-planning lives on the laptop), spatial mapping via ultrasonic rotate-and-ping, and a

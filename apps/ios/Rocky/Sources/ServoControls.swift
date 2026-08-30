@@ -26,6 +26,7 @@ struct ServoCalibration: Equatable {
 /// Geometry for the edge controls. Unlike a horizontally laid-out `Slider` rotated 90 degrees,
 /// this makes hit testing and drawing use the same coordinate system.
 enum VerticalControlMath {
+    static let maximumInputStep: CGFloat = 12
     static func position(atY y: CGFloat, height: CGFloat) -> Double {
         guard height > 0 else { return 0 }
         return max(-1, min(1, 1 - (2 * Double(y / height))))
@@ -40,6 +41,13 @@ enum VerticalControlMath {
     ) -> Double {
         guard height > 0 else { return max(-1, min(1, start)) }
         return max(-1, min(1, start - (2 * Double(translationY / height))))
+    }
+
+    static func incrementalPosition(
+        current: Double, deltaY: CGFloat, height: CGFloat
+    ) -> (position: Double, acceptedDeltaY: CGFloat) {
+        let accepted = max(-maximumInputStep, min(maximumInputStep, deltaY))
+        return (relativePosition(startingAt: current, translationY: accepted, height: height), accepted)
     }
 }
 
@@ -68,7 +76,7 @@ struct VerticalDragControl: View {
     let response: (Double) -> Double
     let editingChanged: (Bool) -> Void
     @State private var dragging = false
-    @State private var dragStartValue = 0.0
+    @State private var lastDragLocationY = 0.0
     @State private var lastTraceAt = Date.distantPast
 
     var body: some View {
@@ -93,18 +101,26 @@ struct VerticalDragControl: View {
                     .onChanged { gesture in
                         if !dragging {
                             dragging = true
-                            dragStartValue = value
+                            lastDragLocationY = gesture.location.y
                             trace(
                                 phase: "began", translationY: gesture.translation.height,
                                 raw: value, always: true
                             )
                             editingChanged(true)
                         }
-                        value = VerticalControlMath.relativePosition(
-                            startingAt: dragStartValue,
-                            translationY: gesture.translation.height,
-                            height: trackHeight
+                        let physicalDelta = gesture.location.y - lastDragLocationY
+                        let update = VerticalControlMath.incrementalPosition(
+                            current: value, deltaY: physicalDelta, height: trackHeight
                         )
+                        value = update.position
+                        lastDragLocationY = gesture.location.y
+                        if abs(physicalDelta) > VerticalControlMath.maximumInputStep {
+                            RockyLog.write(
+                                "control[\(traceID)]: rejected touch discontinuity "
+                                    + "delta=\(Int(physicalDelta.rounded()))pt "
+                                    + "accepted=\(Int(update.acceptedDeltaY.rounded()))pt"
+                            )
+                        }
                         trace(
                             phase: "changed", translationY: gesture.translation.height,
                             raw: value

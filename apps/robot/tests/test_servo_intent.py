@@ -33,7 +33,7 @@ def load_apply_intent(mbot2, distance_cm=100):
         node
         for node in tree.body
         if isinstance(node, ast.FunctionDef)
-        and node.name in ("_apply_intent", "_tick_servos")
+        and node.name in ("_apply_intent", "_apply_control_frame", "_tick_servos")
     ]
     emitted = []
     errors = []
@@ -51,6 +51,8 @@ def load_apply_intent(mbot2, distance_cm=100):
         "return_to": "exploring",
         "servo_targets": {"S3": None, "S4": None},
         "servo_positions": {"S3": None, "S4": None},
+        "control_epoch": -1,
+        "control_seq": -1,
     }
     namespace = {
         "mbot2": mbot2,
@@ -70,6 +72,7 @@ def load_apply_intent(mbot2, distance_cm=100):
     exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), "exec"), namespace)
     apply_intent = namespace["_apply_intent"]
     apply_intent.tick_servos = namespace["_tick_servos"]
+    apply_intent.apply_control = namespace["_apply_control_frame"]
     return apply_intent, emitted, errors, state
 
 
@@ -139,6 +142,38 @@ class ServoIntentTests(unittest.TestCase):
 
 
 class ManualDriveIntentTests(unittest.TestCase):
+    def test_newest_udp_control_state_wins_and_release_stops(self):
+        mbot2 = FakeMbot2()
+        apply_intent, emitted, _errors, state = load_apply_intent(mbot2)
+
+        apply_intent.apply_control(
+            {"epoch": 10, "seq": 2, "active": True, "throttle": 0.5, "report": True},
+            100,
+        )
+        apply_intent.apply_control(
+            {"epoch": 10, "seq": 1, "active": False, "report": True}, 110
+        )
+        apply_intent.apply_control(
+            {"epoch": 10, "seq": 3, "active": False, "report": True}, 120
+        )
+
+        self.assertEqual(mbot2.drive_calls, [(75, -75), (0, 0)])
+        self.assertFalse(state["manual_drive_active"])
+        self.assertEqual([reply["seq"] for reply in emitted], [2, 3])
+
+    def test_udp_servo_targets_apply_directly_and_unchanged_target_is_not_rewritten(self):
+        mbot2 = FakeMbot2()
+        apply_intent, emitted, _errors, _state = load_apply_intent(mbot2)
+
+        apply_intent.apply_control({"epoch": 1, "seq": 1, "s3": 10}, 1)
+        apply_intent.apply_control({"epoch": 1, "seq": 2, "s3": 10}, 2)
+        apply_intent.apply_control(
+            {"epoch": 1, "seq": 3, "s3": 180, "report": True}, 3
+        )
+
+        self.assertEqual(mbot2.servo_calls, [(10, "S3"), (180, "S3")])
+        self.assertEqual(emitted[-1]["s3"], 180)
+
     def test_drive_mix_preempts_autonomy(self):
         mbot2 = FakeMbot2()
         apply_intent, emitted, _errors, state = load_apply_intent(mbot2)
