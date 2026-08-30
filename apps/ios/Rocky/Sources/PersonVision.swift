@@ -309,7 +309,8 @@ final class PersonVision {
             // and phrased it badly or never saw it at all -- and the two have opposite fixes.
             let elapsed = turnStartedAt.map { "\(Int(Date().timeIntervalSince($0) * 1000))ms" } ?? "?"
             RockyLog.write(
-                "vision[\(label)]: turn g\(turnGeneration) reply in \(elapsed): \(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))"
+                "vision[\(label)]: turn g\(turnGeneration) reply in \(elapsed): "
+                    + text.trimmingCharacters(in: .whitespacesAndNewlines)
             )
             turnStartedAt = nil
             let continuation = turnContinuation

@@ -41,7 +41,6 @@ struct ContentView: View {
     @StateObject private var personCamera = PersonCamera()
     @State private var log: [String] = []
     @State private var showBodyPanel = false
-    @State private var showCameraPanel = false
     @State private var detailsOpen = false
     /// Set the instant the stone is tapped, before any awaiting, purely so the UI can respond to
     /// the touch rather than to the network.
@@ -337,15 +336,6 @@ struct ContentView: View {
                 .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
                 .sheet(isPresented: $showBodyPanel) {
                     WorldDebugView(log: WorldLog.shared, world: voiceSession.world)
-                }
-
-            // The camera follows the conversation lifecycle. This sheet exposes its diagnostics
-            // and manual override; the main screen's corner preview is intentionally image-only.
-            Button("camera: what rocky sees…") { showCameraPanel = true }
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(RockyTheme.amberBright.opacity(0.76))
-                .sheet(isPresented: $showCameraPanel) {
-                    PersonCameraView(camera: personCamera)
                 }
 
             if !log.isEmpty {

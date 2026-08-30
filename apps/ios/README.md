@@ -49,8 +49,8 @@ apps/ios/
 │   │   ├── RockyError.swift      — the errors this app raises for itself
 │   │   ├── CyberPiPusher.swift   — Swift port of apps/robot/scripts/push.mjs (OTA to bootstrap.py)
 │   │   ├── PersonCamera.swift    — front-camera video stream, throttled to ~1fps, tied to voice state
+│   │   ├── CameraPreview.swift   — image-only rounded selfie preview bridge
 │   │   ├── PersonVision.swift    — sends a frame to Gemini Robotics-ER, parses person/bearing
-│   │   ├── PersonCameraView.swift — live preview + bearing marker (camera panel)
 │   │   └── World/                — Rocky's sense of her own body (docs/embodiment.md)
 │   │       ├── WorldStore.swift      — the authoritative state; the conversation is not the database
 │   │       ├── WorldProjector.swift  — what crosses into the Realtime conversation, and when
@@ -88,8 +88,8 @@ beacon-plus-bounded-LAN-sweep mechanism, and no manual IP is needed.
 
 The circular stone (`orb` in `ContentView.swift`) starts and pauses conversation. Rocky is always
 the one voice, using his Hume voice. A tappable status row below the orb expands into a detail
-area (mirroring desktop's debug chip) with connection status, warnings, the last tool call, the
-camera panel button, and the scrolling log.
+area (mirroring desktop's debug chip) with connection status, warnings, the last tool call, and
+the scrolling log.
 
 When the robot is connected, slim vertical controls at the left and right edges drive the official
 grabber build's dedicated S3 and S4 servo ports. Slider traffic is coalesced to at most one board
@@ -136,10 +136,11 @@ running: a `setup` message once, then one `clientContent` turn (an inline JPEG p
 frame, read back as streamed `serverContent` text. Passive sight uses one connection; an explicit
 `look_now` uses a separately warmed connection and the first camera frame captured after the tool
 call, so it cannot wait behind or accidentally reuse the passive frame already being judged.
-`PersonCameraView.swift` shows the live preview with a ring over the last detected bearing;
 `PersonVision.parseReading`'s tolerant-JSON parsing is covered by `PersonVisionTests.swift` with no
-camera or network needed. A timeout retires the entire connection epoch before another turn can
-begin, because Live replies have no request id with which to correlate a late response.
+camera or network needed. Gemini's complete raw response, parsed scene/person/bearing, and latency
+remain in `session.log` for debugging even though the old “what Rocky sees” sheet is gone. A
+timeout retires the entire connection epoch before another turn can begin, because Live replies
+have no request id with which to correlate a late response.
 
 While the selfie camera is running, the main conversation screen shows its live image in a small
 rounded picture-in-picture at the top-right. It has no detection labels or controls; those remain
