@@ -76,9 +76,14 @@ final class BehaviorMonitor: ObservableObject {
     /// one small TCP chunk per tick, so coalesce each port independently to at most 12.5 Hz and
     /// never allow more than one unacknowledged command per port. Finger-up replaces whatever
     /// intermediate position is waiting rather than joining a stale movement queue.
-    private var pendingServoAngles: [String: Int] = [:]
+    private struct ServoTarget: Equatable {
+        let commandAngle: Int
+        let physicalAngle: Int
+    }
+    private var pendingServoTargets: [String: ServoTarget] = [:]
     private var servoSendTasks: [String: Task<Void, Never>] = [:]
     private var servoSentAt: [String: Date] = [:]
+    private var servoSentTargets: [String: ServoTarget] = [:]
     private var servoInFlight: [String: String] = [:]
     private var servoAckTimeoutTasks: [String: Task<Void, Never>] = [:]
 
@@ -363,8 +368,9 @@ final class BehaviorMonitor: ObservableObject {
         servoAckTimeoutTasks.values.forEach { $0.cancel() }
         servoSendTasks.removeAll()
         servoAckTimeoutTasks.removeAll()
-        pendingServoAngles.removeAll()
+        pendingServoTargets.removeAll()
         servoSentAt.removeAll()
+        servoSentTargets.removeAll()
         servoInFlight.removeAll()
     }
 
@@ -372,17 +378,21 @@ final class BehaviorMonitor: ObservableObject {
         let port = message["port"] as? String ?? "?"
         let angle = message["angle"] as? Int ?? -1
         let id = message["id"] as? String ?? ""
+        let target = servoSentTargets.removeValue(forKey: id)
+        let angleDescription = target.map {
+            "\($0.physicalAngle)° physical (command \($0.commandAngle)°)"
+        } ?? "command \(angle)°"
         let elapsed = servoSentAt.removeValue(forKey: id).map {
             " in \(Int(Date().timeIntervalSince($0) * 1_000))ms"
         } ?? ""
         if message["ok"] as? Bool == false {
             let error = message["error"] as? String ?? "unknown board error"
-            RockyLog.write("servo: \(port) \(angle)° failed\(elapsed): \(error)")
+            RockyLog.write("servo: \(port) \(angleDescription) failed\(elapsed): \(error)")
             finishServoCommand(port: port, id: id)
             return
         }
         if servoAngles[port] != nil { servoAngles[port] = angle }
-        RockyLog.write("servo: board accepted \(port) \(angle)°\(elapsed)")
+        RockyLog.write("servo: board accepted \(port) \(angleDescription)\(elapsed)")
         finishServoCommand(port: port, id: id)
     }
 
@@ -392,7 +402,7 @@ final class BehaviorMonitor: ObservableObject {
         servoAckTimeoutTasks.removeValue(forKey: port)?.cancel()
         // A drag may have crossed dozens of visual positions while this command was in flight.
         // Send exactly the newest one now; stale intermediate angles never enter the wire queue.
-        if pendingServoAngles[port] != nil { flushServo(port) }
+        if pendingServoTargets[port] != nil { flushServo(port) }
     }
 
     /// Immediate, unlike everything else here: a person saying "stop" means now.
@@ -474,18 +484,28 @@ final class BehaviorMonitor: ObservableObject {
 
     /// Sets an accessory servo without letting a 60fps drag flood the board's single-threaded
     /// observer pump. Intermediate positions are coalesced; finger-up (`immediately`) always wins.
-    func setServo(port: String, angle: Int, immediately: Bool = false) {
+    func setServo(
+        port: String, angle: Int, physicalAngle: Int? = nil, immediately: Bool = false
+    ) {
         let port = port.uppercased()
         guard port == "S3" || port == "S4" else {
             RockyLog.write("servo: rejected unsupported port \(port)")
             return
         }
         let bounded = max(0, min(180, angle))
+        let maximumPhysicalAngle = port == "S3" ? 270 : 180
+        let target = ServoTarget(
+            commandAngle: bounded,
+            physicalAngle: max(0, min(maximumPhysicalAngle, physicalAngle ?? bounded))
+        )
         guard connected else {
-            RockyLog.write("servo: ignored \(port) \(bounded)° while robot disconnected")
+            RockyLog.write(
+                "servo: ignored \(port) \(target.physicalAngle)° physical "
+                    + "(command \(bounded)°) while robot disconnected"
+            )
             return
         }
-        pendingServoAngles[port] = bounded
+        pendingServoTargets[port] = target
 
         if immediately {
             servoSendTasks.removeValue(forKey: port)?.cancel()
@@ -503,21 +523,32 @@ final class BehaviorMonitor: ObservableObject {
     private func flushServo(_ port: String) {
         servoSendTasks.removeValue(forKey: port)
         guard servoInFlight[port] == nil else { return }
-        guard let angle = pendingServoAngles.removeValue(forKey: port) else { return }
+        guard let target = pendingServoTargets.removeValue(forKey: port) else { return }
         let id = "servo-\(port)-\(UUID().uuidString)"
         servoInFlight[port] = id
         servoSentAt[id] = Date()
-        send(["type": "servo", "port": port, "angle": angle, "id": id])
-        RockyLog.write("servo: sent \(port) \(angle)° (\(id))")
+        servoSentTargets[id] = target
+        send([
+            "type": "servo", "port": port, "angle": target.commandAngle,
+            "physical_angle": target.physicalAngle, "id": id,
+        ])
+        RockyLog.write(
+            "servo: sent \(port) \(target.physicalAngle)° physical "
+                + "(command \(target.commandAngle)°; \(id))"
+        )
         servoAckTimeoutTasks[port]?.cancel()
         servoAckTimeoutTasks[port] = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled, let self, self.servoInFlight[port] == id else { return }
             self.servoInFlight.removeValue(forKey: port)
             self.servoSentAt.removeValue(forKey: id)
+            self.servoSentTargets.removeValue(forKey: id)
             self.servoAckTimeoutTasks.removeValue(forKey: port)
-            RockyLog.write("servo: \(port) \(angle)° timed out after 3000ms (\(id))")
-            if self.pendingServoAngles[port] != nil { self.flushServo(port) }
+            RockyLog.write(
+                "servo: \(port) \(target.physicalAngle)° physical "
+                    + "(command \(target.commandAngle)°) timed out after 3000ms (\(id))"
+            )
+            if self.pendingServoTargets[port] != nil { self.flushServo(port) }
         }
     }
 

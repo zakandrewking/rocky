@@ -92,11 +92,13 @@ CyberPi payload-push button, the camera panel button, and the scrolling log.
 When the autonomous robot is connected, slim vertical controls at the left and right edges drive
 the mBot2 Shield's S3 and S4 accessory-servo ports. Slider traffic is coalesced to at most one
 board command per port every 80ms and permits only one unacknowledged command per port; the final
-finger-up position replaces any waiting intermediate value. The gear
-above either slider opens persistent minimum/center/maximum and direction calibration; every
-value is hard-bounded to the API-valid 0–180° range on both the phone and board; linkage-safe
-endpoints are what the per-port calibration is for. The
-session log records requested port/angle, command id, acknowledgement latency, and board errors.
+finger-up position replaces any waiting intermediate value. S3 presents the attached wide-travel
+servo's physical 0–270° range (135° center), mapped onto CyberOS's API-valid 0–180 command span;
+S4 remains a direct 0–180° control. The gear above either slider opens live sliders for persistent
+minimum/center/maximum and direction calibration. The limits cannot cross the center, and moving a
+calibration slider moves that endpoint immediately so linkage-safe travel can be found by feel.
+The session log records both physical and command angles, command id, acknowledgement latency, and
+board errors.
 These two explicit hardware-test controls are intentionally separate from Rocky's conversational
 movement tools and world model.
 

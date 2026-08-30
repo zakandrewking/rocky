@@ -14,7 +14,9 @@ crashing.**
 
 - [x] Add direct S3/S4 accessory-servo controls to iOS: one vertical slider on each edge, persistent
   min/center/max/reverse calibration per port, 80ms command coalescing with one in-flight command
-  per port, hard 0–180° bounds on both sides, and correlated command/ack/error latency logs. The
+  per port, hard 0–180° command bounds on both sides, and correlated command/ack/error latency
+  logs. S3 presents its wide-travel servo as physical 0–270° (mapped onto the CyberOS 0–180
+  command span), S4 stays 0–180°, and calibration uses live sliders with enforced ordering. The
   board call is command-time only, not
   boot-time, and non-S3/S4 ports are rejected. Hardware motion remains to be verified after the
   updated payload and app are deployed.

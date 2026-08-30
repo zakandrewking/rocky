@@ -3,6 +3,24 @@ import XCTest
 @testable import Rocky
 
 final class ServoCalibrationTests: XCTestCase {
+    func testS3PresentsTheFullPhysicalTravelWhileKeepingCyberOSCommandsBounded() {
+        let profile = ServoTravelProfile.forPort("S3")
+
+        XCTAssertEqual(profile.physicalMaximum, 270)
+        XCTAssertEqual(profile.physicalAngle(forCommandAngle: 0), 0)
+        XCTAssertEqual(profile.physicalAngle(forCommandAngle: 90), 135)
+        XCTAssertEqual(profile.physicalAngle(forCommandAngle: 180), 270)
+        XCTAssertEqual(profile.physicalAngle(forCommandAngle: 500), 270)
+    }
+
+    func testS4KeepsTheOrdinaryServoDegreeScale() {
+        let profile = ServoTravelProfile.forPort("s4")
+
+        XCTAssertEqual(profile.physicalMaximum, 180)
+        XCTAssertEqual(profile.physicalAngle(forCommandAngle: 90), 90)
+        XCTAssertEqual(profile.physicalAngle(forCommandAngle: 180), 180)
+    }
+
     func testMapsAnAsymmetricCalibrationAroundItsRealCenter() {
         let calibration = ServoCalibration(minimum: 20, center: 80, maximum: 150, reversed: false)
 

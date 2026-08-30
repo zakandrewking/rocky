@@ -63,12 +63,20 @@ struct ContentView: View {
             }
 
             HStack {
-                ServoSideControl(port: "S3", connected: behavior.connected) { angle, immediate in
-                    behavior.setServo(port: "S3", angle: angle, immediately: immediate)
+                ServoSideControl(port: "S3", connected: behavior.connected) {
+                    commandAngle, physicalAngle, immediate in
+                    behavior.setServo(
+                        port: "S3", angle: commandAngle,
+                        physicalAngle: physicalAngle, immediately: immediate
+                    )
                 }
                 Spacer(minLength: 0)
-                ServoSideControl(port: "S4", connected: behavior.connected) { angle, immediate in
-                    behavior.setServo(port: "S4", angle: angle, immediately: immediate)
+                ServoSideControl(port: "S4", connected: behavior.connected) {
+                    commandAngle, physicalAngle, immediate in
+                    behavior.setServo(
+                        port: "S4", angle: commandAngle,
+                        physicalAngle: physicalAngle, immediately: immediate
+                    )
                 }
             }
             .padding(.horizontal, 10)

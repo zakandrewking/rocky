@@ -57,8 +57,10 @@ call from a generic servo class, though still not published CyberOS firmware sou
 API only after an explicit phone command — never during boot. Each invocation gets a correlated
 success/failure acknowledgement. Phone-side calibration maps a logical centered slider onto a
 persistent, potentially asymmetric minimum/center/maximum range and can reverse a mirrored horn.
-No endpoint calibration is assumed safe for an attached mechanism; defaults are simply the
-servo API's full documented 0°/90°/180° range.
+S3's UI labels that command span as the attached wide-travel servo's physical 0°/135°/270° range;
+the phone still sends only 0–180 to CyberOS, and logs both values. S4 uses direct 0–180 labels.
+No endpoint calibration is assumed safe for an attached mechanism; live calibration sliders are
+provided to find linkage-safe limits.
 
 **Blocking calls and why they're a safety problem.** `straight`/`turn`/`forward`/etc. all appear
 to run to completion before the next line executes (`02-go_straight.py` calls `straight(100)`

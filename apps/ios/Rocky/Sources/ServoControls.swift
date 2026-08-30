@@ -1,5 +1,19 @@
 import SwiftUI
 
+/// CyberOS names the pulse span 0...180 even when a wide-travel servo turns farther than that.
+/// Keep command units at the wire boundary and show the person the accessory's physical degrees.
+struct ServoTravelProfile: Equatable {
+    let physicalMaximum: Int
+
+    static func forPort(_ port: String) -> ServoTravelProfile {
+        ServoTravelProfile(physicalMaximum: port.uppercased() == "S3" ? 270 : 180)
+    }
+
+    func physicalAngle(forCommandAngle angle: Int) -> Int {
+        Int((Double(max(0, min(180, angle))) * Double(physicalMaximum) / 180).rounded())
+    }
+}
+
 /// Maps a friendly centered control (-1...1) onto a servo's real, often asymmetric travel.
 /// Keeping this pure makes calibration behavior testable without a robot or SwiftUI lifecycle.
 struct ServoCalibration: Equatable {
@@ -35,7 +49,7 @@ struct ServoCalibration: Equatable {
 struct ServoSideControl: View {
     let port: String
     let connected: Bool
-    let send: (_ angle: Int, _ immediately: Bool) -> Void
+    let send: (_ commandAngle: Int, _ physicalAngle: Int, _ immediately: Bool) -> Void
 
     @AppStorage private var minimum: Int
     @AppStorage private var center: Int
@@ -47,7 +61,7 @@ struct ServoSideControl: View {
     init(
         port: String,
         connected: Bool,
-        send: @escaping (_ angle: Int, _ immediately: Bool) -> Void
+        send: @escaping (_ commandAngle: Int, _ physicalAngle: Int, _ immediately: Bool) -> Void
     ) {
         self.port = port
         self.connected = connected
@@ -62,7 +76,13 @@ struct ServoSideControl: View {
         ServoCalibration(minimum: minimum, center: center, maximum: maximum, reversed: reversed)
     }
 
-    private var angle: Int { calibration.angle(for: position) }
+    private var profile: ServoTravelProfile { .forPort(port) }
+    private var commandAngle: Int { calibration.angle(for: position) }
+    private var physicalAngle: Int { profile.physicalAngle(forCommandAngle: commandAngle) }
+
+    private func sendCurrent(_ commandAngle: Int, immediately: Bool) {
+        send(commandAngle, profile.physicalAngle(forCommandAngle: commandAngle), immediately)
+    }
 
     var body: some View {
         VStack(spacing: 7) {
@@ -85,7 +105,7 @@ struct ServoSideControl: View {
                 value: $position,
                 in: -1...1,
                 onEditingChanged: { editing in
-                    if !editing { send(angle, true) }
+                    if !editing { sendCurrent(commandAngle, immediately: true) }
                 }
             )
             .tint(RockyTheme.amberBright)
@@ -95,18 +115,18 @@ struct ServoSideControl: View {
             .disabled(!connected)
             .onChange(of: position) { _, _ in
                 guard connected else { return }
-                send(angle, false)
+                sendCurrent(commandAngle, immediately: false)
             }
             .accessibilityLabel("Servo port \(port)")
-            .accessibilityValue("\(angle) degrees")
+            .accessibilityValue("\(physicalAngle) degrees")
 
-            Text("\(angle)°")
+            Text("\(physicalAngle)°")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(RockyTheme.mint.opacity(connected ? 0.8 : 0.38))
 
             Button("center") {
                 position = 0
-                send(calibration.center, true)
+                sendCurrent(calibration.center, immediately: true)
             }
             .buttonStyle(.plain)
             .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -130,19 +150,32 @@ struct ServoSideControl: View {
                 minimum: $minimum,
                 center: $center,
                 maximum: $maximum,
-                reversed: $reversed
+                reversed: $reversed,
+                profile: profile,
+                test: { commandAngle, immediately in
+                    let physicalAngle = profile.physicalAngle(forCommandAngle: commandAngle)
+                    RockyLog.write(
+                        "servo: \(port) calibration testing \(physicalAngle)° physical "
+                            + "(command \(commandAngle)°)"
+                    )
+                    send(commandAngle, physicalAngle, immediately)
+                }
             )
-            .presentationDetents([.height(390)])
-        }
-        .onChange(of: calibration) { _, newCalibration in
-            guard connected else { return }
-            let target = newCalibration.angle(for: position)
-            RockyLog.write(
-                "servo: \(port) calibration min=\(newCalibration.minimum) "
-                    + "center=\(newCalibration.center) max=\(newCalibration.maximum) "
-                    + "reversed=\(newCalibration.reversed); testing \(target)°"
-            )
-            send(target, true)
+            .presentationDetents([.height(470)])
+            .onDisappear {
+                let target = commandAngle
+                let physicalTarget = profile.physicalAngle(forCommandAngle: target)
+                RockyLog.write(
+                    "servo: \(port) calibration saved physical="
+                        + "\(profile.physicalAngle(forCommandAngle: calibration.minimum))/"
+                        + "\(profile.physicalAngle(forCommandAngle: calibration.center))/"
+                        + "\(profile.physicalAngle(forCommandAngle: calibration.maximum))° "
+                        + "command=\(calibration.minimum)/\(calibration.center)/"
+                        + "\(calibration.maximum) reversed=\(calibration.reversed); "
+                        + "returning to \(physicalTarget)° physical (command \(target)°)"
+                )
+                send(target, physicalTarget, true)
+            }
         }
     }
 }
@@ -153,7 +186,13 @@ private struct ServoCalibrationView: View {
     @Binding var center: Int
     @Binding var maximum: Int
     @Binding var reversed: Bool
+    let profile: ServoTravelProfile
+    let test: (_ commandAngle: Int, _ immediately: Bool) -> Void
     @Environment(\.dismiss) private var dismiss
+
+    private var physicalMinimum: Int { profile.physicalAngle(forCommandAngle: minimum) }
+    private var physicalCenter: Int { profile.physicalAngle(forCommandAngle: center) }
+    private var physicalMaximum: Int { profile.physicalAngle(forCommandAngle: maximum) }
 
     private var minimumBinding: Binding<Int> {
         Binding(get: { minimum }, set: { minimum = max(0, min(center - 1, $0)) })
@@ -171,20 +210,45 @@ private struct ServoCalibrationView: View {
         NavigationStack {
             Form {
                 Section("Travel") {
-                    Stepper("Minimum  \(minimum)°", value: minimumBinding, in: 0...179)
-                    Stepper("Center  \(center)°", value: centerBinding, in: 1...179)
-                    Stepper("Maximum  \(maximum)°", value: maximumBinding, in: 1...180)
+                    ServoCalibrationSlider(
+                        title: "Minimum",
+                        physicalAngle: physicalMinimum,
+                        value: minimumBinding,
+                        range: 0...179,
+                        test: test
+                    )
+                    ServoCalibrationSlider(
+                        title: "Center",
+                        physicalAngle: physicalCenter,
+                        value: centerBinding,
+                        range: 1...179,
+                        test: test
+                    )
+                    ServoCalibrationSlider(
+                        title: "Maximum",
+                        physicalAngle: physicalMaximum,
+                        value: maximumBinding,
+                        range: 1...180,
+                        test: test
+                    )
                     Toggle("Reverse direction", isOn: $reversed)
                 }
                 Section {
-                    Button("Reset to 0° / 90° / 180°") {
+                    Button(
+                        "Reset to 0° / \(profile.physicalMaximum / 2)° / "
+                            + "\(profile.physicalMaximum)°"
+                    ) {
                         minimum = 0
                         center = 90
                         maximum = 180
                         reversed = false
+                        test(center, true)
                     }
                 } footer: {
-                    Text("Adjust slowly. Every change moves \(port) to the slider's current position so you can verify the real mechanism.")
+                    Text(
+                        "Move each slider slowly. \(port) follows that calibration point live; "
+                            + "the limits cannot cross the center."
+                    )
                 }
             }
             .navigationTitle("Calibrate \(port)")
@@ -206,5 +270,47 @@ private struct ServoCalibrationView: View {
                 maximum = safe.maximum
             }
         }
+    }
+}
+
+private struct ServoCalibrationSlider: View {
+    let title: String
+    let physicalAngle: Int
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    let test: (_ commandAngle: Int, _ immediately: Bool) -> Void
+
+    private var sliderValue: Binding<Double> {
+        Binding(
+            get: { Double(value) },
+            set: { newValue in
+                value = Int(newValue.rounded())
+                test(value, false)
+            }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text("\(physicalAngle)°")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            Slider(
+                value: sliderValue,
+                in: Double(range.lowerBound)...Double(range.upperBound),
+                step: 1,
+                onEditingChanged: { editing in
+                    if !editing { test(value, true) }
+                }
+            )
+            .tint(RockyTheme.amberBright)
+            .accessibilityLabel("\(title) travel")
+            .accessibilityValue("\(physicalAngle) degrees")
+        }
+        .padding(.vertical, 2)
     }
 }
