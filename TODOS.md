@@ -36,6 +36,9 @@ crashing.**
   expanded status/log popup. Voice/camera and robot controls therefore form four independent UI
   states: neither, voice+preview only, robot controls only, or both. App backgrounding explicitly
   releases the wheels and foregrounding replaces the possibly suspended robot TCP connection.
+- [x] Let the person collapse the connected robot controls without disconnecting the body: a
+  persistent top-left eye toggle hides/shows all four edge controls, hiding immediately releases
+  any held drive input, and the toggle itself remains available while the controls are hidden.
 - [x] Remove post-release wheel motion caused by observer backlog: live correlated traces showed
   stop commands taking 2.1–2.5s to be read after held-drive packets. The CyberPi now drains up to
   1024 bytes of compact control messages per tick instead of 256, while the phone retains the
@@ -49,13 +52,24 @@ crashing.**
   count, and first-audio latency. Hume remains intact as a one-line rollback plus redeploy. The
   personal-device build still bakes its limited provider key; revisit with a token-minting service
   before distributing the app.
-- [ ] Raise the ElevenLabs API key's custom quota before the next real Rocky1 conversation. Live
+- [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A
   32-character Flash line alone required 16; ordinary Rocky replies cannot fit. The installed
   release selects `eleven_v3_conversational`, so increasing the same key's quota takes effect
   without another app build. Keep the cap bounded, but large enough for several thousand reply
   characters rather than several words.
+- [x] Recover voice after iOS backgrounds the app. A live 2026-08-30 trace ruled out end detection:
+  after foregrounding, the retained WebRTC objects still claimed to be open but no server events
+  arrived—not even `response.created` for an explicit resume request, and no VAD start/stop for
+  speech. Real background transitions now mark that session stale; foreground replaces it when
+  voice was live, while a deliberately paused conversation waits for the person's resume tap.
+  Transient inactive states do not force a reconnect.
+- [x] Make the rich device log readable by default without throwing evidence away. `ios:log` now
+  leads with errors/recovery and the voice/audio/app lifecycle; `--controls`, `--vision`, `--raw`,
+  and `--world` expose the busy specialist views. Every `response.create` is logged at send time
+  and guarded by a five-second acknowledgement watchdog, turning a nominally-open but dead data
+  channel into an explicit reconnectable failure rather than ambiguous silence.
 - [x] Replace queued live-control commands with a latest-state protocol after the larger TCP read
   proved to be only a mitigation. iOS now publishes one epoch/sequence-stamped UDP state for drive,
   steering, S3, and S4; the CyberPi drains a bounded batch and applies only the newest. Finger-up is

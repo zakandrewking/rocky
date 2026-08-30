@@ -188,6 +188,12 @@ final class RealtimeVoiceSession: ObservableObject {
     private var speechSawLastChunk = false
     private var pauseTimeout: Task<Void, Never>?
     private var isPaused = false
+    /// iOS can leave WebRTC objects reporting `open` after suspending their process even though
+    /// neither media nor data events reach OpenAI anymore. The 2026-08-30 device log proved that
+    /// shape: three response.create attempts and spoken audio produced no server event at all.
+    /// Remember the real lifecycle edge and replace that zombie connection on foreground/resume.
+    private var connectionNeedsRefreshAfterBackground = false
+    private var openingInstructions: String?
 
     // MARK: - Response lifecycle
     //
@@ -207,6 +213,9 @@ final class RealtimeVoiceSession: ObservableObject {
     /// the second is rejected with "Conversation already has an active response". Two tool calls
     /// in one turn produced exactly that.
     private var awaitingResponse = false
+    /// A healthy Realtime data channel acknowledges response.create almost immediately. This
+    /// catches the iOS failure where WebRTC still reports `open` but the server sees nothing.
+    private var responseCreateWatchdog: Task<Void, Never>?
     private var parkedRequest: (instructions: String?, reason: String)?
     /// Fires if the `response.done` that should follow a cancel never turns up, so an interrupted
     /// turn can never leave Rocky permanently unable to ask for another response.
@@ -243,6 +252,7 @@ final class RealtimeVoiceSession: ObservableObject {
 
     /// How long to wait for a provider's first audio before assuming the request was lost.
     private static let firstAudioTimeout: Duration = .milliseconds(2500)
+    private static let responseCreateTimeout: Duration = .seconds(5)
 
     /// When the user tapped the orb, so the whole startup sequence can be timed end to end --
     /// "slow to respond" needs the clock to start at the tap, not at the first network call.
@@ -430,7 +440,28 @@ final class RealtimeVoiceSession: ObservableObject {
         // rests on: every response Rocky begins, begins grounded.
         projector.flush(reason)
         client.send(ResponseCreateEvent(instructions: instructions))
+        log("response request sent: \(reason)")
         WorldLog.shared.write(.response, "asked for a response: \(reason)", seq: world.seq)
+        armResponseCreateWatchdog(reason: reason)
+    }
+
+    private func armResponseCreateWatchdog(reason: String) {
+        responseCreateWatchdog?.cancel()
+        responseCreateWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: Self.responseCreateTimeout)
+            guard !Task.isCancelled else { return }
+            self?.handleUnacknowledgedResponseRequest(reason: reason)
+        }
+    }
+
+    private func handleUnacknowledgedResponseRequest(reason: String) {
+        guard awaitingResponse, activeResponseId == nil, state == .connected else { return }
+        let channel = client.isDataChannelOpen ? "reports open" : "is closed"
+        log(
+            "WATCHDOG: response request unacknowledged after 5s (\(reason)); data channel \(channel)"
+        )
+        disconnect()
+        state = .failed("voice session stopped responding; tap to reconnect")
     }
 
     private func releaseParkedRequest() {
@@ -580,6 +611,8 @@ final class RealtimeVoiceSession: ObservableObject {
         client.setRemoteAudioEnabled(false)
         activeResponseId = nil
         awaitingResponse = false
+        responseCreateWatchdog?.cancel()
+        responseCreateWatchdog = nil
         cancelWatchdog?.cancel()
         parkedRequest = nil
         reactAfterUtterance = nil
@@ -598,8 +631,12 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     /// Picks the same conversation back up, with a one-off nudge so Rocky knows she was away.
-    func resume() {
+    func resume() async {
         guard state == .paused else { return }
+        if connectionNeedsRefreshAfterBackground {
+            await replaceBackgroundedConnection(reason: "voice resume")
+            return
+        }
         pauseTimeout?.cancel()
         pauseTimeout = nil
         isPaused = false
@@ -616,6 +653,28 @@ final class RealtimeVoiceSession: ObservableObject {
             log("resumed, asking Rocky for a natural continuation")
             requestResponse(instructions: Self.resumePrompt, reason: "resumed")
         }
+    }
+
+    /// Called only for a real `.background` transition, not a transient inactive state such as a
+    /// notification shade. A connected session is refreshed on foreground; a deliberately paused
+    /// one waits until the person taps resume.
+    func noteAppBackgrounded() {
+        guard state == .connected || state == .paused else { return }
+        connectionNeedsRefreshAfterBackground = true
+        log("app backgrounded; voice connection marked for refresh")
+    }
+
+    func recoverAfterForegroundIfNeeded() async {
+        guard connectionNeedsRefreshAfterBackground, state == .connected else { return }
+        await replaceBackgroundedConnection(reason: "app foregrounded")
+    }
+
+    private func replaceBackgroundedConnection(reason: String) async {
+        let retainedBehavior = behavior
+        log("\(reason); replacing the suspended WebRTC session")
+        disconnect()
+        openingInstructions = Self.resumePrompt
+        await connect(behavior: retainedBehavior)
     }
 
     /// Keeps the conversation but changes whether Rocky is offered physical tools. This makes a
@@ -904,6 +963,8 @@ final class RealtimeVoiceSession: ObservableObject {
         userStoppedSpeakingAt = nil
         micOpen = true
         isPaused = false
+        connectionNeedsRefreshAfterBackground = false
+        openingInstructions = nil
         speaking = false
         hasSpokenOnce = false
         state = .disconnected
@@ -918,6 +979,8 @@ final class RealtimeVoiceSession: ObservableObject {
         resolveVisionWaiters(with: nil)
         activeResponseId = nil
         awaitingResponse = false
+        responseCreateWatchdog?.cancel()
+        responseCreateWatchdog = nil
         cancelWatchdog?.cancel()
         cancelWatchdog = nil
         parkedRequest = nil
@@ -1064,7 +1127,12 @@ final class RealtimeVoiceSession: ObservableObject {
     private func greetIfNeeded() {
         guard !greeted else { return }
         greeted = true
-        requestResponse(reason: "greeting")
+        let instructions = openingInstructions
+        openingInstructions = nil
+        requestResponse(
+            instructions: instructions,
+            reason: instructions == nil ? "greeting" : "resumed after background"
+        )
         if let startedAt {
             log("asked Rocky to greet, \(Self.ms(since: startedAt)) after the tap")
         }
@@ -1210,11 +1278,18 @@ final class RealtimeVoiceSession: ObservableObject {
 
         switch event.type {
         case "error":
-            log("realtime error: \(event.error?.message ?? "unknown")")
+            let message = event.error?.message ?? "unknown"
+            if isPaused && message == "Cancellation failed: no active response found" {
+                log("cancel found no active response (already quiet)")
+            } else {
+                log("realtime error: \(message)")
+            }
             // A rejected `response.create` never becomes a response, so nothing else would ever
             // clear this -- and Rocky would be silent for the rest of the session.
             if awaitingResponse {
                 awaitingResponse = false
+                responseCreateWatchdog?.cancel()
+                responseCreateWatchdog = nil
                 releaseParkedRequest()
             }
 
@@ -1235,6 +1310,8 @@ final class RealtimeVoiceSession: ObservableObject {
             projector.flush("user stopped speaking")
 
         case "response.created":
+            responseCreateWatchdog?.cancel()
+            responseCreateWatchdog = nil
             activeResponseId = event.response?.id
             utteranceResponseId = event.response?.id
             awaitingResponse = false

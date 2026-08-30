@@ -197,6 +197,10 @@ final class PersonCamera: NSObject, ObservableObject {
             lastSample = sample
             lastError = nil
         } catch {
+            guard isRunning else {
+                RockyLog.write("camera: detection ended after camera stopped")
+                return
+            }
             lastError = error.localizedDescription
             RockyLog.write("camera: detection failed: \(error.localizedDescription)")
         }
@@ -229,6 +233,10 @@ final class PersonCamera: NSObject, ObservableObject {
             lastSample = sample
             lastError = nil
         } catch {
+            guard isRunning else {
+                RockyLog.write("camera: explicit look g\(generation) ended after camera stopped")
+                return
+            }
             lastError = error.localizedDescription
             RockyLog.write("camera: explicit look g\(generation) failed: \(error.localizedDescription)")
         }

@@ -22,6 +22,14 @@ enum RobotSearchStatus {
     }
 }
 
+enum RobotControlsPresentation {
+    static func shouldShow(
+        connected: Bool, detailsOpen: Bool, userWantsControls: Bool
+    ) -> Bool {
+        connected && !detailsOpen && userWantsControls
+    }
+}
+
 /// One screen, built to look and behave like apps/desktop: Rocky's stone orb on a dark starfield
 /// (OrbView / RockyTheme, both ported from that app's styles.css) and a small monospaced state
 /// chip pinned to the bottom corner that expands into details -- desktop's `.debug-state`.
@@ -50,7 +58,9 @@ struct ContentView: View {
     /// teardown.
     @State private var lastStopAt: Date?
     @State private var appWasInactive = false
+    @State private var appWasBackgrounded = false
     @State private var robotControlReset = UUID()
+    @State private var showRobotControls = true
 
     var body: some View {
         ZStack {
@@ -63,7 +73,11 @@ struct ContentView: View {
                 Spacer()
             }
 
-            if behavior.controlsConnected && !detailsOpen {
+            if RobotControlsPresentation.shouldShow(
+                connected: behavior.controlsConnected,
+                detailsOpen: detailsOpen,
+                userWantsControls: showRobotControls
+            ) {
                 ManualDriveControls(
                     connected: behavior.controlsConnected,
                     sendServo: { port, angle, immediate in
@@ -78,6 +92,17 @@ struct ContentView: View {
                 )
                 .id(robotControlReset)
                 .padding(.horizontal, 8)
+            }
+
+            if behavior.controlsConnected {
+                VStack {
+                    HStack {
+                        robotControlsToggle
+                        Spacer(minLength: 0)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
             }
 
             VStack {
@@ -131,16 +156,57 @@ struct ContentView: View {
         case .active:
             guard appWasInactive else { return }
             appWasInactive = false
+            let needsVoiceRecovery = appWasBackgrounded
+            appWasBackgrounded = false
             RockyLog.write("app: returned to foreground; refreshing robot connection")
             behavior.reconnect(force: true)
-        case .inactive, .background:
+            if needsVoiceRecovery {
+                Task { await voiceSession.recoverAfterForegroundIfNeeded() }
+            }
+        case .inactive:
             guard !appWasInactive else { return }
             appWasInactive = true
             behavior.releaseManualDriveForBackground()
             robotControlReset = UUID()
+        case .background:
+            if !appWasInactive {
+                appWasInactive = true
+                behavior.releaseManualDriveForBackground()
+                robotControlReset = UUID()
+            }
+            guard !appWasBackgrounded else { return }
+            appWasBackgrounded = true
+            voiceSession.noteAppBackgrounded()
         @unknown default:
             break
         }
+    }
+
+    private var robotControlsToggle: some View {
+        Button {
+            showRobotControls.toggle()
+            if !showRobotControls { robotControlReset = UUID() }
+            RockyLog.write("control: panel \(showRobotControls ? "shown" : "hidden") by person")
+        } label: {
+            Image(systemName: showRobotControls ? "eye.slash" : "eye")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(
+                    showRobotControls
+                        ? RockyTheme.amberBright.opacity(0.9)
+                        : RockyTheme.mint.opacity(0.72)
+                )
+                .frame(width: 40, height: 40)
+                .background {
+                    Circle()
+                        .fill(RockyTheme.ink.opacity(0.72))
+                        .overlay {
+                            Circle().stroke(RockyTheme.mint.opacity(0.14), lineWidth: 1)
+                        }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showRobotControls ? "Hide robot controls" : "Show robot controls")
+        .accessibilityHint("Toggles the drive and servo sliders")
     }
 
     /// A quiet confirmation that Rocky's eyes are open. It is deliberately just the live image:
@@ -411,7 +477,7 @@ struct ContentView: View {
         }
         if voiceSession.state == .paused {
             behavior.reconnect()
-            voiceSession.resume()
+            await voiceSession.resume()
             appendLog("voice: resumed")
             return
         }

@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # Pulls Rocky's logs off the paired iPhone and prints them.
-# Usage: apps/ios/scripts/pull-log.sh [device-name-substring] [tail-lines] [--world]
+# Usage: apps/ios/scripts/pull-log.sh [device-name-substring] [tail-lines]
+#        [--voice|--controls|--vision|--raw|--world]
 #
 # Two files, and both come down every time:
 #
-#   session.log   the human story of the session. The answer to "it didn't work" / "it was slow":
-#                 every turn is timed, so it says which leg was slow (user stopped -> response
-#                 started -> first word -> first audio -> finished) rather than leaving it to
-#                 guesswork.
+#   session.log   the complete human story of the session. The default view filters its busy
+#                 control/vision telemetry down to voice, audio, lifecycle, and errors. Use the
+#                 targeted flags below when the reported behavior is physical or visual; `--raw`
+#                 always preserves the old unfiltered tail.
 #   world.jsonl   the structured record of what Rocky knew about her body and when -- state
 #                 transitions, events, action lifecycle, salience decisions, response ledgers,
 #                 all with correlation ids (see apps/ios/docs/embodiment.md). This is what
@@ -17,10 +18,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-WORLD_ONLY=false
+VIEW=voice
 ARGS=()
 for arg in "$@"; do
-  if [ "$arg" = "--world" ]; then WORLD_ONLY=true; else ARGS+=("$arg"); fi
+  case "$arg" in
+    --voice) VIEW=voice ;;
+    --controls) VIEW=controls ;;
+    --vision) VIEW=vision ;;
+    --raw) VIEW=raw ;;
+    --world) VIEW=world ;;
+    *) ARGS+=("$arg") ;;
+  esac
 done
 
 NAME_FILTER="${ARGS[0]:-iPhone}"
@@ -51,12 +59,47 @@ pull() {
 pull session.log "$DEST"
 pull world.jsonl "$WORLD_DEST"
 
-if [ "$WORLD_ONLY" = true ]; then
-  echo "==> last $TAIL_LINES lines of $WORLD_DEST"
-  tail -n "$TAIL_LINES" "$WORLD_DEST"
-else
-  echo "==> last $TAIL_LINES lines of $DEST"
-  tail -n "$TAIL_LINES" "$DEST"
-  echo
-  echo "==> world model also pulled to $WORLD_DEST (re-run with --world to read it)"
-fi
+SESSION_START_LINE=$(grep -nF '] voice: orb tapped, starting up' "$DEST" | tail -n1 | cut -d: -f1 || true)
+latest_session() {
+  if [ -n "$SESSION_START_LINE" ]; then
+    tail -n "+$SESSION_START_LINE" "$DEST"
+  else
+    tail -n 5000 "$DEST"
+  fi
+}
+
+case "$VIEW" in
+  world)
+    echo "==> last $TAIL_LINES lines of $WORLD_DEST"
+    tail -n "$TAIL_LINES" "$WORLD_DEST"
+    ;;
+  raw)
+    echo "==> last $TAIL_LINES raw lines of $DEST"
+    tail -n "$TAIL_LINES" "$DEST"
+    ;;
+  controls)
+    echo "==> last $TAIL_LINES robot/control lines of $DEST"
+    { grep -E '\] (control|manual drive|behavior|robot|app):' "$DEST" || true; } \
+      | tail -n "$TAIL_LINES"
+    ;;
+  vision)
+    echo "==> last $TAIL_LINES vision/camera lines of $DEST"
+    awk '
+      /^\[/ { selected = ($0 ~ /\] (vision|camera|voice: vision)/) }
+      selected { print }
+    ' "$DEST" | tail -n "$TAIL_LINES"
+    ;;
+  voice)
+    echo "==> recent errors and recovery events"
+    { latest_session | grep -Ei 'error|failed|timed? ?out|quota|unacknowledged|no valid|connection lost|marked for refresh|replacing the suspended' || true; } \
+      | tail -n 40
+    echo
+    echo "==> last $TAIL_LINES voice/audio/app lifecycle lines"
+    { latest_session | grep -E '\] (voice|audio|app):' | grep -v '\] voice: vision:' || true; } \
+      | tail -n "$TAIL_LINES"
+    ;;
+esac
+
+echo
+echo "==> complete session: $DEST · world: $WORLD_DEST"
+echo "    views: --voice (default), --controls, --vision, --raw, --world"

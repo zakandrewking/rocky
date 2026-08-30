@@ -51,3 +51,31 @@ final class RobotSearchStatusTests: XCTestCase {
         )
     }
 }
+
+final class RobotControlsPresentationTests: XCTestCase {
+    func testControlsRequireConnectionAndPersonPreference() {
+        XCTAssertTrue(
+            RobotControlsPresentation.shouldShow(
+                connected: true, detailsOpen: false, userWantsControls: true
+            )
+        )
+        XCTAssertFalse(
+            RobotControlsPresentation.shouldShow(
+                connected: true, detailsOpen: false, userWantsControls: false
+            )
+        )
+        XCTAssertFalse(
+            RobotControlsPresentation.shouldShow(
+                connected: false, detailsOpen: false, userWantsControls: true
+            )
+        )
+    }
+
+    func testExpandedDiagnosticsTemporarilyCoverControlsWithoutChangingPreference() {
+        XCTAssertFalse(
+            RobotControlsPresentation.shouldShow(
+                connected: true, detailsOpen: true, userWantsControls: true
+            )
+        )
+    }
+}

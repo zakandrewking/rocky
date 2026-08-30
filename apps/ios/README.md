@@ -232,6 +232,15 @@ The **responses** tab answers "what robot state did she have when she said that"
 go to `Documents/world.jsonl`, which `scripts/pull-log.sh` pulls alongside `session.log`
 (`--world` tails it).
 
+`pnpm ios:log` defaults to a diagnosis-oriented view: recent errors followed by voice, audio, and
+app-lifecycle lines. The complete `session.log` is still copied locally every time. Use
+`apps/ios/scripts/pull-log.sh --controls`, `--vision`, or `--raw` for the corresponding high-volume
+telemetry; `--vision` retains Gemini's multiline raw replies, and `--raw` is the unfiltered record.
+Every explicit Realtime response request is logged when sent and must receive `response.created`
+within five seconds. If a nominally-open WebRTC session does not acknowledge it, the watchdog
+closes the zombie session and surfaces a reconnectable voice error instead of leaving unexplained
+silence.
+
 ### The robot is optional
 
 Finding and connecting the robot is background plumbing, not something to watch: it starts at
