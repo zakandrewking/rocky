@@ -22,6 +22,68 @@ struct ServoCalibration: Equatable {
     }
 }
 
+/// Geometry for the edge controls. Unlike a horizontally laid-out `Slider` rotated 90 degrees,
+/// this makes hit testing and drawing use the same coordinate system.
+enum VerticalControlMath {
+    static func position(atY y: CGFloat, height: CGFloat) -> Double {
+        guard height > 0 else { return 0 }
+        return max(-1, min(1, 1 - (2 * Double(y / height))))
+    }
+
+    static func y(for position: Double, height: CGFloat) -> CGFloat {
+        CGFloat((1 - max(-1, min(1, position))) / 2) * height
+    }
+}
+
+struct VerticalDragControl: View {
+    @Binding var value: Double
+    let springReturns: Bool
+    let editingChanged: (Bool) -> Void
+    @State private var dragging = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            let trackHeight = max(1, geometry.size.height - 18)
+            let thumbY = 9 + VerticalControlMath.y(for: value, height: trackHeight)
+            ZStack(alignment: .top) {
+                Capsule()
+                    .fill(RockyTheme.mint.opacity(0.16))
+                    .frame(width: 5, height: trackHeight)
+                    .offset(y: 9)
+                Capsule()
+                    .fill(RockyTheme.amberBright)
+                    .frame(width: 26, height: 18)
+                    .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                    .offset(y: thumbY - 9)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { gesture in
+                        value = VerticalControlMath.position(
+                            atY: gesture.location.y - 9, height: trackHeight
+                        )
+                        if !dragging {
+                            dragging = true
+                            editingChanged(true)
+                        }
+                    }
+                    .onEnded { _ in
+                        if springReturns {
+                            withAnimation(.spring(response: 0.22, dampingFraction: 0.72)) {
+                                value = 0
+                            }
+                        }
+                        dragging = false
+                        editingChanged(false)
+                    }
+            )
+        }
+        .frame(width: 34, height: 174)
+    }
+}
+
 /// S3/S4 are the dedicated servo sockets used by Makeblock's grabber build. Calibration adjusts
 /// only the safe endpoints; horn alignment establishes the mechanical midpoint before software.
 struct ServoSideControl: View {
@@ -63,17 +125,9 @@ struct ServoSideControl: View {
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .foregroundStyle(RockyTheme.mintBright.opacity(0.9))
 
-            Slider(
-                value: $position,
-                in: -1...1,
-                onEditingChanged: { editing in
-                    if !editing { send(angle, true) }
-                }
-            )
-            .tint(RockyTheme.amberBright)
-            .frame(width: 174)
-            .rotationEffect(.degrees(-90))
-            .frame(width: 34, height: 174)
+            VerticalDragControl(value: $position, springReturns: false) { editing in
+                if !editing { send(angle, true) }
+            }
             .onChange(of: position) { _, _ in send(angle, false) }
             .accessibilityLabel("Servo on port \(port)")
             .accessibilityValue("\(angle) degrees")
@@ -112,6 +166,47 @@ struct ServoSideControl: View {
                 send(returnAngle, true)
             }
         }
+    }
+}
+
+struct DriveAxisSideControl: View {
+    let title: String
+    let high: String
+    let low: String
+    @Binding var value: Double
+    let editingChanged: (Bool) -> Void
+
+    var body: some View {
+        VStack(spacing: 7) {
+            Text(high)
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundStyle(RockyTheme.mint.opacity(0.58))
+            Text(title)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundStyle(RockyTheme.amberBright.opacity(0.86))
+            VerticalDragControl(
+                value: $value, springReturns: true, editingChanged: editingChanged
+            )
+            Text(low)
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundStyle(RockyTheme.mint.opacity(0.58))
+            Text("\(Int(value * 100))")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(RockyTheme.mint.opacity(0.8))
+        }
+        .padding(.vertical, 9)
+        .frame(width: 54)
+        .background {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(RockyTheme.ink.opacity(0.62))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(RockyTheme.mint.opacity(0.14), lineWidth: 1)
+                }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title == "DRIVE" ? "Drive forward and backward" : "Steer left and right")
+        .accessibilityValue("\(Int(value * 100)) percent")
     }
 }
 

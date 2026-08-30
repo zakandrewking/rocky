@@ -30,6 +30,7 @@ enum RobotSearchStatus {
 /// connect/retry control, so driving and accessory controls never depend on whether Rocky is
 /// currently talking.
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var voiceSession = RealtimeVoiceSession()
     /// The one robot integration: finds the board, watches what it does, and passes Rocky's
     /// intentions back. There is one payload (apps/robot/device/rocky_agent.py) and so one
@@ -48,6 +49,8 @@ struct ContentView: View {
     /// When the conversation was last stopped by hand, so the very next tap doesn't race its
     /// teardown.
     @State private var lastStopAt: Date?
+    @State private var appWasInactive = false
+    @State private var robotControlReset = UUID()
 
     var body: some View {
         ZStack {
@@ -60,30 +63,21 @@ struct ContentView: View {
                 Spacer()
             }
 
-            if behavior.connected {
-                HStack {
-                    ServoSideControl(port: "S3") { angle, immediate in
-                        behavior.setServo(port: "S3", angle: angle, immediately: immediate)
-                    }
-                    Spacer(minLength: 0)
-                    ServoSideControl(port: "S4") { angle, immediate in
-                        behavior.setServo(port: "S4", angle: angle, immediately: immediate)
-                    }
-                }
-                .padding(.horizontal, 10)
-            }
-
             if behavior.connected && !detailsOpen {
-                VStack {
-                    Spacer()
-                    ManualDriveControls(connected: behavior.connected) {
-                        throttle, steering, active in
+                ManualDriveControls(
+                    connected: behavior.connected,
+                    sendServo: { port, angle, immediate in
+                        behavior.setServo(port: port, angle: angle, immediately: immediate)
+                    },
+                    sendDrive: { throttle, steering, active, correlated in
                         behavior.setManualDrive(
-                            throttle: throttle, steering: steering, active: active
+                            throttle: throttle, steering: steering, active: active,
+                            correlated: correlated
                         )
                     }
-                }
-                .padding(.bottom, 18)
+                )
+                .id(robotControlReset)
+                .padding(.horizontal, 8)
             }
 
             VStack {
@@ -126,6 +120,26 @@ struct ContentView: View {
         }
         .onChange(of: personCamera.isRunning) { _, running in
             voiceSession.eyesAvailabilityChanged(running)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            handleScenePhase(phase)
+        }
+    }
+
+    private func handleScenePhase(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            guard appWasInactive else { return }
+            appWasInactive = false
+            RockyLog.write("app: returned to foreground; refreshing robot connection")
+            behavior.reconnect(force: true)
+        case .inactive, .background:
+            guard !appWasInactive else { return }
+            appWasInactive = true
+            behavior.releaseManualDriveForBackground()
+            robotControlReset = UUID()
+        @unknown default:
+            break
         }
     }
 
@@ -438,12 +452,15 @@ struct ContentView: View {
     }
 }
 
-/// Two spring-return controls with a device-side watchdog behind them. While either thumb is down,
-/// a 10 Hz heartbeat owns the wheels; releasing the final thumb sends an immediate stop and starts
-/// the board's short, stationary handoff back to its autonomous state machine.
+/// Servo and drive controls share the screen edges so both hands can operate naturally. Drive is
+/// refreshed quietly at 5 Hz; only touch transitions request ACKs, leaving the robot's narrow
+/// command stream responsive to servo changes.
 private struct ManualDriveControls: View {
     let connected: Bool
-    let send: (_ throttle: Double, _ steering: Double, _ active: Bool) -> Void
+    let sendServo: (_ port: String, _ angle: Int, _ immediately: Bool) -> Void
+    let sendDrive: (
+        _ throttle: Double, _ steering: Double, _ active: Bool, _ correlated: Bool
+    ) -> Void
 
     @State private var throttle = 0.0
     @State private var steering = 0.0
@@ -454,30 +471,21 @@ private struct ManualDriveControls: View {
     private var active: Bool { throttleHeld || steeringHeld }
 
     var body: some View {
-        VStack(spacing: 8) {
-            driveRow(
-                title: "DRIVE", low: "BACK", high: "FWD",
-                value: $throttle,
-                editingChanged: { setEditing($0, axis: .throttle) }
-            )
-            driveRow(
-                title: "STEER", low: "LEFT", high: "RIGHT",
-                value: $steering,
-                editingChanged: { setEditing($0, axis: .steering) }
-            )
+        HStack(spacing: 6) {
+            ServoSideControl(port: "S3") { angle, immediate in
+                sendServo("S3", angle, immediate)
+            }
+            DriveAxisSideControl(
+                title: "DRIVE", high: "FWD", low: "BACK", value: $throttle
+            ) { setEditing($0, axis: .throttle) }
+            Spacer(minLength: 0)
+            DriveAxisSideControl(
+                title: "STEER", high: "RIGHT", low: "LEFT", value: $steering
+            ) { setEditing($0, axis: .steering) }
+            ServoSideControl(port: "S4") { angle, immediate in
+                sendServo("S4", angle, immediate)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(width: 220)
-        .background {
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .fill(RockyTheme.ink.opacity(0.7))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 17, style: .continuous)
-                        .stroke(RockyTheme.mint.opacity(connected ? 0.14 : 0.07), lineWidth: 1)
-                }
-        }
-        .opacity(connected ? 1 : 0.55)
         .onChange(of: connected) { _, isConnected in
             if !isConnected { resetWithoutSending() }
         }
@@ -485,32 +493,6 @@ private struct ManualDriveControls: View {
     }
 
     private enum Axis { case throttle, steering }
-
-    private func driveRow(
-        title: String,
-        low: String,
-        high: String,
-        value: Binding<Double>,
-        editingChanged: @escaping (Bool) -> Void
-    ) -> some View {
-        VStack(spacing: 1) {
-            HStack {
-                Text(low)
-                Spacer()
-                Text(title).foregroundStyle(RockyTheme.amberBright.opacity(0.82))
-                Spacer()
-                Text(high)
-            }
-            .font(.system(size: 8, weight: .bold, design: .monospaced))
-            .foregroundStyle(RockyTheme.mint.opacity(0.58))
-
-            Slider(value: value, in: -1...1, onEditingChanged: editingChanged)
-                .tint(RockyTheme.amberBright)
-                .disabled(!connected)
-                .accessibilityLabel(title == "DRIVE" ? "Drive forward and backward" : "Steer left and right")
-                .accessibilityValue("\(Int(value.wrappedValue * 100)) percent")
-        }
-    }
 
     private func setEditing(_ editing: Bool, axis: Axis) {
         guard connected else { return }
@@ -524,12 +506,12 @@ private struct ManualDriveControls: View {
         }
 
         if active {
-            send(throttle, steering, true)
+            sendDrive(throttle, steering, true, true)
             startHeartbeatIfNeeded()
         } else {
             heartbeat?.cancel()
             heartbeat = nil
-            send(0, 0, false)
+            sendDrive(0, 0, false, true)
         }
     }
 
@@ -538,12 +520,12 @@ private struct ManualDriveControls: View {
         heartbeat = Task { @MainActor in
             while !Task.isCancelled {
                 do {
-                    try await Task.sleep(for: .milliseconds(100))
+                    try await Task.sleep(for: .milliseconds(200))
                 } catch {
                     return
                 }
                 guard connected, active else { return }
-                send(throttle, steering, true)
+                sendDrive(throttle, steering, true, false)
             }
         }
     }
@@ -551,7 +533,7 @@ private struct ManualDriveControls: View {
     private func releaseAll() {
         let shouldSend = connected && active
         resetWithoutSending()
-        if shouldSend { send(0, 0, false) }
+        if shouldSend { sendDrive(0, 0, false, true) }
     }
 
     private func resetWithoutSending() {

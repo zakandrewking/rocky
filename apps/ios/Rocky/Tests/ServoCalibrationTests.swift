@@ -37,4 +37,22 @@ final class ServoCalibrationTests: XCTestCase {
         XCTAssertEqual(calibration.maximum, 180)
         XCTAssertEqual(calibration.angle(for: 0), 180)
     }
+
+    func testVerticalControlUsesItsActualUnrotatedTouchCoordinates() {
+        XCTAssertEqual(VerticalControlMath.position(atY: 0, height: 200), 1)
+        XCTAssertEqual(VerticalControlMath.position(atY: 100, height: 200), 0)
+        XCTAssertEqual(VerticalControlMath.position(atY: 200, height: 200), -1)
+        XCTAssertEqual(VerticalControlMath.position(atY: -50, height: 200), 1)
+        XCTAssertEqual(VerticalControlMath.position(atY: 250, height: 200), -1)
+    }
+
+    func testVerticalThumbPositionIsTheInverseOfTouchMapping() {
+        for position in stride(from: -1.0, through: 1.0, by: 0.25) {
+            let y = VerticalControlMath.y(for: position, height: 174)
+            XCTAssertEqual(
+                VerticalControlMath.position(atY: y, height: 174), position,
+                accuracy: 0.0001
+            )
+        }
+    }
 }

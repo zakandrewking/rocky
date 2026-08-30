@@ -247,7 +247,7 @@ EVENT_BEACON_INTERVAL_MS = 1000
 SNAPSHOT_INTERVAL_MS = 500  # so a client that connects mid-flee still learns the current mode
 EVENT_HISTORY = 24  # ring buffer size; transitions are seconds apart, so this is minutes of it
 MANUAL_DRIVE_MAX_RPM = 150
-MANUAL_DRIVE_WATCHDOG_MS = 350  # missed phone heartbeats stop the wheels before autonomy resumes
+MANUAL_DRIVE_WATCHDOG_MS = 650  # comfortably spans two quiet 5 Hz phone heartbeats
 MANUAL_DRIVE_HANDOFF_MS = 700  # a short, visibly-still beat between a hand and autonomous motion
 # ==============================================================================================
 
@@ -525,19 +525,20 @@ def _apply_intent(message, now):
             _state["manual_left_rpm"] = 0
             _state["manual_right_rpm"] = 0
             _state["manual_handoff_until"] = utime.ticks_add(now, MANUAL_DRIVE_HANDOFF_MS)
-            _emit(
-                {
-                    "type": "ack",
-                    "t": now,
-                    "of": "manual_drive",
-                    "id": action_id,
-                    "ok": True,
-                    "active": False,
-                    "handoff_ms": MANUAL_DRIVE_HANDOFF_MS,
-                    "left_rpm": 0,
-                    "right_rpm": 0,
-                }
-            )
+            if action_id:
+                _emit(
+                    {
+                        "type": "ack",
+                        "t": now,
+                        "of": "manual_drive",
+                        "id": action_id,
+                        "ok": True,
+                        "active": False,
+                        "handoff_ms": MANUAL_DRIVE_HANDOFF_MS,
+                        "left_rpm": 0,
+                        "right_rpm": 0,
+                    }
+                )
             return
 
         try:
@@ -585,32 +586,34 @@ def _apply_intent(message, now):
         except Exception as error:
             _state["manual_drive_active"] = False
             mbot2.drive_speed(0, 0)
+            if action_id:
+                _emit(
+                    {
+                        "type": "ack",
+                        "t": now,
+                        "of": "manual_drive",
+                        "id": action_id,
+                        "ok": False,
+                        "error": str(error),
+                    }
+                )
+            _report_error_once("manual_drive_failed", error)
+            return
+        if action_id:
             _emit(
                 {
                     "type": "ack",
                     "t": now,
                     "of": "manual_drive",
                     "id": action_id,
-                    "ok": False,
-                    "error": str(error),
+                    "ok": True,
+                    "active": True,
+                    "left_rpm": left_rpm,
+                    "right_rpm": right_rpm,
+                    "blocked": blocked,
+                    "obstacle_cm": obstacle_cm,
                 }
             )
-            _report_error_once("manual_drive_failed", error)
-            return
-        _emit(
-            {
-                "type": "ack",
-                "t": now,
-                "of": "manual_drive",
-                "id": action_id,
-                "ok": True,
-                "active": True,
-                "left_rpm": left_rpm,
-                "right_rpm": right_rpm,
-                "blocked": blocked,
-                "obstacle_cm": obstacle_cm,
-            }
-        )
         return
 
     if kind == "mood":

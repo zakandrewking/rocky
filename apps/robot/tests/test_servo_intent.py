@@ -60,7 +60,7 @@ def load_apply_intent(mbot2, distance_cm=100):
         "HAS_ULTRASONIC": True,
         "OBSTACLE_STOP_CM": 15,
         "MANUAL_DRIVE_MAX_RPM": 150,
-        "MANUAL_DRIVE_WATCHDOG_MS": 350,
+        "MANUAL_DRIVE_WATCHDOG_MS": 650,
         "MANUAL_DRIVE_HANDOFF_MS": 700,
     }
     exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), "exec"), namespace)
@@ -118,7 +118,7 @@ class ManualDriveIntentTests(unittest.TestCase):
         self.assertEqual(state["gesture_queue"], [])
         self.assertFalse(state["intentional_motion"])
         self.assertTrue(state["manual_drive_active"])
-        self.assertEqual(state["manual_drive_until"], 1_450)
+        self.assertEqual(state["manual_drive_until"], 1_750)
         self.assertEqual([reply["id"] for reply in emitted], ["forward", "turn"])
 
     def test_release_stops_immediately_then_delays_handoff(self):
@@ -140,8 +140,16 @@ class ManualDriveIntentTests(unittest.TestCase):
         apply_intent({"type": "manual_drive", "throttle": -1, "active": True}, 20)
 
         self.assertEqual(mbot2.drive_calls, [(0, 0), (-150, 150)])
-        self.assertTrue(emitted[0]["blocked"])
-        self.assertFalse(emitted[1]["blocked"])
+        self.assertEqual(emitted, [])
+
+    def test_uncorrelated_heartbeat_renews_watchdog_without_ack(self):
+        mbot2 = FakeMbot2()
+        apply_intent, emitted, _errors, state = load_apply_intent(mbot2)
+
+        apply_intent({"type": "manual_drive", "throttle": 0.4, "active": True}, 100)
+
+        self.assertEqual(state["manual_drive_until"], 750)
+        self.assertEqual(emitted, [])
 
     def test_stop_clears_manual_ownership(self):
         mbot2 = FakeMbot2()

@@ -73,9 +73,9 @@ final class BehaviorMonitor: ObservableObject {
     /// without pretending the board has already applied either command.
     private var requestedMood: String?
     /// Slider drags can produce a value every display frame. The CyberPi control loop reads only
-    /// one small TCP chunk per tick, so coalesce each port independently to at most 12.5 Hz and
-    /// never allow more than one unacknowledged command per port. Finger-up replaces whatever
-    /// intermediate position is waiting rather than joining a stale movement queue.
+    /// one small TCP chunk per tick, so coalesce each port independently. Acknowledgements are
+    /// diagnostic evidence, never flow control: one delayed ACK must not hold the newest physical
+    /// target hostage or release a queue of stale positions later.
     private struct ServoTarget: Equatable {
         let angle: Int
     }
@@ -83,7 +83,8 @@ final class BehaviorMonitor: ObservableObject {
     private var servoSendTasks: [String: Task<Void, Never>] = [:]
     private var servoSentAt: [String: Date] = [:]
     private var servoSentTargets: [String: ServoTarget] = [:]
-    private var servoInFlight: [String: String] = [:]
+    private var servoLastAcceptedSentAt: [String: Date] = [:]
+    private var latestServoID: [String: String] = [:]
     private var servoAckTimeoutTasks: [String: Task<Void, Never>] = [:]
     private var manualDriveSentAt: [String: Date] = [:]
     private var lastManualDriveLogAt = Date.distantPast
@@ -113,7 +114,17 @@ final class BehaviorMonitor: ObservableObject {
 
     /// Starts a fresh discovery pass when the app appears or voice comes back from pause.
     /// A failed connection and completed task used to remain installed, suppressing later scans.
-    func reconnect() {
+    func reconnect(force: Bool = false) {
+        if force {
+            RockyLog.write("behavior: foregrounded; replacing the possibly stale robot connection")
+            scanTask?.cancel()
+            scanTask = nil
+            connection?.cancel()
+            connection = nil
+            connected = false
+            requestedMood = nil
+            cancelServoSends()
+        }
         guard !connected, scanTask == nil else { return }
         connection?.cancel()
         connection = nil
@@ -376,7 +387,8 @@ final class BehaviorMonitor: ObservableObject {
         pendingServoTargets.removeAll()
         servoSentAt.removeAll()
         servoSentTargets.removeAll()
-        servoInFlight.removeAll()
+        servoLastAcceptedSentAt.removeAll()
+        latestServoID.removeAll()
         manualDriveSentAt.removeAll()
     }
 
@@ -386,18 +398,28 @@ final class BehaviorMonitor: ObservableObject {
         let id = message["id"] as? String ?? ""
         let target = servoSentTargets.removeValue(forKey: id)
         let angleDescription = target.map { "\($0.angle)°" } ?? "\(angle)°"
-        let elapsed = servoSentAt.removeValue(forKey: id).map {
+        let sentAt = servoSentAt.removeValue(forKey: id)
+        let elapsed = sentAt.map {
             " in \(Int(Date().timeIntervalSince($0) * 1_000))ms"
         } ?? ""
+        if latestServoID[port] == id {
+            latestServoID.removeValue(forKey: port)
+            servoAckTimeoutTasks.removeValue(forKey: port)?.cancel()
+        }
         if message["ok"] as? Bool == false {
             let error = message["error"] as? String ?? "unknown board error"
             RockyLog.write("servo: \(port) \(angleDescription) failed\(elapsed): \(error)")
-            finishServoCommand(port: port, id: id)
             return
         }
-        if servoAngles[port] != nil { servoAngles[port] = angle }
-        RockyLog.write("servo: board accepted \(port) \(angleDescription)\(elapsed)")
-        finishServoCommand(port: port, id: id)
+        let superseded = sentAt.map { $0 < (servoLastAcceptedSentAt[port] ?? .distantPast) } ?? true
+        if !superseded, let sentAt {
+            servoLastAcceptedSentAt[port] = sentAt
+            if servoAngles[port] != nil { servoAngles[port] = angle }
+        }
+        RockyLog.write(
+            "servo: board accepted \(port) \(angleDescription)\(elapsed)"
+                + (superseded ? " (superseded ACK; state unchanged)" : "")
+        )
     }
 
     private func handleManualDriveAcknowledgement(_ message: [String: Any]) {
@@ -433,15 +455,6 @@ final class BehaviorMonitor: ObservableObject {
             )
             lastManualDriveLogAt = now
         }
-    }
-
-    private func finishServoCommand(port: String, id: String) {
-        guard servoInFlight[port] == id else { return }
-        servoInFlight.removeValue(forKey: port)
-        servoAckTimeoutTasks.removeValue(forKey: port)?.cancel()
-        // A drag may have crossed dozens of visual positions while this command was in flight.
-        // Send exactly the newest one now; stale intermediate angles never enter the wire queue.
-        if pendingServoTargets[port] != nil { flushServo(port) }
     }
 
     /// Immediate, unlike everything else here: a person saying "stop" means now.
@@ -546,7 +559,7 @@ final class BehaviorMonitor: ObservableObject {
         }
         guard servoSendTasks[port] == nil else { return }
         servoSendTasks[port] = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(80))
+            try? await Task.sleep(for: .milliseconds(100))
             guard !Task.isCancelled else { return }
             self?.flushServo(port)
         }
@@ -554,12 +567,16 @@ final class BehaviorMonitor: ObservableObject {
 
     private func flushServo(_ port: String) {
         servoSendTasks.removeValue(forKey: port)
-        guard servoInFlight[port] == nil else { return }
         guard let target = pendingServoTargets.removeValue(forKey: port) else { return }
         let id = "servo-\(port)-\(UUID().uuidString)"
-        servoInFlight[port] = id
+        latestServoID[port] = id
         servoSentAt[id] = Date()
         servoSentTargets[id] = target
+        if servoSentAt.count > 40 {
+            let retained = Set(servoSentAt.sorted { $0.value > $1.value }.prefix(24).map(\.key))
+            servoSentAt = servoSentAt.filter { retained.contains($0.key) }
+            servoSentTargets = servoSentTargets.filter { retained.contains($0.key) }
+        }
         send([
             "type": "servo", "port": port, "angle": target.angle, "id": id,
         ])
@@ -569,50 +586,62 @@ final class BehaviorMonitor: ObservableObject {
         servoAckTimeoutTasks[port]?.cancel()
         servoAckTimeoutTasks[port] = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled, let self, self.servoInFlight[port] == id else { return }
-            self.servoInFlight.removeValue(forKey: port)
+            guard !Task.isCancelled, let self, self.latestServoID[port] == id else { return }
+            self.latestServoID.removeValue(forKey: port)
             self.servoSentAt.removeValue(forKey: id)
             self.servoSentTargets.removeValue(forKey: id)
             self.servoAckTimeoutTasks.removeValue(forKey: port)
             RockyLog.write(
                 "servo: \(port) \(target.angle)° timed out after 3000ms (\(id))"
             )
-            if self.pendingServoTargets[port] != nil { self.flushServo(port) }
         }
     }
 
-    /// A 10 Hz heartbeat lets the board's 350ms watchdog distinguish a held control from a lost
-    /// phone. The board owns wheel mixing and the delayed return to autonomy.
-    func setManualDrive(throttle: Double, steering: Double, active: Bool) {
+    /// Heartbeats deliberately omit an id: asking the single-threaded board to ACK every held-
+    /// finger refresh flooded the return stream and delayed servo commands by seconds. Touch-down
+    /// and release remain correlated; quiet refreshes only renew the device watchdog.
+    func setManualDrive(
+        throttle: Double, steering: Double, active: Bool, correlated: Bool = true
+    ) {
         let boundedThrottle = max(-1, min(1, throttle))
         let boundedSteering = max(-1, min(1, steering))
         guard connected else {
             if active { RockyLog.write("manual drive: ignored while robot disconnected") }
             return
         }
-        let id = "drive-\(UUID().uuidString)"
-        manualDriveSentAt[id] = Date()
-        if manualDriveSentAt.count > 24 {
-            manualDriveSentAt = Dictionary(
-                uniqueKeysWithValues: manualDriveSentAt
-                    .sorted { $0.value > $1.value }
-                    .prefix(12)
-                    .map { ($0.key, $0.value) }
-            )
-        }
-        send([
+        var payload: [String: Any] = [
             "type": "manual_drive", "throttle": boundedThrottle,
-            "steering": boundedSteering, "active": active, "id": id,
-        ])
+            "steering": boundedSteering, "active": active,
+        ]
+        var id: String?
+        if correlated {
+            let actionID = "drive-\(UUID().uuidString)"
+            id = actionID
+            payload["id"] = actionID
+            manualDriveSentAt[actionID] = Date()
+        }
+        send(payload)
         if active, Date().timeIntervalSince(lastManualDriveLogAt) >= 1 {
             RockyLog.write(
                 "manual drive: sent throttle=\(Int(boundedThrottle * 100))% "
-                    + "steering=\(Int(boundedSteering * 100))% (\(id))"
+                    + "steering=\(Int(boundedSteering * 100))%"
+                    + (id.map { " (\($0))" } ?? " (heartbeat)")
             )
             lastManualDriveLogAt = Date()
         } else if !active {
-            RockyLog.write("manual drive: released; requested stop and delayed handoff (\(id))")
+            RockyLog.write(
+                "manual drive: released; requested stop and delayed handoff"
+                    + (id.map { " (\($0))" } ?? "")
+            )
         }
+    }
+
+    /// Called before iOS suspends the app. It is intentionally independent of SwiftUI view
+    /// disappearance, which is not guaranteed for an app switch.
+    func releaseManualDriveForBackground() {
+        guard connected else { return }
+        setManualDrive(throttle: 0, steering: 0, active: false)
+        RockyLog.write("manual drive: app left foreground; controls released")
     }
 
     /// Recent history, newest first, as the model should read it: what happened and how long ago.

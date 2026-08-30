@@ -12,21 +12,23 @@ audio hardware/AEC and camera; see `apps/robot/PLAN.md`'s "Relationship to apps/
 **North star: Rocky navigates a room, finds a person, follows them, and talks to them, without
 crashing.**
 
-- [x] Add direct S3/S4 accessory-servo controls to iOS: one vertical slider on each edge, persistent
-  min/max/reverse calibration per port, 80ms command coalescing with one in-flight command per
-  port, hard 0–180° bounds on both sides, and correlated command/ack/error latency logs. The
+- [x] Add direct S3/S4 accessory-servo controls to iOS: one true vertical drag track on each edge,
+  persistent min/max/reverse calibration per port, 100ms latest-target coalescing without ACK
+  gating, hard 0–180° bounds on both sides, and correlated command/ack/error latency logs. The
   calibration sheet has an explicit unloaded 90° horn-alignment action but no stored or normal
   Center control. This stays on the official grabber build's dedicated S3/S4 sockets; S1/S2 raw
   PWM was investigated and rejected as the wrong default wiring. The board call is command-time
   only, not boot-time, and non-S3/S4 ports are rejected.
 - [x] Add voice-independent manual robot control to iOS: spring-return throttle and steering
-  sliders appear only while the robot link is connected, take exclusive ownership over autonomous
-  motor writes, heartbeat at 10Hz, and stop immediately on release or after a 350ms lost-heartbeat
+  tracks sit beside the edge servo controls, appear only while the robot link is connected, take
+  exclusive ownership over autonomous motor writes, heartbeat quietly at 5Hz, and stop immediately
+  on release or after a 650ms lost-heartbeat
   watchdog. The board stays stopped for 700ms before returning to autonomy. Its front obstacle
   reflex still blocks unsafe forward motion while reverse remains available. Robot discovery runs
   at app launch independently of Realtime/API availability, with Connect/Retry kept in the
   expanded status/log popup. Voice/camera and robot controls therefore form four independent UI
-  states: neither, voice+preview only, robot controls only, or both.
+  states: neither, voice+preview only, robot controls only, or both. App backgrounding explicitly
+  releases the wheels and foregrounding replaces the possibly suspended robot TCP connection.
 - [x] Write the plan: architecture, the three original open questions answered (OTA is not what
   the initial source claimed; obstacle avoidance is a device-side reflex, not a firmware toggle;
   route-planning lives on the laptop), spatial mapping via ultrasonic rotate-and-ping, and a
