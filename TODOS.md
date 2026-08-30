@@ -70,6 +70,10 @@ crashing.**
   start under either condition. ER2 starts are now exclusively server-confirmed; local energy only
   detects silence after such a start. The first-audio watchdog also checks actual player chunks and
   queued PCM before retrying, so stale response bookkeeping cannot cancel audio demonstrably heard.
+  The following trace proved PCM callbacks were alive but ER2 automatic VAD never transcribed or
+  closed a user turn. The prototype now uses Gemini's documented explicit activity start/end mode,
+  gated across the whole assistant turn plus 400ms of speaker tail, and logs cumulative uploaded
+  frame/byte counts every five seconds so microphone attachment and real transport are distinct.
 - [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A

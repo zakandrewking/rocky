@@ -1256,6 +1256,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// One place where a turn ends, however it ended. The microphone stays open across ordinary
     /// turns and this refresh only matters if pause raced with response completion.
     private func finishResponse(reason: String) {
+        client.setAssistantTurnActive(false)
         firstAudioWatchdog?.cancel()
         firstAudioWatchdog = nil
         turnWatchdog?.cancel()
@@ -1349,6 +1350,7 @@ final class RealtimeVoiceSession: ObservableObject {
             projector.flush("user stopped speaking")
 
         case "response.created":
+            client.setAssistantTurnActive(true)
             responseCreateWatchdog?.cancel()
             responseCreateWatchdog = nil
             activeResponseId = event.response?.id

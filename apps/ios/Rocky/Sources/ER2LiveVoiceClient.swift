@@ -32,13 +32,19 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
     private var pendingToolResponses: [[String: Any]] = []
     private var continueAfterTools = false
     private var nativeAudioStarted = false
+    private var audioFramesSent = 0
+    private var audioBytesSent = 0
+    private var lastAudioUploadLogAt: Date?
 
-    // Local energy is diagnostic only. It proved unable to distinguish audio-graph startup and
-    // speaker leakage from a nearby person, so only Gemini-confirmed activity may start speech.
-    // Once Gemini confirms it, local silence still provides a prompt speech-stopped event.
+    // ER2 did not close automatic audio turns in the first device sessions. Explicit activity
+    // boundaries are therefore generated only while the assistant is completely idle. Thinking,
+    // playback, and a short speaker-tail cooldown are all hard gates against self-interruption.
+    private var speechFrames = 0
     private var silenceFrames = 0
     private var locallySpeaking = false
     private var localPlaybackActive = false
+    private var assistantTurnActive = false
+    private var energyCooldownUntil = Date.distantPast
     private var gatedPlaybackFrames = 0
     private var gatedPlaybackPeakRMS = 0.0
 
@@ -172,6 +178,23 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
         }
     }
 
+    func setAssistantTurnActive(_ active: Bool) {
+        let endedActivity = locked { () -> Bool in
+            guard assistantTurnActive != active else { return false }
+            assistantTurnActive = active
+            speechFrames = 0
+            silenceFrames = 0
+            if !active { energyCooldownUntil = Date().addingTimeInterval(0.4) }
+            guard active, locallySpeaking else { return false }
+            locallySpeaking = false
+            return true
+        }
+        if endedActivity {
+            send(["realtimeInput": ["activityEnd": [:]]])
+            emit(["type": "input_audio_buffer.speech_stopped"])
+        }
+    }
+
     func close() {
         let previous: URLSessionWebSocketTask? = locked {
             epoch += 1
@@ -184,10 +207,16 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             pendingToolResponses = []
             continueAfterTools = false
             locallySpeaking = false
+            speechFrames = 0
             silenceFrames = 0
             localPlaybackActive = false
+            assistantTurnActive = false
+            energyCooldownUntil = .distantPast
             gatedPlaybackFrames = 0
             gatedPlaybackPeakRMS = 0
+            audioFramesSent = 0
+            audioBytesSent = 0
+            lastAudioUploadLogAt = nil
             return previous
         }
         let stopAudio = locked { () -> Bool in
@@ -234,10 +263,7 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             "inputAudioTranscription": [:],
             "realtimeInputConfig": [
                 "automaticActivityDetection": [
-                    "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
-                    "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
-                    "prefixPaddingMs": 180,
-                    "silenceDurationMs": 520,
+                    "disabled": true,
                 ]
             ],
         ]
@@ -273,7 +299,20 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
 
     private func consumeMicrophonePCM(_ pcm: Data) {
         guard locked({ open && microphoneEnabled }), !pcm.isEmpty else { return }
-        updateLocalActivity(pcm)
+        let now = Date()
+        let upload = locked { () -> (Int, Int)? in
+            audioFramesSent += 1
+            audioBytesSent += pcm.count
+            if let last = lastAudioUploadLogAt, now.timeIntervalSince(last) < 5 { return nil }
+            lastAudioUploadLogAt = now
+            return (audioFramesSent, audioBytesSent)
+        }
+        if let upload {
+            RockyLog.write(
+                "audio: ER2 mic upload active: \(upload.0) frames, \(upload.1 / 1024) KiB sent"
+            )
+        }
+        updateLocalActivity(pcm, now: now)
         send([
             "realtimeInput": [
                 "audio": [
@@ -284,7 +323,7 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
         ])
     }
 
-    private func updateLocalActivity(_ pcm: Data) {
+    private func updateLocalActivity(_ pcm: Data, now: Date) {
         let rms: Double = pcm.withUnsafeBytes { raw in
             let count = raw.count / 2
             guard count > 0 else { return 0 }
@@ -297,32 +336,42 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             }
             return sqrt(sum / Double(count))
         }
-        if let event = localActivityEvent(rms: rms) { emit(["type": event]) }
+        guard let event = localActivityEvent(rms: rms, now: now) else { return }
+        if event == "input_audio_buffer.speech_started" {
+            RockyLog.write("voice: ER2 explicit activity started (RMS \(String(format: "%.4f", rms)))")
+            send(["realtimeInput": ["activityStart": [:]]])
+        } else {
+            RockyLog.write("voice: ER2 explicit activity ended after local silence")
+            send(["realtimeInput": ["activityEnd": [:]]])
+        }
+        emit(["type": event])
     }
 
-    /// Never infer speech-start from energy alone. Two device traces showed that both audio-graph
-    /// startup and Rocky's own speaker can cross any useful threshold. Gemini remains authoritative
-    /// for starts; local silence is only used to close an already server-confirmed activity span.
-    func localActivityEvent(rms: Double) -> String? {
+    func localActivityEvent(rms: Double, now: Date = Date()) -> String? {
         locked {
-            if localPlaybackActive {
+            if localPlaybackActive || assistantTurnActive || now < energyCooldownUntil {
                 gatedPlaybackFrames += 1
                 gatedPlaybackPeakRMS = max(gatedPlaybackPeakRMS, rms)
-                silenceFrames = 0
-                return nil
-            }
-            guard locallySpeaking else {
+                speechFrames = 0
                 silenceFrames = 0
                 return nil
             }
             if rms >= 0.014 {
+                speechFrames += 1
                 silenceFrames = 0
+                if !locallySpeaking, speechFrames >= 3 {
+                    locallySpeaking = true
+                    return "input_audio_buffer.speech_started"
+                }
             } else {
-                silenceFrames += 1
-                if silenceFrames >= 45 {
-                    locallySpeaking = false
-                    silenceFrames = 0
-                    return "input_audio_buffer.speech_stopped"
+                speechFrames = 0
+                if locallySpeaking {
+                    silenceFrames += 1
+                    if silenceFrames >= 45 {
+                        locallySpeaking = false
+                        silenceFrames = 0
+                        return "input_audio_buffer.speech_stopped"
+                    }
                 }
             }
             return nil
@@ -420,7 +469,6 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                 let text = transcription["text"] as? String, !text.isEmpty
             {
                 RockyLog.write("voice: ER2 heard: \(text)")
-                emitServerConfirmedSpeechStart("input transcription")
             }
             var delta = ""
             if let turn = content["modelTurn"] as? [String: Any],
