@@ -221,7 +221,13 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             throw RockyError.commandFailed("Rocky's session config is missing from the app bundle")
         }
 
-        let tools = (session["tools"] as? [[String: Any]] ?? []).compactMap(convertTool)
+        // ER2 ignored the prompt's narrow look_now contract during an ordinary "what do you
+        // think?" turn. That unnecessary tool cost 10.7 seconds before text reached TTS. Passive
+        // vision is still projected into this conversation; omit only the demand-driven lookup so
+        // a voice turn cannot disappear behind a camera/model round trip.
+        let tools = (session["tools"] as? [[String: Any]] ?? [])
+            .filter { ($0["name"] as? String) != "look_now" }
+            .compactMap(convertTool)
         var setup: [String: Any] = [
             "model": model,
             "generationConfig": ["responseModalities": ["TEXT"]],
@@ -236,6 +242,8 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                       analysis, or descriptions of how you sound.
                     - Listen and respond conversationally. Visual and body context are private
                       evidence, not topics to announce unless they matter to the conversation.
+                    - Answer ordinary conversation immediately. Use the passive visual context you
+                      already have when it is relevant; never delay a reply to seek a fresher look.
                     """
                 ]]
             ],

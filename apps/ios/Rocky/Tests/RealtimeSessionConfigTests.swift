@@ -115,8 +115,9 @@ final class RealtimeSessionConfigTests: XCTestCase {
 
         let groups = try XCTUnwrap(setup["tools"] as? [[String: Any]])
         let tools = try XCTUnwrap(groups.first?["functionDeclarations"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 9)
+        XCTAssertEqual(tools.count, 8)
         XCTAssertTrue(tools.allSatisfy { $0["behavior"] as? String == "BLOCKING" })
+        XCTAssertFalse(tools.contains { ($0["name"] as? String) == "look_now" })
         let firstSchema = try XCTUnwrap(tools.first?["parameters"] as? [String: Any])
         XCTAssertEqual(firstSchema["type"] as? String, "OBJECT")
         XCTAssertNil(firstSchema["additionalProperties"])
@@ -125,10 +126,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
     func testER2VoiceOnlySetupKeepsEyesButDropsBodyTools() throws {
         let message = try ER2LiveVoiceClient.setupMessage(hasBody: false)
         let setup = try XCTUnwrap(message["setup"] as? [String: Any])
-        let groups = try XCTUnwrap(setup["tools"] as? [[String: Any]])
-        let tools = try XCTUnwrap(groups.first?["functionDeclarations"] as? [[String: Any]])
-
-        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["look_now"])
+        XCTAssertNil(setup["tools"])
     }
 
     func testER2LocalActivityIsGatedOnlyForPlaybackDiagnostics() {

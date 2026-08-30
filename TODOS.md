@@ -80,7 +80,13 @@ crashing.**
   `realtimeInput.audio` field for microphone PCM. Rocky now uses that specialized envelope with
   automatic VAD and no explicit activity messages. Logs retain five-second uploaded frame/byte
   counts, local RMS as diagnostic-only data, and WebSocket close code/reason so attachment,
-  transport, acoustics, and rejection are distinct.
+  transport, acoustics, and rejection are distinct. The first successful audio trace then exposed
+  a different perceived failure: ER2 transcribed the user correctly but ignored an explicit prompt
+  prohibition and called `look_now` for “what do you think?”. The fresh-look round trip plus ER2's
+  continuation consumed 10.7 seconds; the user paused 1.2 seconds before its eventual text reached
+  TTS. The ER2 prototype now omits demand-driven `look_now` structurally while retaining passive
+  visual context, so ordinary voice turns cannot disappear behind that camera path. Body tools
+  remain available when the robot is connected.
 - [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A
