@@ -84,8 +84,9 @@ struct VerticalDragControl: View {
     }
 }
 
-/// S3/S4 are the dedicated servo sockets used by Makeblock's grabber build. Calibration adjusts
-/// only the safe endpoints; horn alignment establishes the mechanical midpoint before software.
+/// S3/S4 are the dedicated servo sockets used by Makeblock's grabber build. Previously saved safe
+/// endpoints and direction remain in effect, but calibration is intentionally absent from the
+/// everyday control surface.
 struct ServoSideControl: View {
     let port: String
     let send: (_ angle: Int, _ immediately: Bool) -> Void
@@ -94,7 +95,6 @@ struct ServoSideControl: View {
     @AppStorage private var maximum: Int
     @AppStorage private var reversed: Bool
     @State private var position = 0.0
-    @State private var showingCalibration = false
 
     init(port: String, send: @escaping (_ angle: Int, _ immediately: Bool) -> Void) {
         self.port = port
@@ -112,15 +112,6 @@ struct ServoSideControl: View {
 
     var body: some View {
         VStack(spacing: 7) {
-            Button { showingCalibration = true } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 12, weight: .semibold))
-                    .frame(width: 28, height: 24)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(RockyTheme.amberBright.opacity(0.86))
-            .accessibilityLabel("Calibrate servo on \(port)")
-
             Text(port)
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .foregroundStyle(RockyTheme.mintBright.opacity(0.9))
@@ -145,26 +136,6 @@ struct ServoSideControl: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(RockyTheme.mint.opacity(0.14), lineWidth: 1)
                 }
-        }
-        .sheet(isPresented: $showingCalibration) {
-            ServoCalibrationView(
-                port: port,
-                minimum: $minimum,
-                maximum: $maximum,
-                reversed: $reversed,
-                test: send
-            )
-            .presentationDetents([.height(390)])
-            .onDisappear {
-                let safe = calibration
-                let returnAngle = safe.angle(for: position)
-                RockyLog.write(
-                    "servo: \(port) calibration saved min=\(safe.minimum)° "
-                        + "max=\(safe.maximum)° reversed=\(safe.reversed); "
-                        + "returning to \(returnAngle)°"
-                )
-                send(returnAngle, true)
-            }
         }
     }
 }
@@ -207,114 +178,5 @@ struct DriveAxisSideControl: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title == "DRIVE" ? "Drive forward and backward" : "Steer left and right")
         .accessibilityValue("\(Int(value * 100)) percent")
-    }
-}
-
-private struct ServoCalibrationView: View {
-    let port: String
-    @Binding var minimum: Int
-    @Binding var maximum: Int
-    @Binding var reversed: Bool
-    let test: (_ angle: Int, _ immediately: Bool) -> Void
-    @Environment(\.dismiss) private var dismiss
-
-    private var minimumBinding: Binding<Int> {
-        Binding(get: { minimum }, set: { minimum = max(0, min(maximum - 1, $0)) })
-    }
-
-    private var maximumBinding: Binding<Int> {
-        Binding(get: { maximum }, set: { maximum = max(minimum + 1, min(180, $0)) })
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Safe travel") {
-                    Button("Set horn alignment position (90°)") {
-                        RockyLog.write("servo: \(port) requested 90° horn alignment position")
-                        test(90, true)
-                    }
-                    ServoCalibrationSlider(
-                        title: "Minimum", value: minimumBinding, range: 0...179, test: test
-                    )
-                    ServoCalibrationSlider(
-                        title: "Maximum", value: maximumBinding, range: 1...180, test: test
-                    )
-                    Toggle("Reverse direction", isOn: $reversed)
-                }
-                Section {
-                    Button("Begin safely around 90°") {
-                        minimum = 85
-                        maximum = 95
-                        reversed = false
-                        RockyLog.write(
-                            "servo: \(port) calibration narrowed to 85–95° for safe expansion"
-                        )
-                        test(90, true)
-                    }
-                } footer: {
-                    Text(
-                        "With the horn removed, use the alignment action first. Then reinstall the "
-                            + "horn, begin safely around 90°, and expand Min and Max slowly. Stop "
-                            + "before buzzing or binding."
-                    )
-                }
-            }
-            .navigationTitle("Calibrate \(port)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-            .onAppear {
-                let safe = ServoCalibration(
-                    minimum: minimum, maximum: maximum, reversed: reversed
-                )
-                minimum = safe.minimum
-                maximum = safe.maximum
-            }
-        }
-    }
-}
-
-private struct ServoCalibrationSlider: View {
-    let title: String
-    @Binding var value: Int
-    let range: ClosedRange<Int>
-    let test: (_ angle: Int, _ immediately: Bool) -> Void
-
-    private var sliderValue: Binding<Double> {
-        Binding(
-            get: { Double(value) },
-            set: { newValue in
-                value = Int(newValue.rounded())
-                test(value, false)
-            }
-        )
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(title)
-                Spacer()
-                Text("\(value)°")
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            Slider(
-                value: sliderValue,
-                in: Double(range.lowerBound)...Double(range.upperBound),
-                step: 1,
-                onEditingChanged: { editing in
-                    if !editing { test(value, true) }
-                }
-            )
-            .tint(RockyTheme.amberBright)
-            .accessibilityLabel("\(title) travel")
-            .accessibilityValue("\(value) degrees")
-        }
-        .padding(.vertical, 2)
     }
 }

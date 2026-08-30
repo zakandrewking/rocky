@@ -29,11 +29,12 @@ class FakeTime:
 def load_apply_intent(mbot2, distance_cm=100):
     source = pathlib.Path(__file__).parents[1] / "device" / "rocky_agent.py"
     tree = ast.parse(source.read_text())
-    function = next(
+    functions = [
         node
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_apply_intent"
-    )
+        if isinstance(node, ast.FunctionDef)
+        and node.name in ("_apply_intent", "_tick_servos")
+    ]
     emitted = []
     errors = []
     state = {
@@ -48,6 +49,8 @@ def load_apply_intent(mbot2, distance_cm=100):
         "rpm": 100,
         "drive_started": 1,
         "return_to": "exploring",
+        "servo_targets": {"S3": None, "S4": None},
+        "servo_positions": {"S3": None, "S4": None},
     }
     namespace = {
         "mbot2": mbot2,
@@ -62,9 +65,12 @@ def load_apply_intent(mbot2, distance_cm=100):
         "MANUAL_DRIVE_MAX_RPM": 150,
         "MANUAL_DRIVE_WATCHDOG_MS": 650,
         "MANUAL_DRIVE_HANDOFF_MS": 700,
+        "SERVO_SLEW_DEG_PER_TICK": 8,
     }
-    exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), "exec"), namespace)
-    return namespace["_apply_intent"], emitted, errors, state
+    exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), "exec"), namespace)
+    apply_intent = namespace["_apply_intent"]
+    apply_intent.tick_servos = namespace["_tick_servos"]
+    return apply_intent, emitted, errors, state
 
 
 class ServoIntentTests(unittest.TestCase):
@@ -99,6 +105,26 @@ class ServoIntentTests(unittest.TestCase):
         self.assertEqual(emitted[0]["id"], "failed")
         self.assertEqual(errors, [("servo_failed", "servo bus unavailable")])
 
+    def test_subsequent_targets_are_slewed_and_newest_target_wins(self):
+        mbot2 = FakeMbot2()
+        apply_intent, emitted, errors, _state = load_apply_intent(mbot2)
+
+        apply_intent({"type": "servo", "port": "S3", "angle": 10, "id": "first"}, 1)
+        apply_intent({"type": "servo", "port": "S3", "angle": 90, "id": "second"}, 2)
+
+        self.assertEqual(mbot2.servo_calls, [(10, "S3")])
+        self.assertEqual([reply["moving"] for reply in emitted], [False, True])
+
+        apply_intent.tick_servos()
+        apply_intent.tick_servos()
+        apply_intent.tick_servos()
+        self.assertEqual(mbot2.servo_calls[-3:], [(18, "S3"), (26, "S3"), (34, "S3")])
+
+        apply_intent({"type": "servo", "port": "S3", "angle": 0, "id": "newest"}, 3)
+        apply_intent.tick_servos()
+        self.assertEqual(mbot2.servo_calls[-1], (26, "S3"))
+        self.assertEqual(errors, [])
+
 
 class ManualDriveIntentTests(unittest.TestCase):
     def test_drive_mix_preempts_autonomy(self):
@@ -132,14 +158,14 @@ class ManualDriveIntentTests(unittest.TestCase):
         self.assertEqual(state["manual_handoff_until"], 2_700)
         self.assertEqual(emitted[0]["handoff_ms"], 700)
 
-    def test_forward_obstacle_stop_still_allows_reverse(self):
+    def test_manual_forward_overrules_autonomous_obstacle_reflex(self):
         mbot2 = FakeMbot2()
         apply_intent, emitted, _errors, _state = load_apply_intent(mbot2, distance_cm=8)
 
         apply_intent({"type": "manual_drive", "throttle": 1, "active": True}, 10)
         apply_intent({"type": "manual_drive", "throttle": -1, "active": True}, 20)
 
-        self.assertEqual(mbot2.drive_calls, [(0, 0), (-150, 150)])
+        self.assertEqual(mbot2.drive_calls, [(150, -150), (-150, 150)])
         self.assertEqual(emitted, [])
 
     def test_uncorrelated_heartbeat_renews_watchdog_without_ack(self):

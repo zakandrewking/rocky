@@ -15,16 +15,17 @@ crashing.**
 - [x] Add direct S3/S4 accessory-servo controls to iOS: one true vertical drag track on each edge,
   persistent min/max/reverse calibration per port, 100ms latest-target coalescing without ACK
   gating, hard 0–180° bounds on both sides, and correlated command/ack/error latency logs. The
-  calibration sheet has an explicit unloaded 90° horn-alignment action but no stored or normal
-  Center control. This stays on the official grabber build's dedicated S3/S4 sockets; S1/S2 raw
+  CyberPi slews locally toward only the newest target at about 160°/s, smoothing bursty input
+  without queuing stale angles. Saved calibration remains honored, but its button and sheet are
+  no longer exposed. This stays on the official grabber build's dedicated S3/S4 sockets; S1/S2 raw
   PWM was investigated and rejected as the wrong default wiring. The board call is command-time
   only, not boot-time, and non-S3/S4 ports are rejected.
 - [x] Add voice-independent manual robot control to iOS: spring-return throttle and steering
   tracks sit beside the edge servo controls, appear only while the robot link is connected, take
   exclusive ownership over autonomous motor writes, heartbeat quietly at 5Hz, and stop immediately
   on release or after a 650ms lost-heartbeat
-  watchdog. The board stays stopped for 700ms before returning to autonomy. Its front obstacle
-  reflex still blocks unsafe forward motion while reverse remains available. Robot discovery runs
+  watchdog. The board stays stopped for 700ms before returning to autonomy. Manual input fully
+  overrides the autonomous obstacle reflex while held. Robot discovery runs
   at app launch independently of Realtime/API availability, with Connect/Retry kept in the
   expanded status/log popup. Voice/camera and robot controls therefore form four independent UI
   states: neither, voice+preview only, robot controls only, or both. App backgrounding explicitly

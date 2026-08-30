@@ -95,21 +95,20 @@ When the robot is connected, slim vertical controls at the left and right edges 
 grabber build's dedicated S3 and S4 servo ports. These are native vertical drag tracks rather than
 rotated horizontal sliders, so touch coordinates cannot jump between unrelated angles. Traffic is
 coalesced to at most one board command per port every 100ms; acknowledgements are logged but never
-hold up the newest target. The final finger-up position is sent immediately. The gear above either opens
-live, persistent Min/Max and direction calibration. There is no Center control. A calibration-only
-90° action places an unloaded servo at the known reference needed before physically reinstalling
-its horn. **Begin safely around 90°** then narrows the live range to 85–95°, so each endpoint can
-be expanded outward gradually instead of jumping immediately to a previously saved extreme.
-Moving either endpoint moves the servo live so linkage-safe travel can be found by feel. The
-session log records command ids, angles, acknowledgement latency, and board errors.
+hold up the newest target. The final finger-up position is sent immediately. The board then slews
+from its current position toward only the newest target by 8° per 20Hz motion tick (about 160°/s),
+so uneven Wi-Fi delivery or a quick finger movement cannot become a mechanical snap or stale
+movement queue. Previously saved Min/Max and direction settings remain applied, but calibration is
+not exposed in the everyday UI. The session log records command ids, targets, acknowledgement
+latency, and board errors.
 
 Two spring-return vertical controls sit beside the servo controls: drive on the left and steering
 on the right. While either thumb is down, a quiet 5Hz heartbeat gives the person exclusive wheel
 control; only touch transitions ask the board for acknowledgements. Finger-up
 stops immediately; the board remains stopped for 700ms and then returns to whatever autonomous
 behavior would otherwise apply. A 650ms board-side watchdog stops a lost phone/Wi-Fi stream, and
-the existing close-obstacle reflex still blocks forward collisions while allowing reverse. All
-robot controls disappear when the robot is disconnected and remain available when voice is
+manual control overrides autonomous obstacle reactions while a thumb is held. All robot controls
+disappear when the robot is disconnected and remain available when voice is
 paused, failed, or out of API credit. Conversely, voice and its rounded camera preview work without
 the robot. Leaving the app releases manual driving, and returning forces a fresh robot connection
 instead of trusting a socket that iOS may have suspended. This gives four natural states: neither

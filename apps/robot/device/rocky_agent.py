@@ -249,6 +249,7 @@ EVENT_HISTORY = 24  # ring buffer size; transitions are seconds apart, so this i
 MANUAL_DRIVE_MAX_RPM = 150
 MANUAL_DRIVE_WATCHDOG_MS = 650  # comfortably spans two quiet 5 Hz phone heartbeats
 MANUAL_DRIVE_HANDOFF_MS = 700  # a short, visibly-still beat between a hand and autonomous motion
+SERVO_SLEW_DEG_PER_TICK = 8  # ~160°/s at the normal 20 Hz tick: responsive without snapping
 # ==============================================================================================
 
 LAPTOP_HOST = "192.168.1.138"  # this Mac's current LAN IP -- check `ipconfig getifaddr en0`
@@ -373,6 +374,11 @@ _state = {
     "manual_handoff_until": 0,
     "manual_left_rpm": 0,
     "manual_right_rpm": 0,
+    # Accessory servos keep following their newest target locally even if Wi-Fi packets arrive in
+    # uneven bursts. None means boot has not touched that servo; the first command establishes a
+    # known position, and only later changes are slew-limited.
+    "servo_targets": {"S3": None, "S4": None},
+    "servo_positions": {"S3": None, "S4": None},
 }
 
 
@@ -557,23 +563,9 @@ def _apply_intent(message, now):
             left_rpm = 0
         if abs(right_rpm) < 5:
             right_rpm = 0
-        # Manual means the person, not autonomy, owns the wheels. The one exception is the same
-        # front-facing hard stop used by autonomous driving: the phone cannot see a chair leg and
-        # a delayed Wi-Fi release must never turn into a collision. Reverse remains available.
-        blocked = False
-        obstacle_cm = None
-        if throttle > 0 and HAS_ULTRASONIC:
-            try:
-                obstacle_cm = _distance_cm()
-            except Exception as error:
-                # Fail closed for forward manual motion. A sensor glitch should stop the command,
-                # not escape the observer pump and leave the preceding wheel heartbeat in force.
-                blocked = True
-                _report_error_once("manual_drive_distance_failed", error)
-            if blocked or 0 <= obstacle_cm < OBSTACLE_STOP_CM:
-                left_rpm = 0
-                right_rpm = 0
-                blocked = True
+        # Manual means the person fully owns the wheels. Autonomous obstacle reactions remain in
+        # their normal state-machine paths, but cannot veto a held drive control. Finger-up and
+        # the lost-heartbeat watchdog are the manual safety boundaries.
         _state["gesture_queue"] = []
         _state["intentional_motion"] = False
         _state["manual_drive_active"] = True
@@ -610,8 +602,6 @@ def _apply_intent(message, now):
                     "active": True,
                     "left_rpm": left_rpm,
                     "right_rpm": right_rpm,
-                    "blocked": blocked,
-                    "obstacle_cm": obstacle_cm,
                 }
             )
         return
@@ -682,8 +672,11 @@ def _apply_intent(message, now):
         except Exception:
             angle = 90
         action_id = str(message.get("id", ""))
+        _state["servo_targets"][port] = angle
         try:
-            mbot2.servo_set(angle, port)
+            if _state["servo_positions"][port] is None:
+                mbot2.servo_set(angle, port)
+                _state["servo_positions"][port] = angle
         except Exception as error:
             # Unlike the generic once-only telemetry error, this reply correlates every failed
             # slider command with the exact port/angle the phone requested.
@@ -710,6 +703,7 @@ def _apply_intent(message, now):
                 "ok": True,
                 "port": port,
                 "angle": angle,
+                "moving": _state["servo_positions"][port] != angle,
             }
         )
         return
@@ -1022,6 +1016,27 @@ def _tick_light(now):
     until = _state["light_until"]
     if until is not None and utime.ticks_diff(now, until) >= 0:
         _clear_light_override()
+
+
+def _tick_servos():
+    """Slew each accessory toward only its newest target; never queue stale drag positions."""
+    for port in ("S3", "S4"):
+        target = _state["servo_targets"][port]
+        current = _state["servo_positions"][port]
+        if target is None or current is None or target == current:
+            continue
+        distance = target - current
+        if distance > SERVO_SLEW_DEG_PER_TICK:
+            next_angle = current + SERVO_SLEW_DEG_PER_TICK
+        elif distance < -SERVO_SLEW_DEG_PER_TICK:
+            next_angle = current - SERVO_SLEW_DEG_PER_TICK
+        else:
+            next_angle = target
+        try:
+            mbot2.servo_set(next_angle, port)
+            _state["servo_positions"][port] = next_angle
+        except Exception as error:
+            _report_error_once("servo_slew_failed_" + port, error)
 
 
 def _show_face(label, color):
@@ -1411,6 +1426,7 @@ def tick():
         _pump_observers(now)
         _decay_mood(now)
         _tick_light(now)
+        _tick_servos()
         if _state["manual_drive_active"]:
             if utime.ticks_diff(now, _state["manual_drive_until"]) >= 0:
                 mbot2.drive_speed(0, 0)
