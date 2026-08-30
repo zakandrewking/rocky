@@ -92,7 +92,14 @@ crashing.**
   sensitivity, 600ms silence) and uses Google's documented hybrid-VAD escape hatch: each input
   transcript schedules an 800ms-debounced `audioStreamEnd`, cancelled if generation begins or a
   newer transcript arrives. Automatic VAD still owns speech starts, and the audio stream can resume
-  immediately, but a recognized utterance can no longer wait forever for quieter room energy.
+  immediately, but a recognized utterance can no longer wait forever for quieter room energy. A
+  sustained real conversation exposed two independent finite-resource endings: ElevenLabs began
+  returning `quota_exceeded`, and ER2 sent a 50-second GoAway before force-closing code 1008 because
+  Rocky ignored it. Quota errors now end the local turn immediately without a pointless retry (the
+  key's quota must still be raised), while GoAway proactively rotates to a fresh ER2 session before
+  the deadline. Hybrid flush also emits the adapter's speech-stop event, anchoring shared latency
+  metrics to the current turn instead of an old pause; the earlier 89–148 second “think” numbers
+  were instrumentation errors, not measured ER2 generation time.
 - [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A

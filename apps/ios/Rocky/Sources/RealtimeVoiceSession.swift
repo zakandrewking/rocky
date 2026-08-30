@@ -1051,7 +1051,14 @@ final class RealtimeVoiceSession: ObservableObject {
             self.speechPlayer?.push(base64: base64, isLastChunk: isLastChunk)
         }
         speechSynthesizer.onError = { [weak self] message in
-            self?.log("\(provider) error: \(message)")
+            guard let self else { return }
+            self.log("\(provider) error: \(message)")
+            if Self.isNonRetryableSpeechError(message) {
+                self.firstAudioWatchdog?.cancel()
+                self.firstAudioWatchdog = nil
+                self.log("\(provider) quota exhausted; suppressing guaranteed-failure retry")
+                self.finishResponse(reason: "speech provider quota exhausted")
+            }
         }
         speechSynthesizer.onDebug = { [weak self] message in
             self?.log("\(provider): \(message)")
@@ -1283,6 +1290,11 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private static func ms(since date: Date) -> String {
         "\(Int(Date().timeIntervalSince(date) * 1000))ms"
+    }
+
+    nonisolated static func isNonRetryableSpeechError(_ message: String) -> Bool {
+        message.localizedCaseInsensitiveContains("quota_exceeded")
+            || message.localizedCaseInsensitiveContains("quota exceeded")
     }
 
     /// OpenAI's Realtime API rejects any conversation item id over 32 characters -- confirmed the

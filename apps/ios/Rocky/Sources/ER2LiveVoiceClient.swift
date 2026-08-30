@@ -24,6 +24,8 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
     private var socket: URLSessionWebSocketTask?
     private var epoch = 0
     private var open = false
+    private var reconnectCredential = ""
+    private var reconnectHasBody = false
     private var microphoneEnabled = true
     private var activeResponseID: String?
     private var responseText = ""
@@ -57,6 +59,8 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
         close()
         let currentEpoch = locked { () -> Int in
             epoch += 1
+            reconnectCredential = credential
+            reconnectHasBody = hasBody
             return epoch
         }
         var components = URLComponents(
@@ -532,7 +536,9 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             return
         }
         if let goAway = object["goAway"] as? [String: Any] {
-            RockyLog.write("voice: ER2 server requested reconnect: \(goAway["timeLeft"] ?? "soon")")
+            let timeLeft = goAway["timeLeft"] ?? "soon"
+            RockyLog.write("voice: ER2 server requested reconnect: \(timeLeft); rotating now")
+            rotateConnection(afterGoAwayOn: socketEpochSnapshot())
             return
         }
         if let error = object["error"] as? [String: Any] {
@@ -622,6 +628,10 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                 } ?? false
                 guard shouldFlush else { return }
                 RockyLog.write("voice: ER2 hybrid VAD flushing transcribed turn after 800ms")
+                // The generic session's latency clock normally starts from a server speech-stop
+                // event. ER2 does not send one reliably, so the documented hybrid flush is the
+                // authoritative equivalent for this transport.
+                self?.emit(["type": "input_audio_buffer.speech_stopped"])
                 self?.send(["realtimeInput": ["audioStreamEnd": true]])
             }
             return generation
@@ -634,6 +644,28 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             transcriptionFlushGeneration += 1
             transcriptionFlushTask?.cancel()
             transcriptionFlushTask = nil
+        }
+    }
+
+    private func socketEpochSnapshot() -> Int { locked { epoch } }
+
+    /// Live sessions are finite. ER2 gives a GoAway grace period, then closes with policy code
+    /// 1008 if the client keeps using the old socket. Rotate immediately while the warning still
+    /// leaves ample time; `greetIfNeeded` prevents the fresh data channel from repeating hello.
+    private func rotateConnection(afterGoAwayOn warnedEpoch: Int) {
+        let reconnect = locked { (reconnectCredential, reconnectHasBody) }
+        guard !reconnect.0.isEmpty else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard let self, self.locked({ self.epoch == warnedEpoch && self.open }) else { return }
+            RockyLog.write("voice: ER2 rotating finite Live session")
+            do {
+                try await self.connect(credential: reconnect.0, hasBody: reconnect.1)
+                RockyLog.write("voice: ER2 rotation complete")
+            } catch {
+                RockyLog.write("voice: ER2 rotation failed: \(error.localizedDescription)")
+                self.onConnectionStateChange?(false)
+            }
         }
     }
 

@@ -163,4 +163,10 @@ final class RealtimeSessionConfigTests: XCTestCase {
         XCTAssertEqual(audio["data"] as? String, "AID/fw==")
         XCTAssertEqual(audio["mimeType"] as? String, "audio/pcm;rate=16000")
     }
+
+    func testQuotaErrorsAreNotRetriedAsTransientSocketFailures() {
+        XCTAssertTrue(RealtimeVoiceSession.isNonRetryableSpeechError("server: quota_exceeded"))
+        XCTAssertTrue(RealtimeVoiceSession.isNonRetryableSpeechError("Quota exceeded for this key"))
+        XCTAssertFalse(RealtimeVoiceSession.isNonRetryableSpeechError("socket receive failed"))
+    }
 }
