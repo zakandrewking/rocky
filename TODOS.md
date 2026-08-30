@@ -13,8 +13,9 @@ audio hardware/AEC and camera; see `apps/robot/PLAN.md`'s "Relationship to apps/
 crashing.**
 
 - [x] Add direct S3/S4 accessory-servo controls to iOS: one vertical slider on each edge, persistent
-  min/center/max/reverse calibration per port, 80ms command coalescing, hard 0–180° bounds on both
-  sides, and correlated command/ack/error latency logs. The board call is command-time only, not
+  min/center/max/reverse calibration per port, 80ms command coalescing with one in-flight command
+  per port, hard 0–180° bounds on both sides, and correlated command/ack/error latency logs. The
+  board call is command-time only, not
   boot-time, and non-S3/S4 ports are rejected. Hardware motion remains to be verified after the
   updated payload and app are deployed.
 - [x] Write the plan: architecture, the three original open questions answered (OTA is not what

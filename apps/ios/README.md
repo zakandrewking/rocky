@@ -91,7 +91,8 @@ CyberPi payload-push button, the camera panel button, and the scrolling log.
 
 When the autonomous robot is connected, slim vertical controls at the left and right edges drive
 the mBot2 Shield's S3 and S4 accessory-servo ports. Slider traffic is coalesced to at most one
-board command per port every 80ms, with the final finger-up position sent immediately. The gear
+board command per port every 80ms and permits only one unacknowledged command per port; the final
+finger-up position replaces any waiting intermediate value. The gear
 above either slider opens persistent minimum/center/maximum and direction calibration; every
 value is hard-bounded to the API-valid 0–180° range on both the phone and board; linkage-safe
 endpoints are what the per-port calibration is for. The

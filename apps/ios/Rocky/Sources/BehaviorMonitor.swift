@@ -74,10 +74,13 @@ final class BehaviorMonitor: ObservableObject {
     private var requestedMood: String?
     /// Slider drags can produce a value every display frame. The CyberPi control loop reads only
     /// one small TCP chunk per tick, so coalesce each port independently to at most 12.5 Hz and
-    /// always flush the final finger-up value immediately.
+    /// never allow more than one unacknowledged command per port. Finger-up replaces whatever
+    /// intermediate position is waiting rather than joining a stale movement queue.
     private var pendingServoAngles: [String: Int] = [:]
     private var servoSendTasks: [String: Task<Void, Never>] = [:]
     private var servoSentAt: [String: Date] = [:]
+    private var servoInFlight: [String: String] = [:]
+    private var servoAckTimeoutTasks: [String: Task<Void, Never>] = [:]
 
     init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768) {
         self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
@@ -357,9 +360,12 @@ final class BehaviorMonitor: ObservableObject {
 
     private func cancelServoSends() {
         servoSendTasks.values.forEach { $0.cancel() }
+        servoAckTimeoutTasks.values.forEach { $0.cancel() }
         servoSendTasks.removeAll()
+        servoAckTimeoutTasks.removeAll()
         pendingServoAngles.removeAll()
         servoSentAt.removeAll()
+        servoInFlight.removeAll()
     }
 
     private func handleServoAcknowledgement(_ message: [String: Any]) {
@@ -372,10 +378,21 @@ final class BehaviorMonitor: ObservableObject {
         if message["ok"] as? Bool == false {
             let error = message["error"] as? String ?? "unknown board error"
             RockyLog.write("servo: \(port) \(angle)° failed\(elapsed): \(error)")
+            finishServoCommand(port: port, id: id)
             return
         }
         if servoAngles[port] != nil { servoAngles[port] = angle }
         RockyLog.write("servo: board accepted \(port) \(angle)°\(elapsed)")
+        finishServoCommand(port: port, id: id)
+    }
+
+    private func finishServoCommand(port: String, id: String) {
+        guard servoInFlight[port] == id else { return }
+        servoInFlight.removeValue(forKey: port)
+        servoAckTimeoutTasks.removeValue(forKey: port)?.cancel()
+        // A drag may have crossed dozens of visual positions while this command was in flight.
+        // Send exactly the newest one now; stale intermediate angles never enter the wire queue.
+        if pendingServoAngles[port] != nil { flushServo(port) }
     }
 
     /// Immediate, unlike everything else here: a person saying "stop" means now.
@@ -485,11 +502,23 @@ final class BehaviorMonitor: ObservableObject {
 
     private func flushServo(_ port: String) {
         servoSendTasks.removeValue(forKey: port)
+        guard servoInFlight[port] == nil else { return }
         guard let angle = pendingServoAngles.removeValue(forKey: port) else { return }
         let id = "servo-\(port)-\(UUID().uuidString)"
+        servoInFlight[port] = id
         servoSentAt[id] = Date()
         send(["type": "servo", "port": port, "angle": angle, "id": id])
         RockyLog.write("servo: sent \(port) \(angle)° (\(id))")
+        servoAckTimeoutTasks[port]?.cancel()
+        servoAckTimeoutTasks[port] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, let self, self.servoInFlight[port] == id else { return }
+            self.servoInFlight.removeValue(forKey: port)
+            self.servoSentAt.removeValue(forKey: id)
+            self.servoAckTimeoutTasks.removeValue(forKey: port)
+            RockyLog.write("servo: \(port) \(angle)° timed out after 3000ms (\(id))")
+            if self.pendingServoAngles[port] != nil { self.flushServo(port) }
+        }
     }
 
     /// Recent history, newest first, as the model should read it: what happened and how long ago.
