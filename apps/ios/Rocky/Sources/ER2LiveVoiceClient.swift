@@ -38,6 +38,9 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
     private var speechFrames = 0
     private var silenceFrames = 0
     private var locallySpeaking = false
+    private var localPlaybackActive = false
+    private var gatedPlaybackFrames = 0
+    private var gatedPlaybackPeakRMS = 0.0
 
     var isDataChannelOpen: Bool { locked { open } }
 
@@ -142,6 +145,35 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
 
     func setRemoteAudioEnabled(_: Bool) {}
 
+    func setLocalPlaybackActive(_ active: Bool) {
+        let summary = locked { () -> (Int, Double)? in
+            guard localPlaybackActive != active else { return nil }
+            localPlaybackActive = active
+            speechFrames = 0
+            silenceFrames = 0
+            if active {
+                gatedPlaybackFrames = 0
+                gatedPlaybackPeakRMS = 0
+                // A response cannot correctly begin while the user is still talking. Treat the
+                // transition as a clean boundary so old detector state cannot leak into playback.
+                locallySpeaking = false
+                return nil
+            }
+            let result = (gatedPlaybackFrames, gatedPlaybackPeakRMS)
+            gatedPlaybackFrames = 0
+            gatedPlaybackPeakRMS = 0
+            return result
+        }
+        if active {
+            RockyLog.write("audio: ER2 local energy VAD gated during Rocky playback")
+        } else if let summary {
+            RockyLog.write(
+                "audio: ER2 playback VAD gate released after \(summary.0) frames "
+                    + "(peak RMS \(String(format: "%.4f", summary.1)))"
+            )
+        }
+    }
+
     func close() {
         let previous: URLSessionWebSocketTask? = locked {
             epoch += 1
@@ -156,6 +188,9 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             locallySpeaking = false
             speechFrames = 0
             silenceFrames = 0
+            localPlaybackActive = false
+            gatedPlaybackFrames = 0
+            gatedPlaybackPeakRMS = 0
             return previous
         }
         let stopAudio = locked { () -> Bool in
@@ -265,14 +300,27 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
             }
             return sqrt(sum / Double(count))
         }
-        var event: String?
+        if let event = localActivityEvent(rms: rms) { emit(["type": event]) }
+    }
+
+    /// Local energy is useful while Rocky is quiet, but cannot reliably distinguish a nearby
+    /// friend from residual speaker energy while external TTS is playing. During playback Gemini's
+    /// own interruption/transcription signal is authoritative; the microphone still streams.
+    func localActivityEvent(rms: Double) -> String? {
         locked {
+            if localPlaybackActive {
+                gatedPlaybackFrames += 1
+                gatedPlaybackPeakRMS = max(gatedPlaybackPeakRMS, rms)
+                speechFrames = 0
+                silenceFrames = 0
+                return nil
+            }
             if rms >= 0.014 {
                 speechFrames += 1
                 silenceFrames = 0
                 if !locallySpeaking, speechFrames >= 3 {
                     locallySpeaking = true
-                    event = "input_audio_buffer.speech_started"
+                    return "input_audio_buffer.speech_started"
                 }
             } else {
                 speechFrames = 0
@@ -281,12 +329,25 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                     if silenceFrames >= 45 {
                         locallySpeaking = false
                         silenceFrames = 0
-                        event = "input_audio_buffer.speech_stopped"
+                        return "input_audio_buffer.speech_stopped"
                     }
                 }
             }
+            return nil
         }
-        if let event { emit(["type": event]) }
+    }
+
+    private func emitServerConfirmedSpeechStart(_ source: String) {
+        let shouldEmit = locked { () -> Bool in
+            guard !locallySpeaking else { return false }
+            locallySpeaking = true
+            speechFrames = 0
+            silenceFrames = 0
+            return true
+        }
+        guard shouldEmit else { return }
+        RockyLog.write("voice: ER2 server confirmed barge-in via \(source)")
+        emit(["type": "input_audio_buffer.speech_started"])
     }
 
     // MARK: Gemini wire protocol
@@ -365,6 +426,9 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                 let text = transcription["text"] as? String, !text.isEmpty
             {
                 RockyLog.write("voice: ER2 heard: \(text)")
+                if locked({ localPlaybackActive }) {
+                    emitServerConfirmedSpeechStart("input transcription")
+                }
             }
             var delta = ""
             if let turn = content["modelTurn"] as? [String: Any],
@@ -380,6 +444,7 @@ final class ER2LiveVoiceClient: @unchecked Sendable {
                 emit(["type": "response.output_text.delta", "response_id": responseID, "delta": delta])
             }
             if content["interrupted"] as? Bool == true {
+                emitServerConfirmedSpeechStart("Gemini interruption")
                 completeResponse(status: "cancelled", reason: "turn_detected")
             } else if content["turnComplete"] as? Bool == true {
                 completeResponse(status: "completed")

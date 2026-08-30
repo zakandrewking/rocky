@@ -22,7 +22,13 @@ protocol RealtimeVoiceClient: AnyObject, Sendable {
     @discardableResult func send(jsonObject: [String: Any]) -> Bool
     func setMicrophoneEnabled(_ enabled: Bool)
     func setRemoteAudioEnabled(_ enabled: Bool)
+    /// Lets transports distinguish nearby speech from Rocky's own locally-rendered voice.
+    func setLocalPlaybackActive(_ active: Bool)
     func close()
+}
+
+extension RealtimeVoiceClient {
+    func setLocalPlaybackActive(_: Bool) {}
 }
 
 enum VoiceEngine: String {

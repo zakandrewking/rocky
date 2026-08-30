@@ -1107,6 +1107,7 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     private func handleSpeakingChange(_ speaking: Bool) {
+        client.setLocalPlaybackActive(speaking)
         if speaking {
             noteRockyStartedSpeaking()
             return

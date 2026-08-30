@@ -61,7 +61,11 @@ crashing.**
   audio engine. ER2 tools are generated from the baked source-of-truth schemas as blocking Gemini
   function declarations. Its current prototype compromises are explicit: body-tool changes apply
   on reconnect, and genuinely ambiguous salience becomes quiet context because ER2 has no sideband
-  response lane; deterministic safety interruptions still run locally.
+  response lane; deterministic safety interruptions still run locally. A device trace also caught
+  the prototype's local energy detector hearing the first ElevenLabs syllable as a barge-in. Local
+  energy VAD is now gated only while Rocky's audio is playing (the PCM microphone keeps streaming),
+  with Gemini interruption/transcription as the authoritative barge-in signal and gated frame/peak
+  RMS summaries in the log so any remaining AEC behavior is measurable.
 - [x] Raise the ElevenLabs API key's custom quota before the next real Rocky conversation. Live
   2026-08-30 probes corrected the initial diagnosis: the free workspace has credits and both
   Flash HTTP and v3 TTD are reachable, but this particular key was capped at only 10 credits. A
