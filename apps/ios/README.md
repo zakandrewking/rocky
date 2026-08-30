@@ -89,6 +89,16 @@ the one voice, using his Hume voice. A tappable status row below the orb expands
 area (mirroring desktop's debug chip) with connection status, warnings, the last tool call, the
 CyberPi payload-push button, the camera panel button, and the scrolling log.
 
+When the autonomous robot is connected, slim vertical controls at the left and right edges drive
+the mBot2 Shield's S3 and S4 accessory-servo ports. Slider traffic is coalesced to at most one
+board command per port every 80ms, with the final finger-up position sent immediately. The gear
+above either slider opens persistent minimum/center/maximum and direction calibration; every
+value is hard-bounded to the API-valid 0–180° range on both the phone and board; linkage-safe
+endpoints are what the per-port calibration is for. The
+session log records requested port/angle, command id, acknowledgement latency, and board errors.
+These two explicit hardware-test controls are intentionally separate from Rocky's conversational
+movement tools and world model.
+
 ### Seeing a person, with a second model
 
 `PersonCamera.swift` owns the phone's **front** camera — not the rear one, because the screen

@@ -52,6 +52,8 @@ final class BehaviorMonitor: ObservableObject {
     @Published private(set) var mode = "unknown"
     @Published private(set) var mood = "still"
     @Published private(set) var events: [BehaviorEvent] = []
+    /// Last positions the board itself acknowledged, useful when a mechanical report comes in.
+    @Published private(set) var servoAngles = ["S3": 90, "S4": 90]
 
     /// Every line the board sends, verbatim in its own vocabulary. Deciding what any of it means
     /// -- and whether it is worth saying anything about -- happens downstream, in the world model.
@@ -70,6 +72,12 @@ final class BehaviorMonitor: ObservableObject {
     /// newest request separate from confirmed telemetry so resume can reverse an in-flight still
     /// without pretending the board has already applied either command.
     private var requestedMood: String?
+    /// Slider drags can produce a value every display frame. The CyberPi control loop reads only
+    /// one small TCP chunk per tick, so coalesce each port independently to at most 12.5 Hz and
+    /// always flush the final finger-up value immediately.
+    private var pendingServoAngles: [String: Int] = [:]
+    private var servoSendTasks: [String: Task<Void, Never>] = [:]
+    private var servoSentAt: [String: Date] = [:]
 
     init(beaconPort: UInt16 = 41900, eventPort: UInt16 = 8768) {
         self.beaconPort = NWEndpoint.Port(rawValue: beaconPort) ?? 41900
@@ -122,6 +130,7 @@ final class BehaviorMonitor: ObservableObject {
         connection = nil
         connected = false
         requestedMood = nil
+        cancelServoSends()
     }
 
     private struct Beacon: Decodable {
@@ -248,6 +257,7 @@ final class BehaviorMonitor: ObservableObject {
                     }
                     self.connected = false
                     self.requestedMood = nil
+                    self.cancelServoSends()
                     self.connection = nil
                 default:
                     break
@@ -266,6 +276,7 @@ final class BehaviorMonitor: ObservableObject {
                     if self.connected { self.onBoardMessage?(.disconnected) }
                     self.connected = false
                     self.requestedMood = nil
+                    self.cancelServoSends()
                     self.connection?.cancel()
                     self.connection = nil
                     return
@@ -312,6 +323,10 @@ final class BehaviorMonitor: ObservableObject {
             RockyLog.write("behavior: robot says hello (mode \(mode), mood \(mood))")
             onBoardMessage?(.hello(mode: mode, mood: mood))
         case "ack":
+            if message["of"] as? String == "servo" {
+                handleServoAcknowledgement(message)
+                return
+            }
             if message["of"] as? String == "mood", let confirmed = message["mood"] as? String {
                 mood = confirmed
                 if requestedMood == confirmed { requestedMood = nil }
@@ -338,6 +353,29 @@ final class BehaviorMonitor: ObservableObject {
             let data = try? JSONSerialization.data(withJSONObject: message)
         else { return }
         connection.send(content: data + Data("\n".utf8), completion: .idempotent)
+    }
+
+    private func cancelServoSends() {
+        servoSendTasks.values.forEach { $0.cancel() }
+        servoSendTasks.removeAll()
+        pendingServoAngles.removeAll()
+        servoSentAt.removeAll()
+    }
+
+    private func handleServoAcknowledgement(_ message: [String: Any]) {
+        let port = message["port"] as? String ?? "?"
+        let angle = message["angle"] as? Int ?? -1
+        let id = message["id"] as? String ?? ""
+        let elapsed = servoSentAt.removeValue(forKey: id).map {
+            " in \(Int(Date().timeIntervalSince($0) * 1_000))ms"
+        } ?? ""
+        if message["ok"] as? Bool == false {
+            let error = message["error"] as? String ?? "unknown board error"
+            RockyLog.write("servo: \(port) \(angle)° failed\(elapsed): \(error)")
+            return
+        }
+        if servoAngles[port] != nil { servoAngles[port] = angle }
+        RockyLog.write("servo: board accepted \(port) \(angle)°\(elapsed)")
     }
 
     /// Immediate, unlike everything else here: a person saying "stop" means now.
@@ -415,6 +453,43 @@ final class BehaviorMonitor: ObservableObject {
     func restoreAutomaticLight(id: String) {
         send(["type": "light", "color": "auto", "duration_ms": 0, "id": id])
         RockyLog.write("behavior: light returned to automatic (\(id))")
+    }
+
+    /// Sets an accessory servo without letting a 60fps drag flood the board's single-threaded
+    /// observer pump. Intermediate positions are coalesced; finger-up (`immediately`) always wins.
+    func setServo(port: String, angle: Int, immediately: Bool = false) {
+        let port = port.uppercased()
+        guard port == "S3" || port == "S4" else {
+            RockyLog.write("servo: rejected unsupported port \(port)")
+            return
+        }
+        let bounded = max(0, min(180, angle))
+        guard connected else {
+            RockyLog.write("servo: ignored \(port) \(bounded)° while robot disconnected")
+            return
+        }
+        pendingServoAngles[port] = bounded
+
+        if immediately {
+            servoSendTasks.removeValue(forKey: port)?.cancel()
+            flushServo(port)
+            return
+        }
+        guard servoSendTasks[port] == nil else { return }
+        servoSendTasks[port] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            self?.flushServo(port)
+        }
+    }
+
+    private func flushServo(_ port: String) {
+        servoSendTasks.removeValue(forKey: port)
+        guard let angle = pendingServoAngles.removeValue(forKey: port) else { return }
+        let id = "servo-\(port)-\(UUID().uuidString)"
+        servoSentAt[id] = Date()
+        send(["type": "servo", "port": port, "angle": angle, "id": id])
+        RockyLog.write("servo: sent \(port) \(angle)° (\(id))")
     }
 
     /// Recent history, newest first, as the model should read it: what happened and how long ago.

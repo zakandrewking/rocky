@@ -27,9 +27,8 @@ enum RobotSearchStatus {
 /// (OrbView / RockyTheme, both ported from that app's styles.css) and a small monospaced state
 /// chip pinned to the bottom corner that expands into details -- desktop's `.debug-state`.
 ///
-/// The orb is the conversation control. The robot connection has no manual UI at all: it is
-/// discovered and connected automatically (RobotDiscovery), the same way desktop's own plumbing
-/// is invisible.
+/// The orb is the conversation control. Robot discovery remains invisible; the only manual body
+/// controls are the two requested accessory-servo sliders at the screen edges.
 struct ContentView: View {
     @StateObject private var voiceSession = RealtimeVoiceSession()
     /// The one robot integration: finds the board, watches what it does, and passes Rocky's
@@ -62,6 +61,17 @@ struct ContentView: View {
                 orb
                 Spacer()
             }
+
+            HStack {
+                ServoSideControl(port: "S3", connected: behavior.connected) { angle, immediate in
+                    behavior.setServo(port: "S3", angle: angle, immediately: immediate)
+                }
+                Spacer(minLength: 0)
+                ServoSideControl(port: "S4", connected: behavior.connected) { angle, immediate in
+                    behavior.setServo(port: "S4", angle: angle, immediately: immediate)
+                }
+            }
+            .padding(.horizontal, 10)
 
             VStack {
                 Spacer()

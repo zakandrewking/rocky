@@ -42,6 +42,24 @@ as running on real mBot2/CyberPi hardware, not generated online-mode glue. Fetch
 | `mbot2.led_on(r, g, b, index, port)` / `.led_off(index, port)` | `03-LED Stripes/01-set_led.py` | Extension-port LED *strip* (RJ25 port `S1`/`S2`), a separate accessory from the CyberPi's own onboard LEDs (`cyberpi.led`) or screen (`cyberpi.display`). `rocky_agent.py` uses the onboard ones, confirmed present on every board without an accessory. |
 | `cyberpi.get_yaw()` / `.get_pitch()` / `.get_roll()` | `cyberpi/05-Motion Sensing/05-get_yaw_pitch_roll.py` | The CyberPi's onboard gyro, directly callable — no `mbuild` accessory needed for heading. This is what the rotate-and-ping scan (`PLAN.md`) uses for pose, not a guessed `mbuild` IMU module. |
 
+### S1–S4 accessory servos
+
+The CyberOS call is `mbot2.servo_set(angle, port)`, where `angle` is 0–180 and the port is a
+string such as `"S3"` or `"S4"`. This exact shape is independently demonstrated in the
+[MakeBlock mBot2 Python booklet](https://robocoast.tech/wp-content/uploads/2023/05/MakeBlock-mBot2-Python-Booklet-v4-1.pdf)
+(`servo_set(servo3, 'S3')` / `servo_set(servo4, 'S4')`) and a
+[published CyberPi curriculum](https://wro.hu/wp-content/uploads/2025/10/Kreativ_robotika_CyberPi.pdf)
+(`servo_set(0, "s1")`, followed by `servo_get("s1")`). A captured mBlock Smart World example
+also uses `servo_set(90, "all")`, then S3/S4 individually. This is stronger than inferring the
+call from a generic servo class, though still not published CyberOS firmware source.
+
+`device/rocky_agent.py` therefore accepts only S3/S4, clamps again on the board, and invokes the
+API only after an explicit phone command — never during boot. Each invocation gets a correlated
+success/failure acknowledgement. Phone-side calibration maps a logical centered slider onto a
+persistent, potentially asymmetric minimum/center/maximum range and can reverse a mirrored horn.
+No endpoint calibration is assumed safe for an attached mechanism; defaults are simply the
+servo API's full documented 0°/90°/180° range.
+
 **Blocking calls and why they're a safety problem.** `straight`/`turn`/`forward`/etc. all appear
 to run to completion before the next line executes (`02-go_straight.py` calls `straight(100)`
 then immediately `straight(-100)`, with no polling in between). If that's really synchronous,

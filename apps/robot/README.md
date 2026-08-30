@@ -16,6 +16,9 @@ backward rolls, quick dashes, left/right turns, and turn-arounds as one interrup
 action immediately, with later beats ordered and the caller id plus step on every physical
 transition. Chosen LED colors overlay automatic state colors for a bounded time, allowing story
 lighting to continue while speech and movement run, then restore the current automatic color.
+The same observer connection accepts bounded manual accessory-servo commands for S3 and S4 from
+the iOS edge sliders. Those commands are acknowledged with port, angle, correlation id, and any
+hardware error; they do not become conversational body events or alter the tuned wheel loop.
 `scripts/check-behavior-parity.mjs` fails the build if any tuned constant drifts from
 `steps/step16_loudness_drive_sticky.py`, which stays as the tuning record and the rollback.
 

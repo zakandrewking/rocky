@@ -556,6 +556,52 @@ def _apply_intent(message, now):
                 _start_gesture_now(now)
         return
 
+    if kind == "servo":
+        # Manual accessory controls are deliberately narrow: the phone may address only the two
+        # requested mBot2 Shield servo sockets, and both sides clamp the ordinary hobby-servo
+        # range. This is command-time only -- no servo call is added to boot/init, where a stuck
+        # hardware call could take the OTA recovery path down with it.
+        port = str(message.get("port", "")).upper()
+        if port not in ("S3", "S4"):
+            return
+        try:
+            angle = max(0, min(180, int(message.get("angle", 90))))
+        except Exception:
+            angle = 90
+        action_id = str(message.get("id", ""))
+        try:
+            # CyberOS' published mBot2 surface is servo_set(angle, "S3"/"S4").
+            mbot2.servo_set(angle, port)
+        except Exception as error:
+            # Unlike the generic once-only telemetry error, this reply correlates every failed
+            # slider command with the exact port/angle the phone requested.
+            _emit(
+                {
+                    "type": "ack",
+                    "t": now,
+                    "of": "servo",
+                    "id": action_id,
+                    "ok": False,
+                    "port": port,
+                    "angle": angle,
+                    "error": str(error),
+                }
+            )
+            _report_error_once("servo_failed", error)
+            return
+        _emit(
+            {
+                "type": "ack",
+                "t": now,
+                "of": "servo",
+                "id": action_id,
+                "ok": True,
+                "port": port,
+                "angle": angle,
+            }
+        )
+        return
+
     if kind == "light":
         color = message.get("color")
         if color == "auto":
