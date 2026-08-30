@@ -163,6 +163,26 @@ navigate a room, find a person, follow them, and talk to them, without crashing.
 `apps/cyberpi`'s native-firmware audio work, and [`apps/ios/README.md`](apps/ios/README.md) for
 the current minimal-voice-control milestone and how OTA works in both directions.
 
+### iOS conversation and voice options
+
+The iOS robot app has two independent build-time choices: which model runs the conversation and
+which service renders Rocky's words. Both conversational engines and both speech providers are
+built and usable; they are alternatives for listening tests, not abandoned implementations.
+
+| Choice | What it is good at | Current tradeoff |
+| --- | --- | --- |
+| OpenAI `gpt-realtime-2.1` | Faster conversational turns and, subjectively, smarter and more coherent answers | Requires OpenAI Realtime; vision arrives as context from a separate Gemini lane |
+| Gemini Robotics ER 2 Live | Subjectively funnier, sillier, and enjoyably more unpredictable; can own microphone understanding and robot tool selection without OpenAI | Slower turn finalization and generation, less mature session/VAD behavior, and no parallel sideband response lane |
+| Hume Octave v2 | The latest Hume model currently sounds a bit better and more natural in listening tests | Its saved Rocky voice is a different rendering from Rocky3, and interruption closes/reopens the stream |
+| ElevenLabs Rocky3 (`eleven_v3_conversational`) | Strong Rocky3 identity and good streaming latency when the key has quota | Slightly behind current Hume on subjective sound quality; a low per-key quota can reject an otherwise healthy reply and produce silence |
+
+These switches are independent: either conversational engine can use either speech provider. Set
+`ROCKY_VOICE_ENGINE=realtime|er2` and
+`ROCKY_SPEECH_PROVIDER=elevenlabs|hume` in the ignored `.env`, then run `pnpm ios:deploy`. The
+Realtime path remains the everyday default; ER2 is kept available because its different comic
+instinct is genuinely fun even though it is not yet as quick or reliable. The detailed transport,
+latency, quota, and logging notes live in [`apps/ios/README.md`](apps/ios/README.md).
+
 The desktop app lives in `apps/desktop`. Spreadsheet generation is covered by tests and produces
 real Excel workbooks with formatted headers, filters, frozen rows, and useful column widths.
 DOCX generation is covered by structural tests for valid Word packages, real headings, numbering,
