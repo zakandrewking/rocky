@@ -22,7 +22,10 @@ import { fileURLToPath } from "node:url";
 // Payloads only. bootstrap.py is deliberately excluded: it *is* the program, so its module level
 // runs the main loop forever and never returns -- which is correct for it and fatal for a payload.
 // That difference is the other half of what this checks.
-const PAYLOADS = ["../device/rocky_agent.py"];
+const PAYLOADS = [
+  "../device/rocky_agent.py",
+  "../steps/step19_navigation_sensor_qualification.py",
+];
 
 // A payload whose module level never returns is exactly as dead as one that raises: bootstrap
 // exec()s it and then never gets to call tick(). So a hang is a failure here, not a hang.

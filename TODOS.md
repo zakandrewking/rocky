@@ -287,6 +287,24 @@ crashing.**
   the robot and a person, paste the constants, and iterate on logged numbers.
 - [ ] Rotate-and-ping ultrasonic scan against a real room; stitch 2-3 scans into one occupancy
   grid using odometry + `cyberpi.get_yaw()`; check real-world drift.
+- [x] Build the sensor qualification gate before trusting that mapping design. The disposable
+  `apps/robot/steps/step19_navigation_sensor_qualification.py` payload and
+  `pnpm robot:qualify` recorder capture raw 20 Hz yaw/range telemetry beside tape/protractor ground
+  truth, with only explicit <=500 ms, <=60 RPM motion pulses and local stop-on-disconnect/obstacle.
+  `pnpm robot:qualify:analyze` reports distributions without turning one good demo into a pass.
+  The procedure and predeclared acceptance gates live in `apps/robot/STEPS.md` step 18. Deliberate
+  terminology correction: stock CyberOS exposes encoder-regulated `drive_speed`, but no published
+  readable wheel-position primitive, so this measures actual pulse repeatability rather than
+  inventing “wheel deltas.”
+- [ ] Run that qualification matrix on the physical robot with the iPhone mounted. Use the result
+  to decide each sensor's narrow role independently: short-turn correction, short-displacement
+  estimate, forward obstacle veto, or no navigation role. Do not begin occupancy-grid work merely
+  because one sensor passes a different role's gate.
+- [ ] Keep the navigation coordinator and its tools independent of the selected conversational
+  engine. Flag the engine decision when progress/recovery events are wired: GPT Realtime + the
+  separate ER vision lane can receive sideband context without sharing ER's turn latency, while
+  direct ER2 voice has no parallel sideband response lane and must never hold a conversational
+  tool call open for a multi-minute route.
 - [ ] Verify the obstacle-avoidance reflex stops a commanded drive locally, without waiting on the
   laptop, when something is placed in the ultrasonic's path mid-motion.
 - [ ] iPhone-side frontier navigation against the occupancy grid.

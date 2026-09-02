@@ -66,7 +66,18 @@ crashing.
 ```bash
 pnpm robot:check                                                    # syntax + unit/import checks + tuning parity
 pnpm robot:push <board-ip> apps/robot/device/rocky_agent.py         # push to a live board
+pnpm robot:push <board-ip> apps/robot/steps/step19_navigation_sensor_qualification.py
+pnpm robot:qualify <board-ip>                                       # guided yaw/motion/range evidence capture
+pnpm robot:qualify:analyze <jsonl>                                  # distributions, never a one-run pass
 ```
+
+The qualification payload is deliberately separate from `rocky_agent.py`. It accepts only
+explicit, bounded motion pulses (at most 500 ms and 60 RPM), stops locally on disconnect or an
+ultrasonic obstacle, and records CyberPi readings alongside tape/protractor ground truth supplied
+at the laptop. It does not call commanded RPM and elapsed time “wheel deltas”: stock CyberOS has
+no published readable wheel-position API. Raw logs go under the gitignored
+`local-data/robot-navigation-qualification/`. See `STEPS.md` step 18 for the trial matrix and the
+evidence each sensor must earn before navigation may depend on it.
 
 On macOS, the uploader automatically retries through the native TCP client if Node incorrectly
 reports that the reachable board has no route. It does not retry after a connection is made, so a

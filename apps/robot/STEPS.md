@@ -6,8 +6,8 @@
 > history below is left as written; see [`README.md`](README.md) for what runs today.
 
 Same discipline as [`apps/cyberpi/STEPS.md`](../cyberpi/STEPS.md): small, standalone, one thing
-proven at a time. This project has no board attached in the environment these steps were written
-in, so 1-3 are the only ones actually run so far. Fill in the Result column as the rest happen.
+proven at a time. Hardware rows are marked only after a physical run; a blank result remains
+pending rather than inheriting confidence from an adjacent test.
 
 | # | What | Needs hardware? | Result |
 | --- | --- | --- | --- |
@@ -29,6 +29,7 @@ in, so 1-3 are the only ones actually run so far. Fill in the Result column as t
 | 15 | Camera: detect a person in a webcam frame and estimate bearing; verify the robot turns to face them (needs the camera on/near the robot — see `PLAN.md`'s Phase 6 note) | Yes | |
 | 16 | Find/follow: combine 14+15 — approach a person and hold a set distance as they move a little | Yes | |
 | 17 | **North-star run**: navigate, find a person, approach, and hand off to the existing desktop Rocky voice conversation, without crashing, run repeatedly | Yes | |
+| 18 | **Navigation sensor qualification:** run `step19_navigation_sensor_qualification.py` with the phone mounted; measure stationary yaw drift, yaw delta against physical turns, repeatability of short `drive_speed` pulses against tape-measured displacement, and ultrasonic behavior against broad/narrow/soft/angled targets | Yes | Harness built; hardware run pending |
 
 ## What "gate" means here (step 4)
 
@@ -88,3 +89,44 @@ commands succeeded, then the file write stalled indefinitely, needing a power cy
 see the git history around 2026-08-08 for the decoded serial trace). Pressing Home first, per
 [`apps/cyberpi/docs/first-upload.md`](../cyberpi/docs/first-upload.md#getting-your-board-back-to-normal),
 avoids it.
+
+## Step 18: earn each sensor's role
+
+This is intentionally before occupancy-grid or route-planning work. The published component specs
+are permission to measure, not evidence that the assembled robot localizes. The harness also does
+not claim wheel deltas: no readable encoder-position primitive is published in the stock CyberOS
+`mbot2` API. It measures the repeatability of actual chassis movement produced by short
+encoder-regulated `drive_speed` pulses instead.
+
+Push the disposable payload and start the guided recorder:
+
+```bash
+pnpm robot:push <board-ip> apps/robot/steps/step19_navigation_sensor_qualification.py
+pnpm robot:qualify <board-ip>
+pnpm robot:qualify:analyze local-data/robot-navigation-qualification/<run>.jsonl
+```
+
+Run with the actual iPhone mount and normal battery load. Capture at minimum:
+
+- stationary yaw runs of 60 seconds, 5 minutes, and 10 minutes, repeated after a power cycle;
+- 20 physical turns in each direction, including 45°, 90°, and 180°, measured independently;
+- 20 identical drive pulses on hard floor and 20 on carpet, then repeat at another battery level;
+- ultrasonic samples at 10, 20, 35, 50, 100, and 200 cm against a perpendicular wall, chair leg,
+  fabric, and a 45° surface, plus no-target readings;
+- dynamic approaches at every speed autonomy might use. A person remains beside the robot with a
+  physical stop path during these trials.
+
+Provisional gates, chosen before seeing the data:
+
+- **Yaw may correct one short turn** only if physical-turn absolute error has p95 <=10°, no outlier
+  exceeds 20°, and stationary drift stays below 2°/minute. It never becomes global heading; vision
+  must re-anchor between route legs.
+- **Timed encoder-regulated motion may estimate one short displacement** only if identical-pulse
+  coefficient of variation is <=15% per surface/load and no pulse produces zero or reversed
+  movement. It never becomes accumulated house-scale position.
+- **Ultrasonic may veto forward motion** only if it has zero missed detections inside the chosen
+  stopping envelope across the adversarial target set. False positives cost progress; a false
+  negative costs the safety role. Even a pass does not promote it to map geometry.
+
+Failing a gate is a useful result: remove that observation from the navigator rather than tuning a
+model until the failure is hidden.
