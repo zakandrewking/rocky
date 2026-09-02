@@ -449,6 +449,94 @@ crashing.**
   (2026-08-27).** While Rocky's eyes are open, the conversation view now carries a small rounded
   FaceTime-style preview in the top-right. It is image-only, noninteractive, and disappears with
   the camera; detection text and camera controls remain in the existing diagnostics sheet.
+
+## Knowing friends: private face + voice identity (apps/ios)
+
+**Outcome:** Rocky can recognize an explicitly enrolled friend, attach that identity to the live
+conversation and the right private memories, remain plainly uncertain about everyone else, and
+recover the encrypted profiles after an app reinstall. This is friendly open-set recognition, not
+authentication: no safety, access-control, or purchasing decision may depend on it.
+
+This section is the source of truth for the work. Keep each milestone as one checkbox until its
+acceptance gate is met; add dated findings and notable design changes beneath the relevant item,
+including real-device evidence. Implementation details belong beside the iOS code, but a decision
+that changes privacy, stored data, model compatibility, or product behavior is recorded here.
+
+Decisions already made:
+
+- Recognition inference runs on the iPhone. Gemini continues to describe scenes but never stores,
+  enrolls, or names a face; OpenAI/Gemini/voice providers receive no identity embeddings.
+- Enrollment is explicit and reversible. Persist chosen names, several face/voice embeddings,
+  quality/calibration metadata, and exact model versions; never persist enrollment photos, video,
+  or raw audio. Treat embeddings as sensitive biometric data even though they are not source media.
+- `unknown` is a successful result. A name needs multi-sample agreement and separation from the
+  runner-up, and conflicting face/voice evidence returns to unknown rather than choosing a side.
+- Face is the first and primary signal. Voice is later supporting evidence for poor light, a turned
+  head, or someone outside the frame; it must consume a copy of PCM from `RockyRTCAudioDevice`'s
+  existing VoiceProcessingIO graph, never start a competing audio engine or block its callback.
+- Local profiles use iOS file protection. Optional recovery stores only an encrypted, versioned
+  identity vault in the user's private CloudKit database, plus a user-controlled encrypted export
+  for a no-iCloud path. Recognition still runs locally. Reinstall restore is a designed flow, not
+  an assumption that the app container or Keychain happened to survive deletion.
+
+- [ ] **Prove one face-embedding model in isolation.** Check published source, weights provenance,
+  training-data and redistribution terms before conversion; reject a technically good model whose
+  weights cannot responsibly ship. Build a disposable Core ML probe that accepts already-cropped
+  fixtures and reports embedding distance plus inference timing without touching `PersonCamera`.
+  Gate: deterministic output, tests for preprocessing/distance, useful same-person vs different-
+  person separation on representative private fixtures, and acceptable p50/p95 latency on the
+  actual mounted iPhone. Record the model hash, input normalization, embedding size, compute units,
+  license decision, measurements, and fixture policy here before integrating it.
+- [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
+  `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
+  store; complete file protection; atomic writes; delete/export/import; and migrations that refuse
+  incompatible embeddings rather than silently comparing them. Raw media must be impossible to
+  represent in the persisted schema. Gate: unit tests cover round-trip, corruption, atomic
+  replacement, deletion, old/new schema handling, and incompatible model versions.
+- [ ] **Add local face detection, alignment, quality gating, and open-set matching.** Reuse the
+  continuous front-camera buffers, with Apple Vision doing face boxes/landmarks locally and the
+  proven Core ML model seeing only aligned crops. Run independently of the existing ~1fps Gemini
+  scene lane, throttle for heat rather than queueing frames, track multiple faces separately, and
+  publish observations without names until temporal consensus is stable. Gate: a ten-minute live
+  voice+camera run has no added network traffic, frame backlog, thermal runaway, or voice latency
+  regression; dim light, profile pose, occlusion, two people, leaving/re-entering, and an unknown
+  person all produce honest measured outcomes.
+- [ ] **Build explicit friend enrollment and management UI.** “Let Rocky remember me” collects
+  several quality-approved face angles under visible camera use, shows what will be stored, asks
+  the person to confirm their name, and commits only at the end. A Friends screen lists, renames,
+  retrains, exports, and completely deletes profiles. Gate: cancelling at every step leaves no
+  profile or temporary media; enrollment cannot silently absorb a bystander; VoiceOver and camera-
+  permission failure paths work; deletion is verified on disk.
+- [ ] **Project stable identity into conversation and memory without making it a greeting alarm.**
+  Add one identity resolver and one quiet, sequence-aware context path beside vision. Tell the live
+  session only on a stable transition or bounded refresh, scope retrieved private memory by opaque
+  profile id, and keep names out of routine telemetry. Rocky may use a known relationship naturally
+  but does not announce recognition on every arrival. A spoken correction requests confirmation
+  before changing a profile and never trains automatically from its own guess. Gate: deterministic
+  tests cover arrival, departure, unknown, stale/out-of-order results, two people, correction, and
+  session reconnect; live tests include false-match attempts and log review.
+- [ ] **Make reinstall recovery real.** Sync the versioned encrypted vault through encrypted fields
+  in the user's private CloudKit database only after explicit opt-in, and offer a recovery-phrase-
+  protected export/import path that does not require iCloud. On a clean install, offer restore,
+  validate integrity and model compatibility before activation, merge by stable profile id, and
+  make cloud deletion/status visible. Gate: delete the app from a real iPhone, reinstall it, restore
+  profiles, recognize the enrolled people, then delete the recovered vault locally and remotely;
+  also test offline/no-iCloud, wrong recovery phrase, corrupt backup, keychain reset, and downgrade.
+- [ ] **Prove speaker embeddings without disturbing conversation audio.** Audit and convert a
+  compact speaker-verification model, then feed a timestamped bounded PCM ring buffer from the
+  existing echo-cancelled capture path. Inference runs off the real-time thread on sufficiently
+  long, single-speaker utterances delimited by the existing VAD events; short/noisy/overlapping
+  audio yields no identity. Gate: callback work is bounded and allocation-free, Rocky never matches
+  her own playback, a sustained live conversation shows no audio starvation or barge-in regression,
+  and representative household/impostor trials establish thresholds rather than borrowing them.
+- [ ] **Fuse face and voice conservatively, then decide whether adaptive enrollment is warranted.**
+  Accumulate calibrated evidence per tracked person: agreeing signals strengthen a result; conflict,
+  overlap, ambiguity, or insufficient margin returns unknown. Do not continuously update templates
+  in the first release. Gate: a written device-test matrix reports false accepts/rejects by signal,
+  lighting, distance, noise, duration, and multiple-person condition; no name is exposed from one
+  marginal sample; profile poisoning attempts fail. Consider confirmed high-confidence adaptation
+  only after drift and rollback can be measured.
+
 - [ ] Find/follow: combine occupancy-grid navigation with person bearing to approach and hold a
     comfortable distance. The bearing this needs is unchanged; `SceneReading` keeps it.
 - [ ] North-star run: navigate, find a person, approach, and hand off to the iOS app's own Realtime
