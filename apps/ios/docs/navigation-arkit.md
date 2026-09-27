@@ -34,20 +34,23 @@ strategy before it can work across sessions.
 
 1. Mount the iPhone rigidly on Rocky with the rear camera unobstructed and able to see textured
    room features. Note lens height, yaw relative to robot-forward, and whether the screen/face
-   is still usable. Keep voice paused and the robot on a clear, level floor.
-2. Open Rocky, connect the robot, expand the lower-left state chip, then tap **ARKit probe**.
+   is still usable. Keep voice paused. For Stage A, the robot may remain powered off: carry the
+   rigidly mounted phone/base by hand over a clear, level floor.
+2. Open Rocky, expand the lower-left state chip, then tap **ARKit probe**. A robot connection is
+   needed only for Stage B/C motor trials; the standard drive controls appear when connected.
    Camera permission is requested if needed. The status chip shows ARKit tracking state.
    The details panel closes so the existing spring-return drive/steer controls remain usable.
 3. Place tape marks and record each trial's measured ground truth in a notebook. Expand the chip
-   and tap **mark trial** at each trial boundary; the mark is written to the JSONL trace. Drive
-   manually. Release the control and verify physical stop each time. Tap **stop ARKit probe** at
+   and tap **mark trial** at each trial boundary; the mark is written to the JSONL trace. For
+   Stage A, carry the mounted base by hand. For motor trials, drive with the existing sliders,
+   releasing them and verifying physical stop after each motion. Tap **stop ARKit probe** at
    the end. App inactivity, robot disconnect, voice camera startup, and ARKit failure also stop
    the probe.
 4. The app shows the `Documents/navigation-probe-<timestamp>.jsonl` filename. Pull it with
    `xcrun devicectl device copy from --device <id> --domain-type appDataContainer
    --domain-identifier family.rocky.ios --source Documents/<filename>
    --destination /private/tmp/<filename>`. Each line is a timestamped `start`, `pose`, `drive`,
-   `mark`, or `stop` record. Pose is sampled at 10 Hz from ARKit; frame timestamps, wall clock,
+   `mark`, `robot_link`, or `stop` record. Pose is sampled at 10 Hz from ARKit; frame timestamps, wall clock,
    and system uptime are all retained. `x_m/y_m/z_m` are camera position in ARKit world space;
    `forward_x/z` are its horizontal forward vector; `camera_matrix_col_major` retains the full
    6-DoF transform for fitting a tilted/sideways phone mount later. The trace also counts ARKit
@@ -72,7 +75,7 @@ justify power, compute, and device restrictions. Use feature detection, not an i
 
 | Stage | Trial | Measure | Decision |
 | --- | --- | --- | --- |
-| A — bench | Hand-carry mounted, motors off: 0.5 m, 1 m, 90° turn, square loop, return to start; repeat on textured floor, low-texture floor, and dim room. Repeat matched runs with explicit scene depth on the 14 Pro. | endpoint/heading error vs tape marks, loop closure error, normal-tracking fraction, limited/unavailable spans, relocalization behavior, depth availability and pose rate | Determine whether this mount/lens produces a stable pose before introducing motor or Wi-Fi uncertainty, and whether requesting depth adds value. |
+| A — bench | Hand-carry mounted, robot powered off: 0.5 m, 1 m, 90° turn, square loop, return to start; repeat on textured floor, low-texture floor, and dim room. Repeat matched runs with explicit scene depth on the 14 Pro. | endpoint/heading error vs tape marks, loop closure error, normal-tracking fraction, limited/unavailable spans, relocalization behavior, depth availability and pose rate | Determine whether this mount/lens produces a stable pose before introducing motor or Wi-Fi uncertainty, and whether requesting depth adds value. |
 | B — motor baseline | Clear floor; 10 repeats each of short straight and in-place turn commands at two battery levels, then hard floor and carpet. Mark actual start/stop and tape-measured endpoint. | commanded vs observed distance/angle distribution, stop overshoot, initial deadband, slip, pose update age | Fit separate forward/turn response and uncertainty; do not assume left/right symmetry or constant RPM-to-distance. |
 | C — feedback rehearsal | Human drives a taped path with several short corrections, then a square and a return-to-start. | how often visual correction would reverse/update a motor prediction; tracking failures during blur/turns; accumulated error | If ARKit remains normal and metric error stays within the waypoint margin, implement bounded closed-loop commands. |
 | D — concurrent load | Repeat B/C with voice and Gemini visual work only after camera coexistence is explicitly designed; test heat and sustained runtime. | frame/pose rate, latency, thermal throttling, camera contention | Choose camera scheduling or separate capture only with actual measurements. |

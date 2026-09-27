@@ -21,7 +21,7 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
     private var startGeneration = 0
     private var isStarting = false
 
-    func start(useSceneDepth: Bool = false) async {
+    func start(useSceneDepth: Bool = false, robotConnected: Bool = false) async {
         guard !isRunning, !isStarting else { return }
         isStarting = true
         startGeneration += 1
@@ -71,7 +71,7 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
         session.delegateQueue = .main
         write([
             "type": "start", "camera": "rear", "source": "ARWorldTrackingConfiguration",
-            "mode": mode,
+            "mode": mode, "robot_connected": robotConnected,
         ])
         let config = ARWorldTrackingConfiguration()
         config.worldAlignment = .gravity
@@ -105,6 +105,11 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
             "type": "drive", "throttle": throttle, "steering": steering,
             "active": active, "correlated": correlated,
         ])
+    }
+
+    func recordRobotConnection(_ connected: Bool) {
+        guard isRunning else { return }
+        write(["type": "robot_link", "connected": connected])
     }
 
     private func write(_ fields: [String: Any]) {

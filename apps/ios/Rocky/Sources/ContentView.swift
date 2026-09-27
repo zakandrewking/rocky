@@ -141,7 +141,7 @@ struct ContentView: View {
         }
         .onChange(of: behavior.connected) { _, found in
             voiceSession.bodyAvailabilityChanged(found)
-            if !found { navigationProbe.stop(reason: "robot disconnected") }
+            navigationProbe.recordRobotConnection(found)
         }
         .onChange(of: voiceSession.state) { _, state in
             handleVoiceStateChangeForCamera(state)
@@ -480,7 +480,7 @@ struct ContentView: View {
     }
 
     private var canStartNavigationProbe: Bool {
-        guard behavior.controlsConnected, !personCamera.isRunning else { return false }
+        guard !personCamera.isRunning else { return false }
         switch voiceSession.state {
         case .disconnected, .paused, .failed: return true
         case .connecting, .connected: return false
@@ -491,12 +491,14 @@ struct ContentView: View {
         guard canStartNavigationProbe else { return }
         Task {
             guard canStartNavigationProbe else { return }
-            await navigationProbe.start(useSceneDepth: useSceneDepth)
+            await navigationProbe.start(
+                useSceneDepth: useSceneDepth, robotConnected: behavior.controlsConnected
+            )
             guard navigationProbe.isRunning else { return }
             if canStartNavigationProbe {
                 detailsOpen = false
             } else {
-                navigationProbe.stop(reason: "voice camera or robot state changed")
+                navigationProbe.stop(reason: "voice camera started")
             }
         }
     }

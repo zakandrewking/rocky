@@ -4,8 +4,9 @@
 
 - [x] Add a separate, observational rear-camera ARKit probe to the live iOS app. It records
   tracking state/pose and the existing manual-drive commands without sending new motor commands,
-  changing robot firmware, or saving images. Stop on background, disconnect, voice camera start,
-  or ARKit interruption; trace lives in a pullable per-session JSONL file.
+  changing robot firmware, or saving images. It works with the robot off for hand-carried trials;
+  stop on background, voice camera start, or ARKit interruption, and record robot link changes.
+  The trace lives in a pullable per-session JSONL file.
 - [ ] Run Stage A hand-carried pose tests on the iPhone 14 Pro/mount: measured straight paths,
   turns, square loop, varied texture/light. Repeat matched trials with explicit LiDAR scene depth
   requested. Record mounting geometry and assess tracking loss, endpoint error, jumps, depth
