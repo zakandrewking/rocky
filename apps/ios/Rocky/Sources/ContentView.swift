@@ -48,6 +48,7 @@ struct ContentView: View {
     /// `voiceSession.state` observer below, never idling on while the app is merely open. See
     /// `PersonCamera`'s header for the reasoning.
     @StateObject private var personCamera = PersonCamera()
+    @StateObject private var navigationProbe = ARKitPoseProbe()
     @State private var log: [String] = []
     @State private var showBodyPanel = false
     @State private var detailsOpen = false
@@ -85,6 +86,10 @@ struct ContentView: View {
                     },
                     sendDrive: { throttle, steering, active, correlated in
                         behavior.setManualDrive(
+                            throttle: throttle, steering: steering, active: active,
+                            correlated: correlated
+                        )
+                        navigationProbe.recordDrive(
                             throttle: throttle, steering: steering, active: active,
                             correlated: correlated
                         )
@@ -136,6 +141,7 @@ struct ContentView: View {
         }
         .onChange(of: behavior.connected) { _, found in
             voiceSession.bodyAvailabilityChanged(found)
+            if !found { navigationProbe.stop(reason: "robot disconnected") }
         }
         .onChange(of: voiceSession.state) { _, state in
             handleVoiceStateChangeForCamera(state)
@@ -166,11 +172,13 @@ struct ContentView: View {
         case .inactive:
             guard !appWasInactive else { return }
             appWasInactive = true
+            navigationProbe.stop(reason: "app inactive")
             behavior.releaseManualDriveForBackground()
             robotControlReset = UUID()
         case .background:
             if !appWasInactive {
                 appWasInactive = true
+                navigationProbe.stop(reason: "app backgrounded")
                 behavior.releaseManualDriveForBackground()
                 robotControlReset = UUID()
             }
@@ -233,6 +241,7 @@ struct ContentView: View {
     private func handleVoiceStateChangeForCamera(_ state: RealtimeVoiceSession.State) {
         switch state {
         case .connecting, .connected:
+            navigationProbe.stop(reason: "voice camera started")
             guard !personCamera.isRunning else { return }
             Task { await personCamera.start() }
         case .disconnected, .paused, .failed:
@@ -335,7 +344,8 @@ struct ContentView: View {
         case .paused: "paused"
         case .failed: "failed"
         }
-        return "\(bodyDescription) v:\(voice) \(voiceEngine.rawValue)\(hasVoiceCredential ? "" : " k:missing")"
+        let nav = navigationProbe.isRunning ? " nav:\(navigationProbe.tracking)" : ""
+        return "\(bodyDescription) v:\(voice) \(voiceEngine.rawValue)\(nav)\(hasVoiceCredential ? "" : " k:missing")"
     }
 
     private var stateChip: some View {
@@ -395,6 +405,7 @@ struct ContentView: View {
                     .foregroundStyle(RockyTheme.mint.opacity(0.7))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            navigationProbeControls
             if case .failed(let message) = voiceSession.state {
                 Text("voice: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
             }
@@ -434,6 +445,58 @@ struct ContentView: View {
                     }
                 }
                 .frame(height: min(220, CGFloat(log.count) * 15 + 4))
+            }
+        }
+    }
+
+    private var navigationProbeControls: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if navigationProbe.isRunning {
+                Text("ARKit \(navigationProbe.mode): \(navigationProbe.tracking) · \(navigationProbe.lastPosition) · \(navigationProbe.sampleCount) samples")
+                    .foregroundStyle(RockyTheme.mint.opacity(0.8))
+                HStack {
+                    Button("mark trial") { navigationProbe.mark("trial") }
+                    Button("stop ARKit probe") { navigationProbe.stop(reason: "person stopped") }
+                }
+                .foregroundStyle(RockyTheme.amberBright)
+            } else {
+                HStack {
+                    Button("ARKit probe") { startNavigationProbe(useSceneDepth: false) }
+                    Button("+ depth") { startNavigationProbe(useSceneDepth: true) }
+                }
+                .disabled(!canStartNavigationProbe)
+                .foregroundStyle(RockyTheme.amberBright)
+            }
+            if let error = navigationProbe.lastError {
+                Text(error).foregroundStyle(RockyTheme.rust)
+            }
+            if let file = navigationProbe.fileName {
+                Text("log: Documents/\(file)")
+                    .foregroundStyle(RockyTheme.mint.opacity(0.6))
+                    .textSelection(.enabled)
+            }
+        }
+        .font(.system(size: 11, design: .monospaced))
+    }
+
+    private var canStartNavigationProbe: Bool {
+        guard behavior.controlsConnected, !personCamera.isRunning else { return false }
+        switch voiceSession.state {
+        case .disconnected, .paused, .failed: return true
+        case .connecting, .connected: return false
+        }
+    }
+
+    private func startNavigationProbe(useSceneDepth: Bool) {
+        guard canStartNavigationProbe else { return }
+        Task {
+            guard canStartNavigationProbe else { return }
+            await navigationProbe.start(useSceneDepth: useSceneDepth)
+            guard navigationProbe.isRunning else { return }
+            if canStartNavigationProbe {
+                detailsOpen = false
+            } else {
+                navigationProbe.stop(reason: "voice camera or robot state changed")
             }
         }
     }

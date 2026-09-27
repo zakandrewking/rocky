@@ -54,6 +54,7 @@ apps/ios/
 │   │   ├── PersonCamera.swift    — front-camera video stream, throttled to ~1fps, tied to voice state
 │   │   ├── CameraPreview.swift   — image-only rounded selfie preview bridge
 │   │   ├── PersonVision.swift    — sends a frame to Gemini Robotics-ER, parses person/bearing
+│   │   ├── Navigation/           — observational ARKit pose + existing manual-drive trace
 │   │   └── World/                — Rocky's sense of her own body (docs/embodiment.md)
 │   │       ├── WorldStore.swift      — the authoritative state; the conversation is not the database
 │   │       ├── WorldProjector.swift  — what crosses into the Realtime conversation, and when
@@ -93,6 +94,16 @@ The circular stone (`orb` in `ContentView.swift`) starts and pauses conversation
 the one voice; the build defaults to Rocky1 through ElevenLabs v3 Conversational. A tappable status row below the orb expands into a detail
 area (mirroring desktop's debug chip) with connection status, warnings, the last tool call, and
 the scrolling log.
+
+### ARKit + motor-feedback experiment
+
+The dedicated [navigation qualification plan](docs/navigation-arkit.md) describes the first
+rear-camera, manually driven trials. With the robot connected and voice paused, expand the state
+chip and choose **ARKit probe** or **+ depth** (optional on a LiDAR-capable phone such as the
+iPhone 14 Pro). The ordinary drive controls remain the only motor input. The probe records
+tracking, pose, and drive-command timing without video; its per-session JSONL log can be pulled
+from the phone and summarized with `pnpm ios:nav:analyze <log-path>`. No autonomous navigation is
+enabled by this module.
 
 ### Switching the speech provider
 

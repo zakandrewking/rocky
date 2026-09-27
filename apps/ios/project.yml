@@ -31,7 +31,7 @@ targets:
       properties:
         UILaunchScreen: {}
         NSMicrophoneUsageDescription: "Rocky listens so you can talk with her and she can drive the robot."
-        NSCameraUsageDescription: "Rocky's front camera looks for a person to talk to. Off until you start it from the camera panel; nothing is recorded."
+        NSCameraUsageDescription: "Rocky's front camera looks for a person during conversation; the optional ARKit navigation probe uses the rear camera when you start it. No images are recorded."
         NSLocalNetworkUsageDescription: "Rocky connects to the mBot2 robot and the laptop's voice service over your local Wi-Fi network."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

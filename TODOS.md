@@ -1,5 +1,25 @@
 # Rocky TODOs
 
+## ARKit + motor-feedback navigation (`apps/ios/docs/navigation-arkit.md`)
+
+- [x] Add a separate, observational rear-camera ARKit probe to the live iOS app. It records
+  tracking state/pose and the existing manual-drive commands without sending new motor commands,
+  changing robot firmware, or saving images. Stop on background, disconnect, voice camera start,
+  or ARKit interruption; trace lives in a pullable per-session JSONL file.
+- [ ] Run Stage A hand-carried pose tests on the iPhone 14 Pro/mount: measured straight paths,
+  turns, square loop, varied texture/light. Repeat matched trials with explicit LiDAR scene depth
+  requested. Record mounting geometry and assess tracking loss, endpoint error, jumps, depth
+  availability, frame rate, and relocalization before changing motor behavior. Standard ARKit
+  mode does not request depth, though ARKit may use device hardware internally in both modes.
+- [ ] Run Stage B motor-baseline tests with tape-measured ground truth and correlated board ACKs;
+  compare command/pose timing, slip, turn asymmetry, stop overshoot, floor and battery effects.
+- [ ] Decide the camera/mount architecture and qualify the phone-camera-to-robot-base transform.
+  Keep front-camera person vision and rear-camera ARKit mutually exclusive until concurrency is
+  explicitly tested; GeminiER versus GeminiER + realtime does not alter the local pose loop.
+- [ ] After measured gates, add typed pose/motion observations, manual/navigation drive ownership,
+  deterministic stop tests, then a single operator-armed short closed-loop motion. Taught places,
+  destination selection, and obstacle/cliff handling follow only after that safety gate.
+
 ## Rocky on a robot, take two: a networked body (apps/robot)
 
 Independent from the `apps/cyberpi` track above. That one asks whether the CyberPi can carry a
