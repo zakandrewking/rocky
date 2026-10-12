@@ -93,6 +93,18 @@ on a false-colour depth image (red near, blue far, dark for low-confidence or mi
 a visual diagnostic, not an obstacle or free-space judgment; no depth frames are saved. The
 standard mode does not request depth, but ARKit may still use the phone's hardware internally
 for tracking.
+
+For the first powered baseline, the depth view has **FORWARD TEST · 0.6s** and **STOP ROBOT**.
+This is one operator-started, 22%-throttle pulse using the existing newest-state manual-drive
+path, not autonomous navigation. The phone targets a stop after 0.6 s, or sooner if its
+camera moves 0.2 m, tracking/depth becomes stale or limited, the robot link drops, or the board
+leaves still mode. The board's lost-stream watchdog is a separate backstop. The test requires a
+clear floor, a rigid phone mount, voice paused/board still, and someone at the physical power
+switch. It does not classify obstacles or cliffs; do not run it near people, pets, edges, or stairs.
+The trace marks pulse start/stop and records the sent drive state for comparison with board ACKs
+and tape-measured displacement. **STOP ROBOT** sends both a zero drive state and the board stop
+imperative. Ending the probe stops the robot first.
+
 Therefore this A/B measures the **incremental benefit and cost of explicitly requesting scene
 depth**, not a strict camera-only-versus-LiDAR comparison. Keep depth optional unless it
 materially improves an actual task (especially traversability/obstacle detection) enough to

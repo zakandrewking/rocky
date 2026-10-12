@@ -107,7 +107,9 @@ only for motor trials. The ordinary drive controls remain the only motor input. 
 tracking, pose, and drive-command timing without video; its per-session JSONL log can be pulled
 from the phone and summarized with `pnpm ios:nav:analyze <log-path>`. No autonomous navigation is
 enabled by this module. On LiDAR-capable phones, **+ depth** opens a live false-colour scene-depth
-view with a Camera/Depth switch; neither image stream is saved.
+view with a Camera/Depth switch; neither image stream is saved. That view also contains an
+operator-started, bounded **FORWARD TEST · 0.6s** pulse and **STOP ROBOT** for a clear-floor motor
+baseline. The pulse is not autonomous navigation or obstacle avoidance.
 
 ### Switching the speech provider
 

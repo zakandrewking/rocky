@@ -2,6 +2,11 @@
 
 ## ARKit + motor-feedback navigation (`apps/ios/docs/navigation-arkit.md`)
 
+- [x] Put an operator-started, time- and camera-travel-bounded forward pulse plus immediate stop
+  in the live depth view. Gate it on a connected, still robot and fresh normal ARKit/depth; log
+  pulse start/stop and drive commands. No firmware changes or obstacle-navigation claim.
+- [ ] On a clear floor with the phone rigidly mounted, run one forward pulse with a spotter and
+  tape marks. Check physical stop, board ACK, ARKit delta, and autonomy handoff before any turn.
 - [x] Add an on-phone false-colour LiDAR scene-depth view to the optional + depth probe, with
   confidence dimming and Camera/Depth comparison. Keep frames in memory only; do not treat this
   as an obstacle detector.

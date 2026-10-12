@@ -160,7 +160,7 @@ struct ContentView: View {
             handleScenePhase(phase)
         }
         .sheet(isPresented: $showEnvironmentLab) {
-            ARKitEnvironmentLab(probe: navigationProbe) {
+            ARKitEnvironmentLab(probe: navigationProbe, behavior: behavior) {
                 showEnvironmentLab = false
             }
         }

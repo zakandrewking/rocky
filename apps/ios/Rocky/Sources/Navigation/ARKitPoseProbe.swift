@@ -12,6 +12,9 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
     @Published private(set) var normalTrackingPercent = 0
     @Published private(set) var featurePointCount = 0
     @Published private(set) var depthPreview: UIImage?
+    @Published private(set) var lastPoseAt: Date?
+    @Published private(set) var lastDepthAt: Date?
+    private(set) var lastPositionMeters: SIMD3<Float>?
     @Published private(set) var lastPosition = "—"
     @Published private(set) var lastError: String?
     @Published private(set) var fileName: String?
@@ -72,6 +75,9 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
         normalTrackingPercent = 0
         featurePointCount = 0
         depthPreview = nil
+        lastPoseAt = nil
+        lastDepthAt = nil
+        lastPositionMeters = nil
         lastLoggedFrameTime = -Double.infinity
         lastDepthPreviewFrameTime = -Double.infinity
         framesSinceLog = 0
@@ -103,6 +109,9 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
         isRunning = false
         tracking = "off"
         depthPreview = nil
+        lastPoseAt = nil
+        lastDepthAt = nil
+        lastPositionMeters = nil
         RockyLog.write("navigation probe: stopped (\(reason))")
     }
 
@@ -168,6 +177,11 @@ extension ARKitPoseProbe: @preconcurrency ARSessionDelegate {
         let x = Double(transform.columns.3.x)
         let y = Double(transform.columns.3.y)
         let z = Double(transform.columns.3.z)
+        lastPositionMeters = SIMD3(
+            transform.columns.3.x, transform.columns.3.y, transform.columns.3.z
+        )
+        lastPoseAt = Date()
+        if frame.sceneDepth != nil { lastDepthAt = lastPoseAt }
         let forwardX = -Double(transform.columns.2.x)
         let forwardZ = -Double(transform.columns.2.z)
         let matrix = [
