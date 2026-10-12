@@ -30,7 +30,30 @@ orientation/mounting before designing a multi-camera or camera-switching feature
 relative to each session's arbitrary origin, so a saved destination also needs a relocalization
 strategy before it can work across sessions.
 
-## How to run the observational probe
+## Phone-only environment scouting (first)
+
+No robot or mount is needed for this pass. With voice paused, expand the state chip and tap
+**ARKit probe**. The live rear-camera view opens with ARKit's feature-point dots, tracking state,
+normal-tracking percentage, and sample count. Nothing in the image is saved. **Keep logging**
+closes the view without ending the probe; **Stop** ends the probe. The screen remains awake only
+while the app is foregrounded, so do not lock the phone during a trial.
+
+Hold the phone in portrait near the *intended* camera height and angle. Point it at static,
+well-lit room features at several distances: furniture edges, door frames, wall art, shelving,
+and some textured floor. Avoid a frame dominated by a blank wall, dark floor, close-up robot
+body, mirror, or moving people. Start with 20–30 seconds still, then **Mark trial** and walk
+about 1 m smoothly, then turn 90° right and pause. Retrace to the start mark if you want to
+measure loop closure. Repeat the same motion in a less textured or dimmer area, marking the
+boundary. Watch for `limited:insufficientFeatures` or
+`limited:excessiveMotion`; after the test, compare normal-tracking fraction and path closure in
+the trace. A large number of dots alone is not a calibrated quality measure—Apple says the point
+cloud can vary between frames and software releases.
+
+This scouts whether *environments and camera viewpoints* work for ARKit. It does **not** qualify
+the rigid phone-to-robot transform, actual mounted camera occlusion/vibration, or motor response.
+Those are the following trials.
+
+## Mounted observational probe
 
 1. Mount the iPhone rigidly on Rocky with the rear camera unobstructed and able to see textured
    room features. Note lens height, yaw relative to robot-forward, and whether the screen/face
@@ -38,14 +61,14 @@ strategy before it can work across sessions.
    rigidly mounted phone/base by hand over a clear, level floor.
 2. Open Rocky, expand the lower-left state chip, then tap **ARKit probe**. A robot connection is
    needed only for Stage B/C motor trials; the standard drive controls appear when connected.
-   Camera permission is requested if needed. The status chip shows ARKit tracking state.
-   The details panel closes so the existing spring-return drive/steer controls remain usable.
+   Camera permission is requested if needed. The live camera/feature-point view opens; tap
+   **Keep logging** to dismiss it and regain the existing spring-return drive/steer controls.
 3. Place tape marks and record each trial's measured ground truth in a notebook. Expand the chip
    and tap **mark trial** at each trial boundary; the mark is written to the JSONL trace. For
    Stage A, carry the mounted base by hand. For motor trials, drive with the existing sliders,
    releasing them and verifying physical stop after each motion. Tap **stop ARKit probe** at
-   the end. App inactivity, robot disconnect, voice camera startup, and ARKit failure also stop
-   the probe.
+   the end. App inactivity, voice camera startup, and ARKit failure also stop the probe; robot
+   link changes are recorded without stopping a phone-only trial.
 4. The app shows the `Documents/navigation-probe-<timestamp>.jsonl` filename. Pull it with
    `xcrun devicectl device copy from --device <id> --domain-type appDataContainer
    --domain-identifier family.rocky.ios --source Documents/<filename>
@@ -54,7 +77,7 @@ strategy before it can work across sessions.
    and system uptime are all retained. `x_m/y_m/z_m` are camera position in ARKit world space;
    `forward_x/z` are its horizontal forward vector; `camera_matrix_col_major` retains the full
    6-DoF transform for fitting a tilted/sideways phone mount later. The trace also counts ARKit
-   callbacks between logged samples. No images or video are saved.
+   callbacks and visible feature-point count between logged samples. No images or video are saved.
    Run `pnpm ios:nav:analyze <path-to-pulled-jsonl>` for per-mark tracking coverage, sample
    rate/gaps, trajectory length, endpoint displacement, and heading change. Compare those ARKit
    quantities with tape measurements; the script cannot infer ground-truth error by itself.
@@ -102,4 +125,5 @@ places, ER2 waypoint selection, and traversability sensing.
 Apple reference: [ARWorldTrackingConfiguration](https://developer.apple.com/documentation/arkit/arworldtrackingconfiguration),
 [ARSessionDelegate](https://developer.apple.com/documentation/arkit/arsessiondelegate),
 [scene depth and device feature detection](https://developer.apple.com/documentation/arkit/arconfiguration/framesemantics-swift.struct/scenedepth),
-[tracking quality and interruptions](https://developer.apple.com/documentation/arkit/managing-session-life-cycle-and-tracking-quality).
+[tracking quality and interruptions](https://developer.apple.com/documentation/arkit/managing-session-life-cycle-and-tracking-quality),
+and [feature-point debugging](https://developer.apple.com/documentation/arkit/arframe/rawfeaturepoints).

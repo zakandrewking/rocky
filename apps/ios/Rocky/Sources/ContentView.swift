@@ -62,6 +62,7 @@ struct ContentView: View {
     @State private var appWasBackgrounded = false
     @State private var robotControlReset = UUID()
     @State private var showRobotControls = true
+    @State private var showEnvironmentLab = false
 
     var body: some View {
         ZStack {
@@ -146,6 +147,9 @@ struct ContentView: View {
         .onChange(of: voiceSession.state) { _, state in
             handleVoiceStateChangeForCamera(state)
         }
+        .onChange(of: navigationProbe.isRunning) { _, running in
+            if !running { showEnvironmentLab = false }
+        }
         .onChange(of: personCamera.lastSample) { _, sample in
             if let sample { voiceSession.updateVision(sample) }
         }
@@ -154,6 +158,11 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             handleScenePhase(phase)
+        }
+        .sheet(isPresented: $showEnvironmentLab) {
+            ARKitEnvironmentLab(probe: navigationProbe) {
+                showEnvironmentLab = false
+            }
         }
     }
 
@@ -455,6 +464,7 @@ struct ContentView: View {
                 Text("ARKit \(navigationProbe.mode): \(navigationProbe.tracking) · \(navigationProbe.lastPosition) · \(navigationProbe.sampleCount) samples")
                     .foregroundStyle(RockyTheme.mint.opacity(0.8))
                 HStack {
+                    Button("view camera") { showEnvironmentLab = true }
                     Button("mark trial") { navigationProbe.mark("trial") }
                     Button("stop ARKit probe") { navigationProbe.stop(reason: "person stopped") }
                 }
@@ -497,6 +507,7 @@ struct ContentView: View {
             guard navigationProbe.isRunning else { return }
             if canStartNavigationProbe {
                 detailsOpen = false
+                showEnvironmentLab = true
             } else {
                 navigationProbe.stop(reason: "voice camera started")
             }

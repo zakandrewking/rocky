@@ -9,15 +9,19 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var tracking = "off"
     @Published private(set) var sampleCount = 0
+    @Published private(set) var normalTrackingPercent = 0
+    @Published private(set) var featurePointCount = 0
     @Published private(set) var lastPosition = "—"
     @Published private(set) var lastError: String?
     @Published private(set) var fileName: String?
     @Published private(set) var mode = "standard"
 
     private let session = ARSession()
+    var arSession: ARSession { session }
     private var logHandle: FileHandle?
     private var lastLoggedFrameTime = -Double.infinity
     private var framesSinceLog = 0
+    private var normalSampleCount = 0
     private var startGeneration = 0
     private var isStarting = false
 
@@ -62,6 +66,9 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
         logHandle = handle
         fileName = name
         sampleCount = 0
+        normalSampleCount = 0
+        normalTrackingPercent = 0
+        featurePointCount = 0
         lastLoggedFrameTime = -Double.infinity
         framesSinceLog = 0
         tracking = "initializing"
@@ -161,12 +168,16 @@ extension ARKitPoseProbe: @preconcurrency ARSessionDelegate {
         ].map(Double.init)
         lastPosition = String(format: "x %.2f · z %.2f m", x, z)
         sampleCount += 1
+        if state == "normal" { normalSampleCount += 1 }
+        normalTrackingPercent = normalSampleCount * 100 / sampleCount
+        featurePointCount = frame.rawFeaturePoints?.points.count ?? 0
         write([
             "type": "pose", "frame_time_s": frame.timestamp, "tracking": state,
             "frame_callbacks_since_last": callbackCount,
             "x_m": x, "y_m": y, "z_m": z,
             "forward_x": forwardX, "forward_z": forwardZ,
             "camera_matrix_col_major": matrix,
+            "feature_points": featurePointCount,
             "scene_depth_available": frame.sceneDepth != nil,
         ])
     }

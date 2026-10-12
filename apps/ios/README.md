@@ -97,10 +97,12 @@ the scrolling log.
 
 ### ARKit + motor-feedback experiment
 
-The dedicated [navigation qualification plan](docs/navigation-arkit.md) describes the first
-rear-camera, hand-carried and manually driven trials. With voice paused, expand the state
+The dedicated [navigation qualification plan](docs/navigation-arkit.md) starts with a phone-only
+environment scout, then rear-camera, mounted and manually driven trials. With voice paused, expand the state
 chip and choose **ARKit probe** or **+ depth** (optional on a LiDAR-capable phone such as the
-iPhone 14 Pro). The robot may be off for the first pose-only trials; it needs to be connected
+iPhone 14 Pro). A live rear-camera view shows ARKit feature points and tracking state without
+saving images; **Keep logging** closes the view while the probe continues. The robot may be off
+for the first pose-only trials; it needs to be connected
 only for motor trials. The ordinary drive controls remain the only motor input. The probe records
 tracking, pose, and drive-command timing without video; its per-session JSONL log can be pulled
 from the phone and summarized with `pnpm ios:nav:analyze <log-path>`. No autonomous navigation is

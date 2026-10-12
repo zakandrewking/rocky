@@ -2,6 +2,13 @@
 
 ## ARKit + motor-feedback navigation (`apps/ios/docs/navigation-arkit.md`)
 
+- [x] Make the ARKit experiment usable off-robot: live rear-camera view with ARKit feature-point
+  diagnostics, tracking reason, normal-tracking percentage, and recorded feature count. It shares
+  the existing probe session, saves no images, and lets the person continue logging after hiding
+  the view. Feature count is diagnostic only, never a quality gate.
+- [ ] Phone-only environment scout: compare a textured/well-lit room with a sparse or dim view
+  using the same handheld still–1 m–90° sequence. Check tracking-state transitions and the
+  trace before spending time on a robot mount.
 - [x] Add a separate, observational rear-camera ARKit probe to the live iOS app. It records
   tracking state/pose and the existing manual-drive commands without sending new motor commands,
   changing robot firmware, or saving images. It works with the robot off for hand-carried trials;
