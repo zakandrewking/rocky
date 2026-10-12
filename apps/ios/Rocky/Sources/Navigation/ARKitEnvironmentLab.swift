@@ -22,7 +22,7 @@ struct ARKitEnvironmentLab: View {
     @ObservedObject var behavior: BehaviorMonitor
     let close: () -> Void
     @State private var showDepth = true
-    @StateObject private var forwardPulse = ForwardPulseController()
+    @StateObject private var motorPulse = MotorPulseController()
 
     var body: some View {
         ZStack {
@@ -58,8 +58,12 @@ struct ARKitEnvironmentLab: View {
                          : "Dots show ARKit landmarks, not a quality score")
                         .foregroundStyle(RockyTheme.mint.opacity(0.72))
                     if probe.mode == "scene-depth" {
-                        Text(forwardPulse.status)
+                        Text(motorPulse.status)
                             .foregroundStyle(RockyTheme.amberBright)
+                        if let turn = motorPulse.turnDegrees(probe: probe) {
+                            Text(String(format: "ARKit turn Δ: %+.1f°", turn))
+                                .foregroundStyle(RockyTheme.mintBright)
+                        }
                         Text("Clear floor only · no obstacle avoidance")
                             .foregroundStyle(RockyTheme.rust)
                         if behavior.controlsConnected && behavior.mood != "still" {
@@ -77,16 +81,26 @@ struct ARKitEnvironmentLab: View {
                 if probe.mode == "scene-depth" {
                     HStack {
                         Button("FORWARD TEST · 0.6s") {
-                            forwardPulse.start(behavior: behavior, probe: probe)
+                            motorPulse.start(.forward, behavior: behavior, probe: probe)
                         }
                         .disabled(
                             !behavior.controlsConnected || behavior.mood != "still"
-                                || forwardPulse.isDriving
+                                || motorPulse.isDriving
                         )
                         .tint(RockyTheme.mint)
+                        Button("RIGHT TURN · 0.5s") {
+                            motorPulse.start(.rightTurn, behavior: behavior, probe: probe)
+                        }
+                        .disabled(
+                            !behavior.controlsConnected || behavior.mood != "still"
+                                || motorPulse.isDriving
+                        )
+                        .tint(RockyTheme.mint)
+                    }
+                    HStack {
                         Spacer()
                         Button("STOP ROBOT") {
-                            forwardPulse.emergencyStop(behavior: behavior, probe: probe)
+                            motorPulse.emergencyStop(behavior: behavior, probe: probe)
                         }
                         .tint(RockyTheme.rust)
                     }
@@ -108,11 +122,11 @@ struct ARKitEnvironmentLab: View {
                     Button("Mark trial") { probe.mark("trial") }
                     Spacer()
                     Button("Keep logging") {
-                        forwardPulse.emergencyStop(behavior: behavior, probe: probe)
+                        motorPulse.emergencyStop(behavior: behavior, probe: probe)
                         close()
                     }
                     Button("End probe") {
-                        forwardPulse.emergencyStop(behavior: behavior, probe: probe)
+                        motorPulse.emergencyStop(behavior: behavior, probe: probe)
                         probe.stop(reason: "person stopped")
                         close()
                     }
@@ -126,18 +140,18 @@ struct ARKitEnvironmentLab: View {
         .preferredColorScheme(.dark)
         .interactiveDismissDisabled()
         .onChange(of: probe.isRunning) { _, running in
-            if !running && forwardPulse.isDriving {
-                forwardPulse.emergencyStop(behavior: behavior, probe: probe)
+            if !running && motorPulse.isDriving {
+                motorPulse.emergencyStop(behavior: behavior, probe: probe)
             }
         }
         .onChange(of: behavior.controlsConnected) { _, connected in
-            if !connected && forwardPulse.isDriving {
-                forwardPulse.emergencyStop(behavior: behavior, probe: probe)
+            if !connected && motorPulse.isDriving {
+                motorPulse.emergencyStop(behavior: behavior, probe: probe)
             }
         }
         .onDisappear {
-            if forwardPulse.isDriving {
-                forwardPulse.emergencyStop(behavior: behavior, probe: probe)
+            if motorPulse.isDriving {
+                motorPulse.emergencyStop(behavior: behavior, probe: probe)
             }
         }
     }

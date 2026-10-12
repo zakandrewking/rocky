@@ -105,6 +105,21 @@ The trace marks pulse start/stop and records the sent drive state for comparison
 and tape-measured displacement. **STOP ROBOT** sends both a zero drive state and the board stop
 imperative. Ending the probe stops the robot first.
 
+The first mounted run gave five repeatable forward pulses: ARKit summed about 35.5 cm and floor
+marks showed about 14 in (35.6 cm). All five forward starts were board-acknowledged; tracking and
+depth stayed normal. Physical stopping looked prompt, but the trace does not yet distinguish pose
+settling from command timing after Stop, and board stop-ACK timing remains unverified. This is a
+straight-line baseline on one floor, not a navigation safety qualification.
+
+The next bounded baseline is **RIGHT TURN · 0.5s** in the same depth view. It sends 22% right
+steering with zero throttle through the existing manual-drive path, targeting a stop after 0.5 s
+or earlier at 35° ARKit heading change, 0.1 m camera travel, or any existing link/tracking/depth
+failure. These caps limit a test; they are not an exact-angle controller. Mark the chassis heading
+on the floor, run only one tap initially with a spotter and clear space, and compare physical
+direction/angle with the recorded ARKit trace before attempting repeated turns or a 90° turn.
+The view shows the live ARKit angle relative to the most recent turn start, including after the
+motors stop; use the settled reading rather than the value at the instant Stop is sent.
+
 Therefore this A/B measures the **incremental benefit and cost of explicitly requesting scene
 depth**, not a strict camera-only-versus-LiDAR comparison. Keep depth optional unless it
 materially improves an actual task (especially traversability/obstacle detection) enough to

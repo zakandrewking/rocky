@@ -5,8 +5,14 @@
 - [x] Put an operator-started, time- and camera-travel-bounded forward pulse plus immediate stop
   in the live depth view. Gate it on a connected, still robot and fresh normal ARKit/depth; log
   pulse start/stop and drive commands. No firmware changes or obstacle-navigation claim.
-- [ ] On a clear floor with the phone rigidly mounted, run one forward pulse with a spotter and
-  tape marks. Check physical stop, board ACK, ARKit delta, and autonomy handoff before any turn.
+- [x] On a clear floor with the phone rigidly mounted, run five forward pulses with a spotter and
+  tape marks. All five starts were board-acknowledged, tracking/depth stayed normal, and 14 in
+  measured travel agreed with ARKit's ~35.5 cm total. Physical stop looked prompt; stop ACK timing
+  remains unverified because newer repeated stop frames can supersede the reported one.
+- [x] Add an operator-started, 0.5 s right-turn baseline pulse, capped at 35° ARKit heading
+  change and 0.1 m camera travel, using the same link/tracking/depth guards and stop path.
+- [ ] Run a single right-turn pulse with a spotter and floor orientation marks; verify direction,
+  physical angle, stop behavior, and trace before repeating or attempting a 90° turn.
 - [x] Add an on-phone false-colour LiDAR scene-depth view to the optional + depth probe, with
   confidence dimming and Camera/Depth comparison. Keep frames in memory only; do not treat this
   as an obstacle detector.

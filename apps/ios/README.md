@@ -110,6 +110,8 @@ enabled by this module. On LiDAR-capable phones, **+ depth** opens a live false-
 view with a Camera/Depth switch; neither image stream is saved. That view also contains an
 operator-started, bounded **FORWARD TEST · 0.6s** pulse and **STOP ROBOT** for a clear-floor motor
 baseline. The pulse is not autonomous navigation or obstacle avoidance.
+The same depth view offers a bounded **RIGHT TURN · 0.5s** baseline for a single operator-started
+turn, with ARKit heading and camera-travel limits; see `docs/navigation-arkit.md` for the test setup.
 
 ### Switching the speech provider
 

@@ -6,33 +6,56 @@ final class ForwardPulsePolicyTests: XCTestCase {
     private func ready(
         linked: Bool = true, still: Bool = true, trackingNormal: Bool = true,
         poseAge: TimeInterval = 0.1, depthAge: TimeInterval = 0.1,
-        cameraTravelMeters: Double = 0
-    ) -> ForwardPulsePolicy.Snapshot {
+        cameraTravelMeters: Double = 0, headingChangeDegrees: Double = 0
+    ) -> MotorPulsePolicy.Snapshot {
         .init(
             linked: linked, still: still, probeRunning: true, depthMode: true,
             trackingNormal: trackingNormal, poseAge: poseAge, depthAge: depthAge,
-            cameraTravelMeters: cameraTravelMeters
+            cameraTravelMeters: cameraTravelMeters,
+            headingChangeDegrees: headingChangeDegrees
         )
     }
 
     func testReadySnapshotMayStart() {
-        XCTAssertNil(ForwardPulsePolicy.stopReason(ready()))
+        XCTAssertNil(MotorPulsePolicy.stopReason(ready(), motion: .forward))
     }
 
     func testLinkAndTrackingFailuresStop() {
-        XCTAssertNotNil(ForwardPulsePolicy.stopReason(ready(linked: false)))
-        XCTAssertNotNil(ForwardPulsePolicy.stopReason(ready(still: false)))
-        XCTAssertNotNil(ForwardPulsePolicy.stopReason(ready(trackingNormal: false)))
+        XCTAssertNotNil(MotorPulsePolicy.stopReason(ready(linked: false), motion: .rightTurn))
+        XCTAssertNotNil(MotorPulsePolicy.stopReason(ready(still: false), motion: .forward))
+        XCTAssertNotNil(MotorPulsePolicy.stopReason(ready(trackingNormal: false), motion: .rightTurn))
     }
 
     func testStalePoseOrDepthStops() {
-        XCTAssertNotNil(ForwardPulsePolicy.stopReason(ready(poseAge: 0.5)))
-        XCTAssertNotNil(ForwardPulsePolicy.stopReason(ready(depthAge: 0.5)))
+        XCTAssertNotNil(MotorPulsePolicy.stopReason(ready(poseAge: 0.5), motion: .rightTurn))
+        XCTAssertNotNil(MotorPulsePolicy.stopReason(ready(depthAge: 0.5), motion: .forward))
     }
 
     func testCameraTravelCapsPulse() {
-        XCTAssertNil(ForwardPulsePolicy.stopReason(ready(cameraTravelMeters: 0.19)))
-        XCTAssertNotNil(ForwardPulsePolicy.stopReason(ready(cameraTravelMeters: 0.2)))
-        XCTAssertLessThanOrEqual(ForwardPulsePolicy.duration, 0.6)
+        XCTAssertNil(MotorPulsePolicy.stopReason(ready(cameraTravelMeters: 0.19), motion: .forward))
+        XCTAssertNotNil(MotorPulsePolicy.stopReason(ready(cameraTravelMeters: 0.2), motion: .forward))
+        XCTAssertLessThanOrEqual(MotorPulsePolicy.Motion.forward.duration, 0.6)
+    }
+
+    func testTurnCapsTranslationAndAngle() {
+        XCTAssertNil(MotorPulsePolicy.stopReason(
+            ready(cameraTravelMeters: 0.09, headingChangeDegrees: 34), motion: .rightTurn
+        ))
+        XCTAssertNotNil(MotorPulsePolicy.stopReason(
+            ready(cameraTravelMeters: 0.1), motion: .rightTurn
+        ))
+        XCTAssertNotNil(MotorPulsePolicy.stopReason(
+            ready(headingChangeDegrees: 35), motion: .rightTurn
+        ))
+        XCTAssertLessThanOrEqual(MotorPulsePolicy.Motion.rightTurn.duration, 0.5)
+    }
+
+    func testHeadingChangeIsPositiveForRightTurnAndWraps() {
+        XCTAssertEqual(MotorPulsePolicy.headingChangeDegrees(
+            from: SIMD2(0, -1), to: SIMD2(1, 0)
+        ), 90, accuracy: 0.001)
+        XCTAssertEqual(MotorPulsePolicy.headingChangeDegrees(
+            from: SIMD2(0, -1), to: SIMD2(-1, 0)
+        ), -90, accuracy: 0.001)
     }
 }
