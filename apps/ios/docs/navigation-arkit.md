@@ -87,8 +87,12 @@ application. The normal session log contains correlated board acceptance reports
 timelines before attributing delay to either ARKit or motors.
 
 On the iPhone 14 Pro, run matched trials with **+ depth**. This requests ARKit's LiDAR scene-depth
-stream and logs whether depth was available; it does not change motor control. The standard mode
-does not request depth, but ARKit may still use the phone's hardware internally for tracking.
+stream and logs whether depth was available; it does not change motor control. The live view opens
+on a false-colour depth image (red near, blue far, dark for low-confidence or missing data), with
+**Camera** and **Depth** buttons to switch displays. The colour scale clips at 0.2–4 m, so it is
+a visual diagnostic, not an obstacle or free-space judgment; no depth frames are saved. The
+standard mode does not request depth, but ARKit may still use the phone's hardware internally
+for tracking.
 Therefore this A/B measures the **incremental benefit and cost of explicitly requesting scene
 depth**, not a strict camera-only-versus-LiDAR comparison. Keep depth optional unless it
 materially improves an actual task (especially traversability/obstacle detection) enough to

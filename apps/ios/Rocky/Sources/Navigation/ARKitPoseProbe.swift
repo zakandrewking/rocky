@@ -11,6 +11,7 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
     @Published private(set) var sampleCount = 0
     @Published private(set) var normalTrackingPercent = 0
     @Published private(set) var featurePointCount = 0
+    @Published private(set) var depthPreview: UIImage?
     @Published private(set) var lastPosition = "—"
     @Published private(set) var lastError: String?
     @Published private(set) var fileName: String?
@@ -21,6 +22,7 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
     private var logHandle: FileHandle?
     private var lastLoggedFrameTime = -Double.infinity
     private var framesSinceLog = 0
+    private var lastDepthPreviewFrameTime = -Double.infinity
     private var normalSampleCount = 0
     private var startGeneration = 0
     private var isStarting = false
@@ -69,7 +71,9 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
         normalSampleCount = 0
         normalTrackingPercent = 0
         featurePointCount = 0
+        depthPreview = nil
         lastLoggedFrameTime = -Double.infinity
+        lastDepthPreviewFrameTime = -Double.infinity
         framesSinceLog = 0
         tracking = "initializing"
         mode = useSceneDepth ? "scene-depth" : "standard"
@@ -98,6 +102,7 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
         logHandle = nil
         isRunning = false
         tracking = "off"
+        depthPreview = nil
         RockyLog.write("navigation probe: stopped (\(reason))")
     }
 
@@ -149,6 +154,11 @@ extension ARKitPoseProbe: @preconcurrency ARSessionDelegate {
         }
         if tracking != state { tracking = state }
         framesSinceLog += 1
+        if mode == "scene-depth", frame.timestamp - lastDepthPreviewFrameTime >= 0.2,
+           let depth = frame.sceneDepth {
+            lastDepthPreviewFrameTime = frame.timestamp
+            depthPreview = DepthHeatmapRenderer.image(from: depth)
+        }
         // The experiment records 10 Hz while leaving ARKit free to track at its own frame rate.
         guard frame.timestamp - lastLoggedFrameTime >= 0.1 else { return }
         lastLoggedFrameTime = frame.timestamp

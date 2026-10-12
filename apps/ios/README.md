@@ -106,7 +106,8 @@ for the first pose-only trials; it needs to be connected
 only for motor trials. The ordinary drive controls remain the only motor input. The probe records
 tracking, pose, and drive-command timing without video; its per-session JSONL log can be pulled
 from the phone and summarized with `pnpm ios:nav:analyze <log-path>`. No autonomous navigation is
-enabled by this module.
+enabled by this module. On LiDAR-capable phones, **+ depth** opens a live false-colour scene-depth
+view with a Camera/Depth switch; neither image stream is saved.
 
 ### Switching the speech provider
 

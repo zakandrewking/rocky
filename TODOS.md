@@ -2,6 +2,11 @@
 
 ## ARKit + motor-feedback navigation (`apps/ios/docs/navigation-arkit.md`)
 
+- [x] Add an on-phone false-colour LiDAR scene-depth view to the optional + depth probe, with
+  confidence dimming and Camera/Depth comparison. Keep frames in memory only; do not treat this
+  as an obstacle detector.
+- [ ] Validate the depth preview's orientation and colour range on the iPhone 14 Pro in the
+  intended landscape mount, then compare depth and standard traces under matched motion.
 - [x] Make the ARKit experiment usable off-robot: live rear-camera view with ARKit feature-point
   diagnostics, tracking reason, normal-tracking percentage, and recorded feature count. It shares
   the existing probe session, saves no images, and lets the person continue logging after hiding

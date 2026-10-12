@@ -20,11 +20,28 @@ private struct ARKitCameraView: UIViewRepresentable {
 struct ARKitEnvironmentLab: View {
     @ObservedObject var probe: ARKitPoseProbe
     let close: () -> Void
+    @State private var showDepth = true
 
     var body: some View {
         ZStack {
             ARKitCameraView(session: probe.arSession)
                 .ignoresSafeArea()
+
+            if showDepth && probe.mode == "scene-depth" {
+                ZStack {
+                    Color.black
+                    if let preview = probe.depthPreview {
+                        Image(uiImage: preview)
+                            .resizable()
+                            .interpolation(.none)
+                            .scaledToFit()
+                    } else {
+                        Text("Waiting for LiDAR depth…")
+                            .foregroundStyle(.white)
+                    }
+                }
+                .ignoresSafeArea()
+            }
 
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -34,7 +51,9 @@ struct ARKitEnvironmentLab: View {
                         .foregroundStyle(probe.tracking == "normal" ? RockyTheme.mintBright : RockyTheme.amberBright)
                     Text("normal \(probe.normalTrackingPercent)% · features \(probe.featurePointCount) · samples \(probe.sampleCount)")
                     Text(probe.lastPosition)
-                    Text("Dots show ARKit landmarks, not a quality score")
+                    Text(showDepth && probe.mode == "scene-depth"
+                         ? "Depth: red near · blue far · dark low confidence"
+                         : "Dots show ARKit landmarks, not a quality score")
                         .foregroundStyle(RockyTheme.mint.opacity(0.72))
                 }
                 .font(.system(size: 12, design: .monospaced))
@@ -42,6 +61,16 @@ struct ARKitEnvironmentLab: View {
                 .background(RockyTheme.ink.opacity(0.86), in: RoundedRectangle(cornerRadius: 8))
 
                 Spacer()
+
+                if probe.mode == "scene-depth" {
+                    HStack {
+                        Button("Camera") { showDepth = false }
+                        Button("Depth") { showDepth = true }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(RockyTheme.ink)
+                    .font(.system(size: 13, design: .monospaced))
+                }
 
                 HStack {
                     Button("Mark trial") { probe.mark("trial") }
