@@ -136,6 +136,10 @@ CyberPi yaw and ultrasonic reads during the motor-deadline path. The normal driv
 unavailable while this disposable payload is loaded. Mark the chassis heading, keep someone at
 the power switch, and compare the settled ARKit angle with a floor mark. Restore
 `apps/robot/device/rocky_agent.py` afterward; this is not yet a production navigation command.
+In the first mounted run, two 33 RPM / 200 ms requests produced settled ARKit turns of 28.4° and
+29.0°; the floor estimate was about 29°. The board reported local `complete` after 312 and
+313 ms, not 200 ms. Its pulse was consistent across these two trials, but the deadline overrun
+must be explained and bounded before this mechanism is used as a navigation safety limit.
 
 Therefore this A/B measures the **incremental benefit and cost of explicitly requesting scene
 depth**, not a strict camera-only-versus-LiDAR comparison. Keep depth optional unless it

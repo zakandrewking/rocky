@@ -25,9 +25,15 @@
 - [x] Expose the existing disposable step19 board-timed spin from the iOS depth view as a
   one-shot 33 RPM / 200 ms test. Handshake on its distinct TCP service before sending motion;
   clock-only mode omits optional yaw/range reads from the board's motor-deadline path.
-- [ ] With a spotter and floor mark, temporarily load step19, record one board-clock turn from
-  the mounted iPhone, compare board elapsed time with physical and ARKit angle, then restore the
-  normal payload. Do not put new behavior in the normal firmware before this trial.
+- [x] With the mounted iPhone, temporarily load step19 and compare two board-clock turns. Both
+  requested 33 RPM for 200 ms; the board reported `complete` after 312/313 ms, and settled ARKit
+  headings were 28.4°/29.0° with normal tracking/depth. Floor estimate was about 29°. The first
+  normal-payload restore timed out during a board restart; after verifying the test payload was
+  still active, a longer transfer restored `rocky_agent.py`, confirmed by its still/listening
+  hello. Do not call the board pulse an exact 200 ms action.
+- [ ] Explain the ~112 ms board-clock deadline overrun before moving any timed-pulse command
+  into normal firmware. Measure tick scheduling and bound worst-case lateness; a local deadline
+  is useful only if its actual stop latency remains within the navigation clearance budget.
 - [x] Add an on-phone false-colour LiDAR scene-depth view to the optional + depth probe, with
   confidence dimming and Camera/Depth comparison. Keep frames in memory only; do not treat this
   as an obstacle detector.
