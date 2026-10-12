@@ -19,6 +19,15 @@
   receipt timestamp, and round-trip time in the ARKit trace. This is iOS-only; no firmware change.
 - [ ] Run one marked right-turn pulse to correlate physical angle, ARKit pose, and board stop
   receipt. Do not repeat or attempt a 90° turn until stop timing is understood.
+- [x] First marked turn: ARKit settled at 48.6° and floor estimate was about 50°. The board's
+  33 RPM start report arrived 249 ms after send; the first reported stop arrived 382 ms after
+  the phone's stop request. ARKit reached its stable 48.6° within ~0.2 s of that request.
+- [x] Expose the existing disposable step19 board-timed spin from the iOS depth view as a
+  one-shot 33 RPM / 200 ms test. Handshake on its distinct TCP service before sending motion;
+  clock-only mode omits optional yaw/range reads from the board's motor-deadline path.
+- [ ] With a spotter and floor mark, temporarily load step19, record one board-clock turn from
+  the mounted iPhone, compare board elapsed time with physical and ARKit angle, then restore the
+  normal payload. Do not put new behavior in the normal firmware before this trial.
 - [x] Add an on-phone false-colour LiDAR scene-depth view to the optional + depth probe, with
   confidence dimming and Camera/Depth comparison. Keep frames in memory only; do not treat this
   as an obstacle detector.

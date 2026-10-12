@@ -127,6 +127,16 @@ receives the board's report, so its round-trip latency is an upper bound on appl
 the exact instant the motors stopped. Until a marked single-turn test correlates those events with
 physical motion, avoid repeated turn taps.
 
+For the next *isolated* timing test, load the disposable
+`apps/robot/steps/step19_navigation_sensor_qualification.py` payload instead of Rocky's normal
+robot payload. The depth view's **BOARD CLOCK TURN · 0.2s** button handshakes with that payload
+on TCP 8770 and allows one 33 RPM right spin per view. The board itself stops after 200 ms; a
+disconnect or the screen's Stop button asks it to stop sooner. The `clock_only` handshake bypasses
+CyberPi yaw and ultrasonic reads during the motor-deadline path. The normal drive buttons are
+unavailable while this disposable payload is loaded. Mark the chassis heading, keep someone at
+the power switch, and compare the settled ARKit angle with a floor mark. Restore
+`apps/robot/device/rocky_agent.py` afterward; this is not yet a production navigation command.
+
 Therefore this A/B measures the **incremental benefit and cost of explicitly requesting scene
 depth**, not a strict camera-only-versus-LiDAR comparison. Keep depth optional unless it
 materially improves an actual task (especially traversability/obstacle detection) enough to

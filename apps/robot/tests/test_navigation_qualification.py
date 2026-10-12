@@ -149,6 +149,24 @@ class NavigationQualificationPayloadTests(unittest.TestCase):
         self.assertEqual(self.client.messages[-1]["event"], "motion_end")
         self.assertEqual(self.client.messages[-1]["reason"], "complete")
 
+    def test_clock_only_spin_never_reads_optional_sensors_while_timing_motion(self):
+        def forbidden_sensor():
+            raise AssertionError("clock-only pulse read an optional sensor")
+
+        sys.modules["cyberpi"].get_yaw = forbidden_sensor
+        self.ultrasonic.get_distance = forbidden_sensor
+        self.namespace["_handle"]({"type": "hello", "clock_only": True})
+        self.assertTrue(self.client.messages[-1]["clock_only"])
+
+        self.start(kind="spin", rpm=33, duration_ms=200)
+        self.assertEqual(self.motor.commands[-1], (33, 33))
+        self.now += 200
+        self.namespace["_tick_motion"](self.now)
+
+        self.assertEqual(self.motor.commands[-1], (0, 0))
+        self.assertEqual(self.client.messages[-1]["reason"], "complete")
+        self.assertEqual(self.client.messages[-1]["t"] - self.client.messages[-1]["started_t"], 200)
+
     def test_obstacle_crossing_threshold_stops_active_forward_pulse(self):
         self.start()
         self.ultrasonic.distance = 25

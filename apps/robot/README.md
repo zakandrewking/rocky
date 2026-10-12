@@ -78,6 +78,10 @@ at the laptop. It does not call commanded RPM and elapsed time “wheel deltas�
 no published readable wheel-position API. Raw logs go under the gitignored
 `local-data/robot-navigation-qualification/`. See `STEPS.md` step 18 for the trial matrix and the
 evidence each sensor must earn before navigation may depend on it.
+For the iOS board-clock turn experiment, its `hello` command accepts `clock_only: true`; in that
+mode it omits yaw/ultrasonic reads from the pulse timing path. The iOS depth view handshakes for
+that mode before sending one 33 RPM, 200 ms spin. The board-side elapsed clock—not phone Wi-Fi
+arrival timing—ends the pulse. Restore `rocky_agent.py` after the experiment.
 
 On macOS, the uploader automatically retries through the native TCP client if Node incorrectly
 reports that the reachable board has no route. It does not retry after a connection is made, so a

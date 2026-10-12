@@ -72,6 +72,7 @@ _state = {
     "last_sample": 0,
     "server_retry_at": 0,
     "motion": None,
+    "clock_only": False,
 }
 
 
@@ -89,9 +90,12 @@ def _sample(event="sample", **extra):
     message = {
         "event": event,
         "t": utime.ticks_ms(),
-        "yaw": cyberpi.get_yaw(),
-        "distance_cm": _distance_cm(),
     }
+    # A sensor call that hangs also blocks the single-threaded motor deadline. Clock-only trials
+    # omit optional sensors altogether, while ordinary qualification keeps its raw readings.
+    if not _state["clock_only"]:
+        message["yaw"] = cyberpi.get_yaw()
+        message["distance_cm"] = _distance_cm()
     message.update(extra)
     return message
 
@@ -148,7 +152,7 @@ def _start_motion(command):
         _send({"event": "refused", "id": command.get("id"), "reason": "outside safe bounds"})
         return
 
-    distance = _distance_cm()
+    distance = None if _state["clock_only"] else _distance_cm()
     if kind == "drive" and direction > 0 and distance is not None and distance < OBSTACLE_STOP_CM:
         _send(
             {
@@ -168,7 +172,7 @@ def _start_motion(command):
         "rpm": rpm,
         "duration_ms": duration_ms,
         "started": now,
-        "start_yaw": cyberpi.get_yaw(),
+        "start_yaw": None if _state["clock_only"] else cyberpi.get_yaw(),
         "min_distance": distance,
     }
     if kind == "drive":
@@ -182,6 +186,7 @@ def _start_motion(command):
 def _handle(command):
     command_type = command.get("type")
     if command_type == "hello":
+        _state["clock_only"] = bool(command.get("clock_only", False))
         _send(
             _sample(
                 "hello",
@@ -189,6 +194,7 @@ def _handle(command):
                 has_ultrasonic=HAS_ULTRASONIC,
                 max_rpm=MAX_RPM,
                 max_pulse_ms=MAX_PULSE_MS,
+                clock_only=_state["clock_only"],
             )
         )
     elif command_type == "mark":
@@ -285,7 +291,7 @@ def _tick_motion(now):
     motion = _state["motion"]
     if motion is None:
         return
-    distance = _distance_cm()
+    distance = None if _state["clock_only"] else _distance_cm()
     if distance is not None and (
         motion["min_distance"] is None or distance < motion["min_distance"]
     ):

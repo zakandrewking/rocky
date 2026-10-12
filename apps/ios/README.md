@@ -113,6 +113,9 @@ baseline. The pulse is not autonomous navigation or obstacle avoidance.
 The same depth view offers **RIGHT TURN TEST · 0.5s** for a single operator-started turn, with
 ARKit heading and camera-travel stop triggers (not final-angle caps); see
 `docs/navigation-arkit.md` for the test setup.
+When the disposable step19 qualification payload is temporarily loaded on the board, the depth
+view also offers a one-shot **BOARD CLOCK TURN · 0.2s**. It uses a separate handshake on port
+8770, not Rocky's normal drive path; normal robot controls return after restoring the live payload.
 
 ### Switching the speech provider
 

@@ -23,6 +23,7 @@ struct ARKitEnvironmentLab: View {
     let close: () -> Void
     @State private var showDepth = true
     @StateObject private var motorPulse = MotorPulseController()
+    @StateObject private var boardTimedTurn = BoardTimedTurnController()
 
     var body: some View {
         ZStack {
@@ -60,8 +61,14 @@ struct ARKitEnvironmentLab: View {
                     if probe.mode == "scene-depth" {
                         Text(motorPulse.status)
                             .foregroundStyle(RockyTheme.amberBright)
+                        Text(boardTimedTurn.status)
+                            .foregroundStyle(RockyTheme.amberBright)
                         if let turn = motorPulse.turnDegrees(probe: probe) {
                             Text(String(format: "ARKit turn Δ: %+.1f°", turn))
+                                .foregroundStyle(RockyTheme.mintBright)
+                        }
+                        if let turn = boardTimedTurn.turnDegrees(probe: probe) {
+                            Text(String(format: "Board-clock ARKit Δ: %+.1f°", turn))
                                 .foregroundStyle(RockyTheme.mintBright)
                         }
                         Text("Turn may exceed 35° · clear floor only · no obstacle avoidance")
@@ -98,9 +105,18 @@ struct ARKitEnvironmentLab: View {
                         .tint(RockyTheme.mint)
                     }
                     HStack {
+                        Button("BOARD CLOCK TURN · 0.2s") {
+                            boardTimedTurn.start(behavior: behavior, probe: probe)
+                        }
+                        .disabled(boardTimedTurn.isBusy || boardTimedTurn.hasRun || motorPulse.isDriving)
+                        .tint(RockyTheme.mint)
+                        Spacer()
+                    }
+                    HStack {
                         Spacer()
                         Button("STOP ROBOT") {
                             motorPulse.emergencyStop(behavior: behavior, probe: probe)
+                            boardTimedTurn.stop(probe: probe)
                         }
                         .tint(RockyTheme.rust)
                     }
@@ -123,10 +139,12 @@ struct ARKitEnvironmentLab: View {
                     Spacer()
                     Button("Keep logging") {
                         motorPulse.emergencyStop(behavior: behavior, probe: probe)
+                        boardTimedTurn.stop(probe: probe)
                         close()
                     }
                     Button("End probe") {
                         motorPulse.emergencyStop(behavior: behavior, probe: probe)
+                        boardTimedTurn.stop(probe: probe)
                         probe.stop(reason: "person stopped")
                         close()
                     }
@@ -143,6 +161,7 @@ struct ARKitEnvironmentLab: View {
             if !running && motorPulse.isDriving {
                 motorPulse.emergencyStop(behavior: behavior, probe: probe)
             }
+            if !running { boardTimedTurn.stop(probe: probe) }
         }
         .onChange(of: behavior.controlsConnected) { _, connected in
             if !connected && motorPulse.isDriving {
@@ -153,6 +172,7 @@ struct ARKitEnvironmentLab: View {
             if motorPulse.isDriving {
                 motorPulse.emergencyStop(behavior: behavior, probe: probe)
             }
+            boardTimedTurn.stop(probe: probe)
         }
     }
 }
