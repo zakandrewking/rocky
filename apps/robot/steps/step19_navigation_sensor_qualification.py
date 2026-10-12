@@ -120,7 +120,9 @@ def _finish_motion(reason):
     motion = _state["motion"]
     if motion is None:
         return
+    stop_call_t = utime.ticks_ms()
     _stop_motors()
+    stop_return_t = utime.ticks_ms()
     _state["motion"] = None
     _send(
         _sample(
@@ -129,6 +131,12 @@ def _finish_motion(reason):
             kind=motion["kind"],
             reason=reason,
             started_t=motion["started"],
+            start_return_t=motion["start_return_t"],
+            stop_call_t=stop_call_t,
+            stop_return_t=stop_return_t,
+            deadline_late_ms=utime.ticks_diff(
+                stop_call_t, utime.ticks_add(motion["started"], motion["duration_ms"])
+            ),
             start_yaw=motion["start_yaw"],
             min_distance_cm=motion["min_distance"],
         )
@@ -179,6 +187,7 @@ def _start_motion(command):
         mbot2.drive_speed(direction * rpm, direction * -rpm)
     else:
         mbot2.drive_speed(direction * rpm, direction * rpm)
+    _state["motion"]["start_return_t"] = utime.ticks_ms()
     cyberpi.led.on(255, 0, 255, id="all")
     _send(_sample("motion_start", id=_state["motion"]["id"], kind=kind))
 
@@ -313,10 +322,14 @@ _stop_motors()
 def tick():
     now = utime.ticks_ms()
     try:
+        # Clock-only pulses get their deadline checked before network work as well as after it.
+        # In ordinary sensor qualification, keep the existing single range read per tick.
+        if _state["clock_only"]:
+            _tick_motion(now)
         _ensure_server(now)
         _accept_client()
         _read_commands()
-        _tick_motion(now)
+        _tick_motion(utime.ticks_ms())
         if _state["client"] is not None and utime.ticks_diff(now, _state["last_sample"]) >= SAMPLE_INTERVAL_MS:
             _state["last_sample"] = now
             _send(_sample())

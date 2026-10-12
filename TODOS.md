@@ -26,14 +26,18 @@
   one-shot 33 RPM / 200 ms test. Handshake on its distinct TCP service before sending motion;
   clock-only mode omits optional yaw/range reads from the board's motor-deadline path.
 - [x] With the mounted iPhone, temporarily load step19 and compare two board-clock turns. Both
-  requested 33 RPM for 200 ms; the board reported `complete` after 312/313 ms, and settled ARKit
+  requested 33 RPM for 200 ms; the board reported `complete` after 312/313 ms measured from
+  before the start motor call to after the stop motor call, and settled ARKit
   headings were 28.4°/29.0° with normal tracking/depth. Floor estimate was about 29°. The first
   normal-payload restore timed out during a board restart; after verifying the test payload was
   still active, a longer transfer restored `rocky_agent.py`, confirmed by its still/listening
-  hello. Do not call the board pulse an exact 200 ms action.
-- [ ] Explain the ~112 ms board-clock deadline overrun before moving any timed-pulse command
-  into normal firmware. Measure tick scheduling and bound worst-case lateness; a local deadline
-  is useful only if its actual stop latency remains within the navigation clearance budget.
+  hello. The 112/113 ms difference is not proof the wheels ran that much longer: it includes
+  motor-call time and tick scheduling. Do not call the board pulse an exact 200 ms action.
+- [x] Add start-call-return, stop-call/return, and deadline-lateness timestamps to the
+  disposable payload. Check clock-only deadlines both before and after network work per tick.
+- [ ] Re-run the isolated board-clock pulse to separate tick lateness from motor-call duration
+  before moving any timed-pulse command into normal firmware. Bound worst-case lateness; a local
+  deadline is useful only within the navigation clearance budget.
 - [x] Add an on-phone false-colour LiDAR scene-depth view to the optional + depth probe, with
   confidence dimming and Camera/Depth comparison. Keep frames in memory only; do not treat this
   as an obstacle detector.

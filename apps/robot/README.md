@@ -82,6 +82,10 @@ For the iOS board-clock turn experiment, its `hello` command accepts `clock_only
 mode it omits yaw/ultrasonic reads from the pulse timing path. The iOS depth view handshakes for
 that mode before sending one 33 RPM, 200 ms spin. The board-side elapsed clock—not phone Wi-Fi
 arrival timing—ends the pulse. Restore `rocky_agent.py` after the experiment.
+The first two iOS-triggered turns agreed with floor marks at about 29°, but their `motion_end.t`
+minus `started_t` was 312/313 ms for 200 ms requests. That old field spans the motor start/stop
+API calls as well as the local deadline. New `start_return_t`, `stop_call_t`, `stop_return_t`, and
+`deadline_late_ms` fields separate those parts for the next run; they are not yet hardware-tested.
 
 On macOS, the uploader automatically retries through the native TCP client if Node incorrectly
 reports that the reachable board has no route. It does not retry after a connection is made, so a

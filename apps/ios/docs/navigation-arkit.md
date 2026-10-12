@@ -138,8 +138,13 @@ the power switch, and compare the settled ARKit angle with a floor mark. Restore
 `apps/robot/device/rocky_agent.py` afterward; this is not yet a production navigation command.
 In the first mounted run, two 33 RPM / 200 ms requests produced settled ARKit turns of 28.4° and
 29.0°; the floor estimate was about 29°. The board reported local `complete` after 312 and
-313 ms, not 200 ms. Its pulse was consistent across these two trials, but the deadline overrun
-must be explained and bounded before this mechanism is used as a navigation safety limit.
+313 ms measured from *before* the start motor call to *after* the stop motor call, not 200 ms.
+That interval includes motor API time and loop scheduling, so it does not establish how long the
+wheels were physically turning. Its outcome was consistent across these two trials, but the
+actual deadline lateness must be measured and bounded before this becomes a navigation safety
+limit. The disposable payload now logs separate start-return, stop-call, stop-return, and deadline
+lateness timestamps for a future isolated test; this newer instrumentation has not been loaded
+onto the robot.
 
 Therefore this A/B measures the **incremental benefit and cost of explicitly requesting scene
 depth**, not a strict camera-only-versus-LiDAR comparison. Keep depth optional unless it

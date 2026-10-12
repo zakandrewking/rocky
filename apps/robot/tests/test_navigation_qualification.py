@@ -28,9 +28,12 @@ class FakeMotorModule(types.ModuleType):
     def __init__(self):
         super().__init__("mbot2")
         self.commands = []
+        self.on_drive = None
 
     def drive_speed(self, left, right):
         self.commands.append((left, right))
+        if self.on_drive is not None:
+            self.on_drive()
 
 
 class FakeUltrasonic:
@@ -166,6 +169,23 @@ class NavigationQualificationPayloadTests(unittest.TestCase):
         self.assertEqual(self.motor.commands[-1], (0, 0))
         self.assertEqual(self.client.messages[-1]["reason"], "complete")
         self.assertEqual(self.client.messages[-1]["t"] - self.client.messages[-1]["started_t"], 200)
+
+    def test_clock_only_trace_separates_deadline_lateness_from_motor_call_time(self):
+        self.namespace["_handle"]({"type": "hello", "clock_only": True})
+        self.motor.on_drive = lambda: setattr(self, "now", self.now + 20)
+        self.start(kind="spin", rpm=33, duration_ms=200)
+
+        self.assertEqual(self.namespace["_state"]["motion"]["started"], 1_000)
+        self.assertEqual(self.namespace["_state"]["motion"]["start_return_t"], 1_020)
+        self.now = 1_210
+        self.namespace["_tick_motion"](self.now)
+
+        end = self.client.messages[-1]
+        self.assertEqual(end["event"], "motion_end")
+        self.assertEqual(end["deadline_late_ms"], 10)
+        self.assertEqual(end["stop_call_t"], 1_210)
+        self.assertEqual(end["stop_return_t"], 1_230)
+        self.assertEqual(end["t"] - end["started_t"], 230)
 
     def test_obstacle_crossing_threshold_stops_active_forward_pulse(self):
         self.start()
