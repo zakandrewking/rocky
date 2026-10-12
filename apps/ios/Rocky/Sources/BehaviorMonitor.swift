@@ -25,6 +25,14 @@ enum BehaviorMessage: Sendable {
     case disconnected
 }
 
+/// App-side timestamps around the UDP newest-state path. An applied reply is received after the
+/// board handled a frame; its arrival time is not the exact instant the motors changed.
+enum ControlTraceEvent {
+    case sent(sequence: Int, active: Bool, report: Bool, reason: String)
+    case applied(sequence: Int, active: Bool, leftRPM: Int, rightRPM: Int,
+                 roundTripMilliseconds: Int?, reason: String?)
+}
+
 /// Watches the robot's autonomous behaviour (apps/robot/device/rocky_agent.py) and passes the
 /// voice character's intentions back to it.
 ///
@@ -63,6 +71,7 @@ final class BehaviorMonitor: ObservableObject {
     /// which conflated two questions that turn out to have different answers: should she know,
     /// and should she interrupt herself.
     var onBoardMessage: ((BehaviorMessage) -> Void)?
+    var onControlTrace: ((ControlTraceEvent) -> Void)?
 
     private let beaconPort: NWEndpoint.Port
     private let eventPort: NWEndpoint.Port
@@ -471,7 +480,8 @@ final class BehaviorMonitor: ObservableObject {
     private func handleControlApplied(_ message: [String: Any]) {
         let sequence = (message["seq"] as? NSNumber)?.intValue ?? -1
         let trace = controlSentAt.removeValue(forKey: sequence)
-        let elapsed = trace.map { " in \(Int(Date().timeIntervalSince($0.at) * 1_000))ms" } ?? ""
+        let roundTripMilliseconds = trace.map { Int(Date().timeIntervalSince($0.at) * 1_000) }
+        let elapsed = roundTripMilliseconds.map { " in \($0)ms" } ?? ""
         let active = message["active"] as? Bool == true
         let left = message["left_rpm"] as? Int ?? 0
         let right = message["right_rpm"] as? Int ?? 0
@@ -483,6 +493,10 @@ final class BehaviorMonitor: ObservableObject {
                 + (active ? "wheels=\(left)/\(right)RPM" : "wheels=stopped")
                 + (details.isEmpty ? "" : " " + details.joined(separator: " "))
         )
+        onControlTrace?(.applied(
+            sequence: sequence, active: active, leftRPM: left, rightRPM: right,
+            roundTripMilliseconds: roundTripMilliseconds, reason: trace?.reason
+        ))
     }
 
     private func handleServoAcknowledgement(_ message: [String: Any]) {
@@ -726,6 +740,9 @@ final class BehaviorMonitor: ObservableObject {
         }
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
         controlConnection.send(content: data, completion: .idempotent)
+        onControlTrace?(.sent(
+            sequence: sequence, active: controlDriveActive, report: report, reason: reason
+        ))
         if report {
             RockyLog.write("control: sent seq=\(sequence) reason=\(reason)")
         }
@@ -737,7 +754,9 @@ final class BehaviorMonitor: ObservableObject {
             for _ in 0..<2 {
                 do { try await Task.sleep(for: .milliseconds(60)) } catch { return }
                 guard let self, !self.controlDriveActive else { return }
-                self.sendControlState(report: false, reason: "repeated stop")
+                // The board drains to the newest frame, so the first reported release can be
+                // superseded. Report both repeats to observe whichever stop it actually applies.
+                self.sendControlState(report: true, reason: "repeated stop")
             }
         }
     }

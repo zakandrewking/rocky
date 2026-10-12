@@ -9,10 +9,16 @@
   tape marks. All five starts were board-acknowledged, tracking/depth stayed normal, and 14 in
   measured travel agreed with ARKit's ~35.5 cm total. Physical stop looked prompt; stop ACK timing
   remains unverified because newer repeated stop frames can supersede the reported one.
-- [x] Add an operator-started, 0.5 s right-turn baseline pulse, capped at 35° ARKit heading
-  change and 0.1 m camera travel, using the same link/tracking/depth guards and stop path.
-- [ ] Run a single right-turn pulse with a spotter and floor orientation marks; verify direction,
-  physical angle, stop behavior, and trace before repeating or attempting a 90° turn.
+- [x] Add an operator-started, 0.5 s right-turn baseline pulse with 35° ARKit heading and 0.1 m
+  camera-travel *stop triggers*, using the same link/tracking/depth guards and stop path. These
+  are not final-angle bounds: four taps gave settled ARKit estimates of ~78°, 70°, 38°, 40°.
+- [x] Inspect the first right-turn trace: all four started at 33/33 RPM with 187–309 ms start
+  report latency; only one of four initial stop frames produced an applied report (128 ms), while
+  repeated stop frames could supersede the reported frame. The operator saw no physical coasting.
+- [x] Make every repeated stop request an applied report, and put sent/applied sequence, phone
+  receipt timestamp, and round-trip time in the ARKit trace. This is iOS-only; no firmware change.
+- [ ] Run one marked right-turn pulse to correlate physical angle, ARKit pose, and board stop
+  receipt. Do not repeat or attempt a 90° turn until stop timing is understood.
 - [x] Add an on-phone false-colour LiDAR scene-depth view to the optional + depth probe, with
   confidence dimming and Camera/Depth comparison. Keep frames in memory only; do not treat this
   as an obstacle detector.

@@ -9,6 +9,8 @@ test('segments a marked trace and reports tracking, depth, and planar motion', (
     { type: 'pose', frame_time_s: 0.1, x_m: 0, z_m: 1, forward_x: 1, forward_z: 0, tracking: 'limited:excessiveMotion', scene_depth_available: false },
     { type: 'mark', label: 'trial' },
     { type: 'drive', active: true },
+    { type: 'control_sent', seq: 3, active: false, report: true },
+    { type: 'control_applied', seq: 3, active: false, round_trip_ms: 120 },
     { type: 'pose', frame_time_s: 0.2, x_m: 1, z_m: 1, forward_x: 1, forward_z: 0, tracking: 'normal', scene_depth_available: true },
     { type: 'stop' },
   ]);
@@ -20,4 +22,7 @@ test('segments a marked trace and reports tracking, depth, and planar motion', (
   assert.equal(report.segments[0].heading_change_deg, 90);
   assert.equal(report.segments[1].drives, 1);
   assert.equal(report.segments[1].poses, 1);
+  assert.equal(report.segments[1].control_sends, 1);
+  assert.equal(report.segments[1].stopped_reports, 1);
+  assert.equal(report.segments[1].report_round_trip_ms, '120');
 });

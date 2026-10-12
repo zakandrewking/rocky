@@ -131,6 +131,25 @@ final class ARKitPoseProbe: NSObject, ObservableObject {
         ])
     }
 
+    func recordControlTrace(_ event: ControlTraceEvent) {
+        guard isRunning else { return }
+        switch event {
+        case let .sent(sequence, active, report, reason):
+            write([
+                "type": "control_sent", "seq": sequence, "active": active,
+                "report": report, "reason": reason,
+            ])
+        case let .applied(sequence, active, leftRPM, rightRPM, roundTripMilliseconds, reason):
+            var fields: [String: Any] = [
+                "type": "control_applied", "seq": sequence, "active": active,
+                "left_rpm": leftRPM, "right_rpm": rightRPM,
+            ]
+            if let roundTripMilliseconds { fields["round_trip_ms"] = roundTripMilliseconds }
+            if let reason { fields["reason"] = reason }
+            write(fields)
+        }
+    }
+
     func recordRobotConnection(_ connected: Bool) {
         guard isRunning else { return }
         write(["type": "robot_link", "connected": connected])

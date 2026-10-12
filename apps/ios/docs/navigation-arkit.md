@@ -111,14 +111,21 @@ depth stayed normal. Physical stopping looked prompt, but the trace does not yet
 settling from command timing after Stop, and board stop-ACK timing remains unverified. This is a
 straight-line baseline on one floor, not a navigation safety qualification.
 
-The next bounded baseline is **RIGHT TURN · 0.5s** in the same depth view. It sends 22% right
-steering with zero throttle through the existing manual-drive path, targeting a stop after 0.5 s
+The next baseline is **RIGHT TURN TEST · 0.5s** in the same depth view. It sends 22% right
+steering with zero throttle through the existing manual-drive path, requesting a stop after 0.5 s
 or earlier at 35° ARKit heading change, 0.1 m camera travel, or any existing link/tracking/depth
-failure. These caps limit a test; they are not an exact-angle controller. Mark the chassis heading
+failure. These are stop triggers, **not final-angle caps**: the first four taps ended at roughly
+78°, 70°, 38°, and 40° according to ARKit. The operator saw no coasting; variable command timing
+and pose settling have not yet been separated. Mark the chassis heading
 on the floor, run only one tap initially with a spotter and clear space, and compare physical
 direction/angle with the recorded ARKit trace before attempting repeated turns or a 90° turn.
 The view shows the live ARKit angle relative to the most recent turn start, including after the
 motors stop; use the settled reading rather than the value at the instant Stop is sent.
+The navigation trace now records `control_sent` and `control_applied` events with matching sequence
+numbers, including reported repeated-stop frames. `control_applied` is timestamped when the phone
+receives the board's report, so its round-trip latency is an upper bound on application time, not
+the exact instant the motors stopped. Until a marked single-turn test correlates those events with
+physical motion, avoid repeated turn taps.
 
 Therefore this A/B measures the **incremental benefit and cost of explicitly requesting scene
 depth**, not a strict camera-only-versus-LiDAR comparison. Keep depth optional unless it

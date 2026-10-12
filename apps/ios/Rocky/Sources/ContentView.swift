@@ -135,6 +135,9 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.2), value: personCamera.isRunning)
         .preferredColorScheme(.dark)
         .onAppear {
+            behavior.onControlTrace = { [weak navigationProbe] event in
+                navigationProbe?.recordControlTrace(event)
+            }
             behavior.start()
             voiceSession.useFreshLookRequester { [weak personCamera] moment in
                 personCamera?.requestFreshLook(capturedAfter: moment)

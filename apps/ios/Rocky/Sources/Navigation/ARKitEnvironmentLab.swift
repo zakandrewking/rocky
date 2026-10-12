@@ -64,7 +64,7 @@ struct ARKitEnvironmentLab: View {
                             Text(String(format: "ARKit turn Δ: %+.1f°", turn))
                                 .foregroundStyle(RockyTheme.mintBright)
                         }
-                        Text("Clear floor only · no obstacle avoidance")
+                        Text("Turn may exceed 35° · clear floor only · no obstacle avoidance")
                             .foregroundStyle(RockyTheme.rust)
                         if behavior.controlsConnected && behavior.mood != "still" {
                             Text("Pause voice; wait for robot: still")
@@ -88,7 +88,7 @@ struct ARKitEnvironmentLab: View {
                                 || motorPulse.isDriving
                         )
                         .tint(RockyTheme.mint)
-                        Button("RIGHT TURN · 0.5s") {
+                        Button("RIGHT TURN TEST · 0.5s") {
                             motorPulse.start(.rightTurn, behavior: behavior, probe: probe)
                         }
                         .disabled(

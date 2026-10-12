@@ -11,7 +11,17 @@ const fixed = (number, digits = 2) => Number(number.toFixed(digits));
 function summarizeSegment(label, records) {
   const poses = records.filter((record) => record.type === 'pose');
   const drives = records.filter((record) => record.type === 'drive');
-  if (poses.length === 0) return { label, poses: 0, drives: drives.length };
+  const controlSends = records.filter((record) => record.type === 'control_sent');
+  const controlReports = records.filter((record) => record.type === 'control_applied');
+  const controlSummary = {
+    control_sends: controlSends.length,
+    control_reports: controlReports.length,
+    stopped_reports: controlReports.filter((record) => !record.active).length,
+    report_round_trip_ms: controlReports
+      .filter((record) => Number.isFinite(record.round_trip_ms))
+      .map((record) => record.round_trip_ms).join(',') || null,
+  };
+  if (poses.length === 0) return { label, poses: 0, drives: drives.length, ...controlSummary };
   const first = poses[0];
   const last = poses.at(-1);
   let path = 0;
@@ -28,6 +38,7 @@ function summarizeSegment(label, records) {
     label,
     poses: poses.length,
     drives: drives.length,
+    ...controlSummary,
     span_s: fixed(span),
     sampled_hz: span > 0 ? fixed((poses.length - 1) / span, 1) : null,
     arkit_callback_hz: span > 0

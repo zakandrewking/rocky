@@ -130,7 +130,7 @@ final class MotorPulseController: ObservableObject {
             send(throttle: 0, steering: 0, active: false, correlated: true,
                  behavior: behavior, probe: probe)
             behavior.stopMoving()
-            status = "Stop sent"
+            status = "Stop requested"
         }
     }
 
@@ -149,7 +149,7 @@ final class MotorPulseController: ObservableObject {
              behavior: behavior, probe: probe)
         behavior.stopMoving()
         probe.mark("auto-\(motion.label)-stop: \(reason)")
-        status = "Stopped: \(reason)"
+        status = "Stop requested: \(reason)"
     }
 
     private func send(
