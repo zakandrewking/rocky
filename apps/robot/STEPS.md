@@ -81,7 +81,7 @@ Same mechanics as `apps/cyberpi`: mBlock 5, Python editor, mode set to **Upload*
 `rocky_agent.py` is a single self-contained file, same reason as the cyberpi steps — mBlock
 uploads one program at a time.
 
-**Press the Home button on the board before every re-upload.** Every step here ends in an
+**Press the Home button on the board before every mBlock re-upload.** Every step here ends in an
 unbounded `while True` loop (a socket server has to keep running) with no code path back to
 CyberOS's own "ready for a new program" state — only a hard reset or a Home-button exit does that.
 Uploading directly on top of a still-running loop produced a real stuck upload once (mBlock's REPL

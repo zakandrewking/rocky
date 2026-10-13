@@ -30,6 +30,16 @@ each bounded trial. Keep the technical protections that matter on this hardwareâ
 deadlines, a working stop path, and a recoverable boot/push path. Scale up precautions when a test
 actually introduces a new hazard, such as unattended motion or a larger operating area.
 
+## CyberPi upload modes
+
+Do not conflate an mBlock re-upload with a Wi-Fi payload push. Press **Home** before re-uploading
+`bootstrap.py` through mBlock, as documented in `apps/robot/STEPS.md`; that exits a running
+unbounded program. For `pnpm robot:push`, leave the installed bootstrap running. Home opens
+CyberOS and pauses the custom program, so choose **Restart Program** from CyberOS (or power cycle)
+before a Wi-Fi push. A TCP port accepting connections is not proof the loader is servicing them:
+confirm an application-level response, and after a push timeout inspect the active services before
+retrying. See `apps/robot/README.md` for the workflow.
+
 ## Everything else
 
 [`AGENTS.md`](AGENTS.md) holds the working agreement â€” testing expectations, autonomy, secrets

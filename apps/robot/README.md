@@ -91,8 +91,12 @@ On macOS, the uploader automatically retries through the native TCP client if No
 reports that the reachable board has no route. It does not retry after a connection is made, so a
 payload is never deliberately sent twice.
 
-Press the board's Home button before any re-push: a running unbounded loop can stall the transfer
-indefinitely (see `STEPS.md`).
+For a Wi-Fi payload push, leave `bootstrap.py` running; verify the board is running its custom
+program, not just that port 8766 accepts a TCP connection. Do not press Home first: Home returns
+to CyberOS and pauses the custom program. The Home-button rule in
+`STEPS.md` is for re-uploading the bootstrap itself through mBlock, where a running unbounded loop
+can stall the upload. If already on the CyberOS home screen, choose **Restart Program** (or power
+cycle) to resume the bootstrap before pushing a payload.
 
 `apps/robot/device/*.py` are single self-contained MicroPython files — `bootstrap.py` because
 mBlock uploads one program at a time, and payloads like `rocky_agent.py` because `bootstrap.py`
