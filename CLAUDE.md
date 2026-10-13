@@ -22,6 +22,14 @@ on the CyberPi: the firmware turned out to be closed, but the search identified 
 its full register map from a GPL-3.0 sibling library — and flagged the licence question that comes
 with using it.
 
+## Physical robot tests
+
+Rocky is a small, supervised bot. Keep test instructions practical and brief: name the movement,
+duration, and what to observe, without repeating broad safety warnings or adding approval gates for
+each bounded trial. Keep the technical protections that matter on this hardware—local motor
+deadlines, a working stop path, and a recoverable boot/push path. Scale up precautions when a test
+actually introduces a new hazard, such as unattended motion or a larger operating area.
+
 ## Everything else
 
 [`AGENTS.md`](AGENTS.md) holds the working agreement — testing expectations, autonomy, secrets
