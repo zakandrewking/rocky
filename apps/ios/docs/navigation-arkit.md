@@ -141,10 +141,14 @@ In the first mounted run, two 33 RPM / 200 ms requests produced settled ARKit tu
 313 ms measured from *before* the start motor call to *after* the stop motor call, not 200 ms.
 That interval includes motor API time and loop scheduling, so it does not establish how long the
 wheels were physically turning. Its outcome was consistent across these two trials, but the
-actual deadline lateness must be measured and bounded before this becomes a navigation safety
-limit. The disposable payload now logs separate start-return, stop-call, stop-return, and deadline
-lateness timestamps for a future isolated test; this newer instrumentation has not been loaded
-onto the robot.
+actual deadline lateness must be measured and bounded before this becomes a navigation stop
+limit. A third mounted turn with the timing-instrumented payload settled at 29.6° in ARKit
+versus about 30° from the floor mark, with normal tracking and depth. Its board report showed
+`complete`, a 309 ms pre-start-call-to-report span, and a stop call begun 107 ms after the 200 ms
+deadline. About 2 ms remained for the stop call and report timestamp. The trace did not retain
+the raw `start_return_t`, `stop_call_t`, and `stop_return_t` fields, so this run cannot split
+motor-start-call time from tick scheduling. The iOS trace now records them for the next run.
+Rocky's normal payload was restored and its still/listening hello verified afterward.
 
 Therefore this A/B measures the **incremental benefit and cost of explicitly requesting scene
 depth**, not a strict camera-only-versus-LiDAR comparison. Keep depth optional unless it

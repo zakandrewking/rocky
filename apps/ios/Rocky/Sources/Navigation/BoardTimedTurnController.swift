@@ -133,9 +133,14 @@ final class BoardTimedTurnController: ObservableObject {
                 let end = (message["t"] as? NSNumber)?.intValue
                 let reportSpan = start.flatMap { s in end.map { $0 - s } }
                 let deadlineLate = (message["deadline_late_ms"] as? NSNumber)?.intValue
+                let startReturn = (message["start_return_t"] as? NSNumber)?.intValue
+                let stopCall = (message["stop_call_t"] as? NSNumber)?.intValue
+                let stopReturn = (message["stop_return_t"] as? NSNumber)?.intValue
                 probe.mark(
                     "board-timed-turn-end: \(reason) report_span_ms=\(reportSpan ?? -1) "
-                        + "deadline_late_ms=\(deadlineLate ?? -1)"
+                        + "deadline_late_ms=\(deadlineLate ?? -1) "
+                        + "started_t=\(start ?? -1) start_return_t=\(startReturn ?? -1) "
+                        + "stop_call_t=\(stopCall ?? -1) stop_return_t=\(stopReturn ?? -1)"
                 )
                 status = "Board reports \(reason) · span \(reportSpan ?? -1) ms (includes motor calls)"
                 isBusy = false

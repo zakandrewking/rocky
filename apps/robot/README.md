@@ -84,8 +84,11 @@ that mode before sending one 33 RPM, 200 ms spin. The board-side elapsed clock�
 arrival timing—ends the pulse. Restore `rocky_agent.py` after the experiment.
 The first two iOS-triggered turns agreed with floor marks at about 29°, but their `motion_end.t`
 minus `started_t` was 312/313 ms for 200 ms requests. That old field spans the motor start/stop
-API calls as well as the local deadline. New `start_return_t`, `stop_call_t`, `stop_return_t`, and
-`deadline_late_ms` fields separate those parts for the next run; they are not yet hardware-tested.
+API calls as well as the local deadline. A third turn using the instrumented payload showed a
+309 ms report span and `deadline_late_ms=107` for a 200 ms request, with 29.6° ARKit rotation
+against about 30° on the floor. The phone trace retained the latter value but not the raw
+`start_return_t`, `stop_call_t`, and `stop_return_t` fields, so motor-start-call duration remains
+unknown for that run; the app now records them for the next trial.
 
 On macOS, the uploader automatically retries through the native TCP client if Node incorrectly
 reports that the reachable board has no route. It does not retry after a connection is made, so a

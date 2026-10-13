@@ -35,9 +35,16 @@
   motor-call time and tick scheduling. Do not call the board pulse an exact 200 ms action.
 - [x] Add start-call-return, stop-call/return, and deadline-lateness timestamps to the
   disposable payload. Check clock-only deadlines both before and after network work per tick.
-- [ ] Re-run the isolated board-clock pulse to separate tick lateness from motor-call duration
-  before moving any timed-pulse command into normal firmware. Bound worst-case lateness; a local
-  deadline is useful only within the navigation clearance budget.
+- [x] Re-run the isolated board-clock pulse with deadline-lateness reporting. The third 33 RPM /
+  200 ms turn settled at 29.6° in ARKit versus about 30° on the floor, with normal tracking and
+  depth. The board reported `complete`, `report_span_ms=309`, and `deadline_late_ms=107`; the
+  stop API plus report timestamp accounts for only about 2 ms of the span beyond deadline
+  lateness. The iOS trace omitted the new raw start/stop timestamps, so it cannot yet split
+  motor-start call time from tick scheduling. The normal payload was restored and its hello
+  verified after the trial.
+- [ ] Capture all board timing fields in the iOS trace, then repeat bounded pulses to split
+  motor-start call time from tick scheduling and measure the lateness distribution before moving
+  a timed-pulse command into normal firmware.
 - [x] Add an on-phone false-colour LiDAR scene-depth view to the optional + depth probe, with
   confidence dimming and Camera/Depth comparison. Keep frames in memory only; do not treat this
   as an obstacle detector.
