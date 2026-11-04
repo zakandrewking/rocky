@@ -717,9 +717,13 @@ the one human imperative.
     later without restarting the engine, and subsequent user turns demonstrably reach the server.
     A diagnostic build now logs deduplicated graph state (record/play demand, attached sink,
     VoiceProcessingIO enabled/bypassed, session category/mode, route port types, and sample rate)
-    outside render callbacks. Installed on the 14 Pro; awaiting a fresh silent-greeting trace to
-    distinguish routing/bypass state from echo-reference or suppression failure. Simulator
-    regression suite passes with the expected single hardware-only face-test skip.
+    outside render callbacks. The fresh 02:36 run confirms built-in mic → speaker, 48 kHz,
+    VoiceChat/PlayAndRecord, voice processing enabled, bypass false, recording demand true and
+    sink attached. Unlike earlier runs, its resumed “I'm glad you're here with me” reply reached
+    normal playback completion with no speech-start interruption; the person still perceived a
+    cutoff. Compare the actually heard words with provider text and PCM duration before attributing
+    every perceived cutoff to echo. Simulator regression suite passes with the expected single
+    hardware-only face-test skip.
 - [x] Tighten live story timing and expand physical storytelling. Movement cues now wait for the
   correlated board transition that says the wheels actually started (with a two-second anti-hang
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now
