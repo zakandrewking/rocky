@@ -1,0 +1,86 @@
+import CoreImage
+import XCTest
+@testable import Rocky
+
+final class FaceFeaturePrintProbeTests: XCTestCase {
+    func testDescriptorRoundTripsAndRejectsIncompatibleModels() throws {
+        let descriptor = FaceFeaturePrintDescriptor(revision: 2, values: [0.25, -0.5, 1])
+        let data = try JSONEncoder().encode(descriptor)
+        XCTAssertEqual(try JSONDecoder().decode(FaceFeaturePrintDescriptor.self, from: data), descriptor)
+        XCTAssertEqual(try descriptor.distance(to: descriptor), 0, accuracy: 0.000_001)
+
+        let otherRevision = FaceFeaturePrintDescriptor(revision: 1, values: descriptor.values)
+        XCTAssertThrowsError(try descriptor.distance(to: otherRevision)) { error in
+            XCTAssertEqual(error as? FaceFeaturePrintError, .incompatibleModel)
+        }
+        let otherSize = FaceFeaturePrintDescriptor(revision: 2, values: [0.25])
+        XCTAssertThrowsError(try descriptor.distance(to: otherSize)) { error in
+            XCTAssertEqual(error as? FaceFeaturePrintError, .incompatibleVectorSize)
+        }
+    }
+
+    func testRevisionTwoIsDeterministicAndSeparatesSyntheticFixtures() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip(
+            "Vision's feature-print Espresso context is unavailable in the iOS 26.2 simulator; run this test on the paired iPhone"
+        )
+        #else
+        let probe = FaceFeaturePrintProbe()
+        var measurements: [String: FaceFeaturePrintMeasurement] = [:]
+        for name in Self.fixtureNames {
+            let image = try Self.fixture(named: name)
+            measurements[name] = try probe.measure(image)
+        }
+
+        let repeated = try probe.measure(Self.fixture(named: "synthetic-a-1"))
+        let first = try XCTUnwrap(measurements["synthetic-a-1"])
+        XCTAssertEqual(first.descriptor, repeated.descriptor)
+        XCTAssertEqual(first.descriptor.revision, 2)
+        XCTAssertFalse(first.descriptor.values.isEmpty)
+        XCTAssertTrue(first.descriptor.values.allSatisfy(\.isFinite))
+
+        let samePerson = try [
+            distance("synthetic-a-1", "synthetic-a-2", in: measurements),
+            distance("synthetic-b-1", "synthetic-b-2", in: measurements),
+            distance("synthetic-c-1", "synthetic-c-2", in: measurements),
+        ]
+        let differentPerson = try [
+            distance("synthetic-a-1", "synthetic-b-1", in: measurements),
+            distance("synthetic-a-1", "synthetic-c-1", in: measurements),
+            distance("synthetic-b-1", "synthetic-c-1", in: measurements),
+        ]
+        let slowest = measurements.values.map(\.elapsedMilliseconds).max() ?? 0
+        print(
+            "face feature print revision 2: dimensions=\(first.descriptor.values.count) "
+                + "same=\(samePerson) different=\(differentPerson) slowest_ms=\(slowest)"
+        )
+
+        // This is deliberately only a fixture regression, not Rocky's recognition threshold.
+        // Real enrolled/unknown people under actual lighting establish that later on the phone.
+        XCTAssertLessThan(try XCTUnwrap(samePerson.max()), try XCTUnwrap(differentPerson.min()))
+        #endif
+    }
+
+    private static let fixtureNames = [
+        "synthetic-a-1", "synthetic-a-2", "synthetic-b-1",
+        "synthetic-b-2", "synthetic-c-1", "synthetic-c-2",
+    ]
+
+    private static func fixture(named name: String) throws -> CIImage {
+        let urls = Bundle(for: FaceFeaturePrintProbeTests.self).urls(
+            forResourcesWithExtension: "png", subdirectory: nil
+        ) ?? []
+        let url = try XCTUnwrap(urls.first { $0.deletingPathExtension().lastPathComponent == name })
+        return try XCTUnwrap(CIImage(contentsOf: url))
+    }
+
+    private func distance(
+        _ lhs: String,
+        _ rhs: String,
+        in measurements: [String: FaceFeaturePrintMeasurement]
+    ) throws -> Double {
+        try XCTUnwrap(measurements[lhs]).descriptor.distance(
+            to: XCTUnwrap(measurements[rhs]).descriptor
+        )
+    }
+}
