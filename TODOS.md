@@ -579,6 +579,18 @@ Decisions already made:
     floats, exact repeated extraction, synthetic same-identity distances 0.1472–0.1960 versus
     cross-identity 0.5134–0.7052, and slowest extraction 188.15 ms including cold startup. This
     establishes probe viability only; the representative-person and sustained-latency gates stay open.
+  - **Temporary face test lab built.** State chip → face test lab pauses voice and other camera
+    consumers. Explicit front-camera stills use revision-3 eye landmarks to roll/scale-align a
+    320×320 crop (`eyes-320-v1`), then revision-2 feature prints. A reference plus user-labeled
+    same/different-person captures show distances and overlap without invented identity thresholds.
+    Results are memory-only (100-comparison cap); reset, dismissal and background invalidate pending
+    work and clear retained vectors. No photos/embeddings/scores go to disk, logs or providers.
+    Synthetic-fixture pipeline checks and real-person trials on the 14 Pro are the next gates;
+    user-paced feature-print percentiles are not a sustained benchmark.
+    `pnpm check` passes, including 173 iOS tests with two hardware-only skips. The physical build
+    compiles, but the aligned fixture run awaits the phone's passcode unlock. Native visual QA
+    also remains pending: the computer-use service could not start. The real camera flow must be
+    checked on the phone before marking the evaluation UI verified.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse

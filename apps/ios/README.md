@@ -314,9 +314,32 @@ cd apps/ios
 xcodebuild -project Rocky.xcodeproj -scheme Rocky -destination 'platform=iOS Simulator,name=iPhone 17' test
 ```
 
-Tests need no device or network. The app itself needs a real iPhone for the Speech framework and
-a real Wi-Fi network reaching the CyberPi — the Simulator doesn't have a microphone or the local
-network access this needs.
+Most tests run in Simulator without a device or API calls. Vision feature-print inference and the
+face capture pipeline are explicitly hardware-only tests. Simulator can exercise conversation
+with the Mac microphone, but speaker echo cancellation must be qualified on the physical phone.
+Robot integration needs a real Wi-Fi network reaching the CyberPi.
+
+### Temporary face test lab
+
+Tap the state chip in the lower-left corner, then **face test lab…**. Opening it pauses conversation
+and stops other camera probes. On a physical iPhone:
+
+1. Choose **Capture reference**, take a centered front-camera photo with both eyes visible, then
+   accept the photo in the camera UI.
+2. Choose **Capture same person** several times, varying lighting, distance, and moderate pose.
+3. With another consenting adult, choose **Capture different person** using similar framing.
+4. Compare the measured distance ranges. Smaller means more similar; no recognition threshold or
+   automatic identity decision is enabled. The feature-print p50/p95 is for user-paced captures,
+   not a sustained warm latency or thermal benchmark.
+5. **Reset all test data**, **Done**, dismissing the lab, or backgrounding the app clears the
+   reference and results. Resume conversation from the orb afterward.
+
+The app keeps captured image bytes only during processing, never saves them to Photos or its
+files, and sends no lab images or embeddings to providers. Vectors and measurements remain in
+memory, capped at 100 comparisons; they are excluded from logs and backup. Eye alignment is
+versioned as `eyes-320-v1`, with Vision face landmarks revision 3 and image feature prints revision
+2. Lab vectors are experimental and are never mixed with raw synthetic-fixture vectors or enrolled
+profiles. See [the model audit](docs/face-identity-model-audit.md) for the remaining acceptance gates.
 
 ## Installing on a real iPhone
 

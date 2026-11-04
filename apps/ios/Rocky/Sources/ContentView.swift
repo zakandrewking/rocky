@@ -63,6 +63,8 @@ struct ContentView: View {
     @State private var robotControlReset = UUID()
     @State private var showRobotControls = true
     @State private var showEnvironmentLab = false
+    @State private var showFaceProbeLab = false
+    @StateObject private var faceProbeModel = FaceProbeLabModel()
 
     var body: some View {
         ZStack {
@@ -167,6 +169,9 @@ struct ContentView: View {
                 showEnvironmentLab = false
             }
         }
+        .sheet(isPresented: $showFaceProbeLab, onDismiss: { faceProbeModel.reset() }) {
+            FaceProbeLab(model: faceProbeModel)
+        }
     }
 
     private func handleScenePhase(_ phase: ScenePhase) {
@@ -188,6 +193,8 @@ struct ContentView: View {
             behavior.releaseManualDriveForBackground()
             robotControlReset = UUID()
         case .background:
+            faceProbeModel.reset()
+            showFaceProbeLab = false
             if !appWasInactive {
                 appWasInactive = true
                 navigationProbe.stop(reason: "app backgrounded")
@@ -418,6 +425,14 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             navigationProbeControls
+            Button("face test lab…") {
+                if voiceSession.state == .connected { voiceSession.pause() }
+                personCamera.stop()
+                navigationProbe.stop(reason: "face test lab opened")
+                showFaceProbeLab = true
+            }
+            .disabled(starting || voiceSession.state == .connecting)
+            .foregroundStyle(RockyTheme.amberBright)
             if case .failed(let message) = voiceSession.state {
                 Text("voice: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
             }

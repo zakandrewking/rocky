@@ -82,3 +82,26 @@ Before this baseline can advance:
 3. Reject this baseline if identity separation is weak even when crops are aligned. General image
    similarity may over-weight hair, clothing, or background; a clean license does not make it a
    face recognizer.
+
+## Temporary capture lab
+
+The state-chip **face test lab** runs separately from conversation and `PersonCamera`. It pauses
+voice, stops other camera probes, and uses Apple's still-camera UI for each deliberate capture.
+Vision face-landmarks revision 3 requires exactly one face and two visible eye regions. Their
+centers determine a similarity transform onto a 320×320 crop (eyes at 104/200 and 216/200), called
+`eyes-320-v1`. Crops crossing the source boundary or eye separation below 24 source pixels are
+rejected. This normalizes scale and roll; it does not reconstruct a frontal face from yaw.
+
+The first capture becomes an in-memory reference. Subsequent captures are explicitly labeled by
+the tester as the same or a different person; the UI shows distances and whether the observed
+ranges overlap, without applying a recognition threshold. Raw captures are discarded after
+processing. No lab images, embeddings or scores enter file storage, logs, network requests, or
+backup. Reset, dismissal and backgrounding invalidate pending work and clear retained vectors and
+results. A pending native Vision request may finish after cancellation, but its result is discarded.
+At most 100 comparisons are retained.
+
+The displayed feature-print latency excludes camera interaction, landmark detection and image
+normalization. User-paced capture percentiles are preliminary; they do not replace a sustained
+warm p50/p95/thermal benchmark. The aligned lab's results are a separate experiment from the raw
+synthetic-crop probe above. Any eventual identity vault must record both preprocessing and model
+versions and reject comparisons across them.

@@ -66,12 +66,39 @@ final class FaceFeaturePrintProbeTests: XCTestCase {
         "synthetic-b-2", "synthetic-c-1", "synthetic-c-2",
     ]
 
+    func testCapturePipelineAlignsAndSeparatesSyntheticFacesOnDevice() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Run the face capture pipeline on the paired iPhone")
+        #else
+        var measurements: [String: FaceFeaturePrintMeasurement] = [:]
+        for name in Self.fixtureNames {
+            let data = try Data(contentsOf: Self.fixtureURL(named: name))
+            measurements[name] = try FaceProbeCapture.measure(data)
+        }
+        let same = try [
+            distance("synthetic-a-1", "synthetic-a-2", in: measurements),
+            distance("synthetic-b-1", "synthetic-b-2", in: measurements),
+            distance("synthetic-c-1", "synthetic-c-2", in: measurements),
+        ]
+        let different = try [
+            distance("synthetic-a-1", "synthetic-b-1", in: measurements),
+            distance("synthetic-a-1", "synthetic-c-1", in: measurements),
+            distance("synthetic-b-1", "synthetic-c-1", in: measurements),
+        ]
+        print("synthetic aligned capture pipeline \(FaceProbeCapture.preprocessing): same=\(same) different=\(different)")
+        XCTAssertLessThan(try XCTUnwrap(same.max()), try XCTUnwrap(different.min()))
+        #endif
+    }
+
     private static func fixture(named name: String) throws -> CIImage {
+        try XCTUnwrap(CIImage(contentsOf: fixtureURL(named: name)))
+    }
+
+    private static func fixtureURL(named name: String) throws -> URL {
         let urls = Bundle(for: FaceFeaturePrintProbeTests.self).urls(
             forResourcesWithExtension: "png", subdirectory: nil
         ) ?? []
-        let url = try XCTUnwrap(urls.first { $0.deletingPathExtension().lastPathComponent == name })
-        return try XCTUnwrap(CIImage(contentsOf: url))
+        return try XCTUnwrap(urls.first { $0.deletingPathExtension().lastPathComponent == name })
     }
 
     private func distance(
