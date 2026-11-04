@@ -563,6 +563,19 @@ Decisions already made:
   person separation on representative private fixtures, and acceptable p50/p95 latency on the
   actual mounted iPhone. Record the model hash, input normalization, embedding size, compute units,
   license decision, measurements, and fixture policy here before integrating it.
+  - **2026-11-03 — baseline selected and isolated probe built; device gate remains open.** Rejected
+    InsightFace public weights because their model license is non-commercial, and held OpenCV SFace
+    despite its Apache-2.0 directory because the current upstream training-data/redistribution
+    clarification is unresolved. The first baseline is Apple's built-in Image Feature Print pinned
+    to revision 2: no redistributed weights, a directly persistable float vector, and no claim that
+    a general image-similarity model is already a face recognizer. `FaceFeaturePrintProbe` is kept
+    completely outside `PersonCamera`; tests use three generated fictional adults × two pose/light
+    variations and cover determinism, serialization, compatibility rejection, and fixture
+    separation. See `apps/ios/docs/face-identity-model-audit.md`. Still required before checking
+    this milestone: the iOS 26.2 simulator cannot create Vision's Espresso context, so its inference
+    test is explicitly device-only rather than faked; representative temporary private fixtures and
+    p50/p95 plus separation measurements on the mounted iPhone remain required, including hardware
+    and iOS build.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse
@@ -682,6 +695,15 @@ the one human imperative.
   self-trigger during the final uninterrupted reply. Keep the hardware full-duplex while ADM's
   transient record/play flags change, and never restart the graph merely after stopping an empty
   local player—the earlier churn produced 0Hz speaker formats and Core Audio `!pla` failures.
+- [ ] **Re-qualify Realtime barge-in on the iPhone 14 Pro after the iOS 26/Xcode 26 update.** A
+  2026-11-03 iPhone 17 simulator trace proved the session and microphone path work—the first spoken
+  phrase reached OpenAI and produced a reply—but local ElevenLabs playback repeatedly became a
+  false `input_audio_buffer.speech_started` 0.3–0.7s later and cancelled Rocky. Treat that as a
+  simulator echo-cancellation failure, not proof of the phone's root cause. Pull the 14 Pro's
+  durable `session.log` after Xcode finishes preparing/copying symbols; compare its audio graph,
+  `speech_started`, and input-commit sequence before changing the full-duplex design. Gate: a real
+  14 Pro conversation hears the person, completes ordinary replies without self-interruption, and
+  still permits a deliberate mid-sentence barge-in.
 - [x] Tighten live story timing and expand physical storytelling. Movement cues now wait for the
   correlated board transition that says the wheels actually started (with a two-second anti-hang
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now
