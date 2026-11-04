@@ -720,10 +720,12 @@ the one human imperative.
     outside render callbacks. The fresh 02:36 run confirms built-in mic → speaker, 48 kHz,
     VoiceChat/PlayAndRecord, voice processing enabled, bypass false, recording demand true and
     sink attached. Unlike earlier runs, its resumed “I'm glad you're here with me” reply reached
-    normal playback completion with no speech-start interruption; the person still perceived a
-    cutoff. Compare the actually heard words with provider text and PCM duration before attributing
-    every perceived cutoff to echo. Simulator regression suite passes with the expected single
-    hardware-only face-test skip.
+    normal playback completion with no speech-start interruption. The person subsequently
+    confirmed **“Works now!”** on this diagnostic build. This is a successful recovery after
+    reinstall/relaunch, not a proven acoustic fix: diagnostics did not change processing behavior.
+    Keep the qualification open for repeated sessions and a deliberate mid-sentence interruption.
+    If the cutoff recurs, compare heard words with provider text, PCM duration and speech-start
+    events. Simulator regression suite passes with the expected single hardware-only face-test skip.
 - [x] Tighten live story timing and expand physical storytelling. Movement cues now wait for the
   correlated board transition that says the wheels actually started (with a two-second anti-hang
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now
