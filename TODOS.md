@@ -575,7 +575,10 @@ Decisions already made:
     this milestone: the iOS 26.2 simulator cannot create Vision's Espresso context, so its inference
     test is explicitly device-only rather than faked; representative temporary private fixtures and
     p50/p95 plus separation measurements on the mounted iPhone remain required, including hardware
-    and iOS build.
+    and iOS build. The focused suite now passes on the iPhone 14 Pro, iOS 27.0.1 (24A446): 768
+    floats, exact repeated extraction, synthetic same-identity distances 0.1472–0.1960 versus
+    cross-identity 0.5134–0.7052, and slowest extraction 188.15 ms including cold startup. This
+    establishes probe viability only; the representative-person and sustained-latency gates stay open.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse

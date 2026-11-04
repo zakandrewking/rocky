@@ -63,9 +63,14 @@ compatibility tests still run in the simulator. A skipped simulator inference te
 for the model and does not satisfy the milestone's physical-device gate.
 
 The complete iPhone 17 / iOS 26.2 simulator suite passed on 2026-11-03: 169 tests, zero failures,
-with this one hardware-only inference test skipped. The first iPhone 14 Pro attempt reached the
-device but was blocked by Xcode device preparation and test-target signing; those tooling failures
-are not model results and the physical-device gate remains open.
+with this one hardware-only inference test skipped.
+
+The focused physical-device suite then passed both tests on the iPhone 14 Pro (iPhone15,2), iOS
+27.0.1 build 24A446, using Xcode 26.2. Revision 2 produced 768 floats and exactly repeated the first
+fixture vector. Same-identity distances were 0.1960, 0.1477, and 0.1472; cross-identity distances
+were 0.5562, 0.5134, and 0.7052. The slowest of six extractions was 188.15 ms, including the first
+cold extraction. This tiny synthetic-fixture run establishes neither warm p50/p95 nor real-person
+recognition quality; the representative-device evaluation gate remains open.
 
 Before this baseline can advance:
 
