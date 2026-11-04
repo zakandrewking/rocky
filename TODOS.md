@@ -715,6 +715,11 @@ the one human imperative.
     audio routes and VoiceProcessingIO bypass/reference state before changing VAD thresholds.
     The graph's `input: off` startup log is not evidence of missing capture: recording can attach
     later without restarting the engine, and subsequent user turns demonstrably reach the server.
+    A diagnostic build now logs deduplicated graph state (record/play demand, attached sink,
+    VoiceProcessingIO enabled/bypassed, session category/mode, route port types, and sample rate)
+    outside render callbacks. Installed on the 14 Pro; awaiting a fresh silent-greeting trace to
+    distinguish routing/bypass state from echo-reference or suppression failure. Simulator
+    regression suite passes with the expected single hardware-only face-test skip.
 - [x] Tighten live story timing and expand physical storytelling. Movement cues now wait for the
   correlated board transition that says the wheels actually started (with a two-second anti-hang
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now

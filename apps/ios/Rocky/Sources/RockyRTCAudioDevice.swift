@@ -32,6 +32,7 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
 
     private var inputFormat: AVAudioFormat?
     private var outputFormat: AVAudioFormat?
+    private var lastDiagnosticState: String?
 
     private let players: [RockyAudioEngine.Channel: AVAudioPlayerNode]
 
@@ -114,7 +115,10 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
     private func updateEngine() {
         guard !rebuilding else { return }
         rebuilding = true
-        defer { rebuilding = false }
+        defer {
+            rebuilding = false
+            logDiagnosticState()
+        }
 
         let delegate = currentDelegate
         let rtcActive = delegate != nil && (shouldPlay || shouldRecord)
@@ -313,6 +317,22 @@ final class RockyRTCAudioDevice: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Only log state transitions, outside the realtime render callbacks. Port types identify
+    /// routing without recording personal Bluetooth device names or microphone samples.
+    private func logDiagnosticState() {
+        let inputs = audioSession.currentRoute.inputs.map { $0.portType.rawValue }.joined(separator: ",")
+        let outputs = audioSession.currentRoute.outputs.map { $0.portType.rawValue }.joined(separator: ",")
+        let state = "running=\(engine.isRunning) record=\(shouldRecord) play=\(shouldPlay) "
+            + "sink=\(sinkNode != nil) native=\(nativeRecording) "
+            + "vp=\(engine.outputNode.isVoiceProcessingEnabled) "
+            + "bypass=\(engine.inputNode.isVoiceProcessingBypassed) "
+            + "category=\(audioSession.category.rawValue) mode=\(audioSession.mode.rawValue) "
+            + "route=\(inputs)->\(outputs) rate=\(audioSession.sampleRate)"
+        guard state != lastDiagnosticState else { return }
+        lastDiagnosticState = state
+        RockyLog.write("audio: graph state \(state)")
+    }
+
     /// WebRTC stream demand and hardware direction are deliberately separate. This is pure so
     /// the startup invariant can be regression-tested without touching an iPhone audio unit.
     static func hardwareDirections(
@@ -454,6 +474,7 @@ extension RockyRTCAudioDevice: RTCAudioDevice {
     var isRecording: Bool { shouldRecord }
 
     func startRecording() -> Bool {
+        RockyLog.write("audio: WebRTC requested recording")
         shouldRecord = true
         updateEngine()
         return engine.isRunning
