@@ -707,6 +707,14 @@ the one human imperative.
   `speech_started`, and input-commit sequence before changing the full-duplex design. Gate: a real
   14 Pro conversation hears the person, completes ordinary replies without self-interruption, and
   still permits a deliberate mid-sentence barge-in.
+  - **2026-11-03 physical reproduction:** installed and launched on iPhone 14 Pro, iOS 27.0.1
+    (24A446). The person confirmed a reply cuts off even while remaining silent. The corresponding
+    resumed reply began local playback at 02:31:03.592Z and was cancelled by server
+    `speech_started` at 02:31:05.377Z. Capture and responses work; false interruption during local
+    playback is confirmed on hardware. Echo leakage is the leading hypothesis; inspect actual
+    audio routes and VoiceProcessingIO bypass/reference state before changing VAD thresholds.
+    The graph's `input: off` startup log is not evidence of missing capture: recording can attach
+    later without restarting the engine, and subsequent user turns demonstrably reach the server.
 - [x] Tighten live story timing and expand physical storytelling. Movement cues now wait for the
   correlated board transition that says the wheels actually started (with a two-second anti-hang
   fallback), and the model authors explicit 100–4000ms pause beats after every move. Stories now
