@@ -105,3 +105,9 @@ normalization. User-paced capture percentiles are preliminary; they do not repla
 warm p50/p95/thermal benchmark. The aligned lab's results are a separate experiment from the raw
 synthetic-crop probe above. Any eventual identity vault must record both preprocessing and model
 versions and reject comparisons across them.
+
+The aligned synthetic-fixture pipeline passed on the iPhone 14 Pro, iOS 27.0.1 (24A446), on
+2026-11-03. Same-identity distances were 0.2557, 0.2779 and 0.2642; cross-identity distances were
+0.6122, 0.4894 and 0.7670. All six focused device tests passed, including comparison bookkeeping,
+alignment geometry and invalidation of pending work on reset. These synthetic results validate
+the capture-processing path, not camera UI behavior or real-person accuracy.

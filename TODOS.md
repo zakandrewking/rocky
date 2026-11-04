@@ -588,7 +588,8 @@ Decisions already made:
     Synthetic-fixture pipeline checks and real-person trials on the 14 Pro are the next gates;
     user-paced feature-print percentiles are not a sustained benchmark.
     `pnpm check` passes, including 173 iOS tests with two hardware-only skips. The physical build
-    compiles, but the aligned fixture run awaits the phone's passcode unlock. Native visual QA
+    and all six focused tests now pass on the iPhone 14 Pro, including the aligned synthetic
+    fixture pipeline: same-person 0.2557–0.2779 versus different-person 0.4894–0.7670. Native visual QA
     also remains pending: the computer-use service could not start. The real camera flow must be
     checked on the phone before marking the evaluation UI verified.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
