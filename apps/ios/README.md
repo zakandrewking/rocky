@@ -319,27 +319,65 @@ face capture pipeline are explicitly hardware-only tests. Simulator can exercise
 with the Mac microphone, but speaker echo cancellation must be qualified on the physical phone.
 Robot integration needs a real Wi-Fi network reaching the CyberPi.
 
-### Temporary face test lab
+### Friends: live face recognition (MVP)
 
-Tap the state chip in the lower-left corner, then **face test lab…**. Opening it pauses conversation
-and stops other camera probes. On a physical iPhone:
+Tap the state chip in the lower-left corner, then **friends & face test…**. Opening it pauses
+conversation and stops other camera probes. To enroll once:
+
+1. **Capture reference**, take a centered photo with both eyes visible, and accept it.
+2. Enter the consenting person's name and choose **Remember this face**. To add an angle or lighting
+   sample, capture another reference and save the same name (up to five samples per friend).
+3. Close the sheet and resume the orb. Recognition now runs automatically during conversation.
+
+Rocky needs three consistent, fresh matches before using a name. Faces are aligned locally and
+compared with saved friends at about 1fps, independently of Gemini's network lane. The provisional
+MVP gate is distance ≤0.32 and margin ≥0.10 over the next closest *person*. These are conservative
+starting values, not validated population accuracy. Multiple faces, poor crops, uncertain matches,
+stale frames, serious/critical thermal pressure, and camera shutdown return to uncertainty. Only
+one face is recognized at a time in this MVP; voice/speaker recognition is not implemented.
+
+Confirmed identities become quiet conversational context. Rocky can use a name without asking
+who is there, does not infer the speaker from a face, and does not narrate recognition. An arrival
+may prompt one short hello after a quiet beat, never during speech or a performance. The first
+15 seconds of a session, brief camera gaps, and a 60-second per-friend cooldown suppress repeated
+greetings. Names can reach the conversation provider; face vectors stay on the phone. Normal
+conversation logs may contain a name Rocky speaks, but recognition diagnostics contain no names,
+vectors, images or scores.
+
+Friends are stored in an atomic, versioned file with iOS complete file protection. **Forget** removes
+the chosen profile; **Clear saved friends** clears the vault, including an unreadable old vault after
+explicit confirmation. Failed loads/invalid imports never silently overwrite the existing file.
+Model/preprocessing/iOS-major incompatibilities require a compatible backup or re-enrollment.
+
+Before deleting the app, use **Export encrypted friends**, save the file somewhere outside Rocky,
+and keep the password (10+ characters). On reinstall, enter it and choose **Restore encrypted
+friends…**. Restore validates the entire backup and asks before replacing the current list. Backup
+uses PBKDF2-HMAC-SHA256 with 200,000 rounds and a random salt, then AES-GCM authenticated encryption.
+There is no automatic cloud sync; a forgotten password cannot be recovered. A friend already named
+in the live conversation may remain in that conversation history after local deletion.
+
+### Face comparison experiment
+
+The same sheet retains the temporary testing controls:
 
 1. Choose **Capture reference**, take a centered front-camera photo with both eyes visible, then
    accept the photo in the camera UI.
 2. Choose **Capture same person** several times, varying lighting, distance, and moderate pose.
 3. With another consenting adult, choose **Capture different person** using similar framing.
-4. Compare the measured distance ranges. Smaller means more similar; no recognition threshold or
-   automatic identity decision is enabled. The feature-print p50/p95 is for user-paced captures,
+4. Compare the measured distance ranges. Smaller means more similar; the experiment itself labels
+   no identities. The feature-print p50/p95 is for user-paced captures,
    not a sustained warm latency or thermal benchmark.
 5. **Reset all test data**, **Done**, dismissing the lab, or backgrounding the app clears the
-   reference and results. Resume conversation from the orb afterward.
+   reference and results, but explicitly saved friends remain. Resume conversation from the orb afterward.
 
 The app keeps captured image bytes only during processing, never saves them to Photos or its
-files, and sends no lab images or embeddings to providers. Vectors and measurements remain in
-memory, capped at 100 comparisons; they are excluded from logs and backup. Eye alignment is
+files, and sends no lab embeddings to providers. Temporary vectors and measurements remain in
+memory, capped at 100 comparisons. Only **Remember this face** persists a reference. Eye alignment is
 versioned as `eyes-320-v1`, with Vision face landmarks revision 3 and image feature prints revision
-2. Lab vectors are experimental and are never mixed with raw synthetic-fixture vectors or enrolled
-profiles. See [the model audit](docs/face-identity-model-audit.md) for the remaining acceptance gates.
+2. Saved profiles use that exact preprocessing and never mix with raw synthetic-fixture vectors.
+See [the model audit](docs/face-identity-model-audit.md) for the remaining acceptance gates. Live
+camera frames still feed the existing Gemini scene-description lane; no additional network image
+requests are made for identity, and local face embeddings are never sent there.
 
 ## Installing on a real iPhone
 

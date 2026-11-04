@@ -1,6 +1,7 @@
 # Face identity model audit
 
-Status: first baseline selected for measurement, not approved for production recognition.
+Status: experimental live MVP enabled for explicitly saved friends; population accuracy and
+sustained conversation/thermal qualification remain open.
 
 ## Requirements
 
@@ -100,6 +101,12 @@ backup. Reset, dismissal and backgrounding invalidate pending work and clear ret
 results. A pending native Vision request may finish after cancellation, but its result is discarded.
 At most 100 comparisons are retained.
 
+The live MVP adds an explicit **Remember this face** action that persists the reference, name,
+algorithm revision, preprocessing version and iOS major in the protected local friend vault.
+Temporary lab reset never deletes saved friends; Forget/Clear do. See the README for portable
+encrypted backup and restore. No raw images are saved. Unlike the temporary experiment, saved
+templates deliberately survive application relaunch.
+
 The displayed feature-print latency excludes camera interaction, landmark detection and image
 normalization. User-paced capture percentiles are preliminary; they do not replace a sustained
 warm p50/p95/thermal benchmark. The aligned lab's results are a separate experiment from the raw
@@ -111,3 +118,18 @@ The aligned synthetic-fixture pipeline passed on the iPhone 14 Pro, iOS 27.0.1 (
 0.6122, 0.4894 and 0.7670. All six focused device tests passed, including comparison bookkeeping,
 alignment geometry and invalidation of pending work on reset. These synthetic results validate
 the capture-processing path, not camera UI behavior or real-person accuracy.
+
+## Live MVP decision
+
+The person confirmed the real-camera lab works and asked to incorporate it into live conversation.
+Use the existing system baseline experimentally: threshold 0.32, margin 0.10 against the next
+closest person, and three consecutive matches. These are conservative starting values informed
+by the synthetic separation, not calibrated false-accept/false-reject rates. Unknown or multiple
+faces never receive a guessed name. No adaptive enrollment occurs.
+
+An independent local sampling lane reuses the continuous front-camera stream and the same upright,
+unmirrored, eye-aligned preprocessing. It permits one in-flight request, drops rather than queues,
+and pauses recognition at serious/critical thermal pressure. Only stable state transitions enter
+conversation context, with explicit uncertainty replacing old identities. Face recognition does
+not identify the speaker. A delayed, cooldown-limited greeting is allowed in a quiet moment; normal
+conversation and stories keep priority. Face embeddings never enter the conversation or scene API.

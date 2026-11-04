@@ -58,6 +58,11 @@ final class PersonCamera: NSObject, ObservableObject {
     /// since the last one" -- can be decided cheaply on the delivery queue before ever paying for
     /// a CVPixelBuffer → JPEG conversion on a frame that's going to be dropped anyway.
     private struct ThrottleState {
+        var active = false
+        var faceHandler: (@Sendable (Data, Date) async -> Void)?
+        var faceInFlight = false
+        var faceLastAt = Date.distantPast
+        var faceGeneration = 0
         var lastSampleAt = Date.distantPast
         var inFlight = false
         var lookAfter: Date?
@@ -107,7 +112,12 @@ final class PersonCamera: NSObject, ObservableObject {
         // first frame of this one by a full interval or block it outright.
         throttle.withLock { state in
             let sampleSeq = state.sampleSeq
+            let faceHandler = state.faceHandler
+            let faceGeneration = state.faceGeneration + 1
             state = ThrottleState()
+            state.active = true
+            state.faceHandler = faceHandler
+            state.faceGeneration = faceGeneration
             // A paused Realtime conversation keeps its history. Do not restart at one on resume,
             // or the prompt's highest-sequence-wins rule would prefer a pre-pause glimpse.
             state.sampleSeq = sampleSeq
@@ -128,12 +138,23 @@ final class PersonCamera: NSObject, ObservableObject {
     }
 
     func stop() {
+        throttle.withLock { $0.active = false; $0.faceGeneration += 1; $0.faceInFlight = false }
         session.stopRunning()
         vision.disconnect()
         lookVision.disconnect()
         isRunning = false
         isDetecting = false
         RockyLog.write("camera: stopped")
+    }
+
+    /// Independent bounded local lane: Gemini latency never holds recognition behind the network.
+    func setFaceHandler(_ handler: (@Sendable (Data, Date) async -> Void)?) {
+        throttle.withLock {
+            $0.faceHandler = handler
+            $0.faceGeneration += 1
+            $0.faceInFlight = false
+            $0.faceLastAt = .distantPast
+        }
     }
 
     /// Arms the next camera frame captured after the tool call for a separate, high-priority
@@ -171,6 +192,13 @@ final class PersonCamera: NSObject, ObservableObject {
         videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
         session.addOutput(videoOutput)
         session.commitConfiguration()
+        if let connection = videoOutput.connection(with: .video) {
+            if connection.isVideoRotationAngleSupported(90) { connection.videoRotationAngle = 90 }
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = false
+            }
+        }
         return true
     }
 
@@ -255,29 +283,38 @@ extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
     ) {
         let capturedAt = Date()
         let decision = throttle.withLock {
-            state -> (passive: Bool, lookGeneration: Int?, sampleSeq: Int?) in
+            state -> (passive: Bool, lookGeneration: Int?, sampleSeq: Int?,
+                      face: (@Sendable (Data, Date) async -> Void)?, faceGeneration: Int) in
+            guard state.active else { return (false, nil, nil, nil, state.faceGeneration) }
+            let thermal = ProcessInfo.processInfo.thermalState
+            let takeFace = state.faceHandler != nil && !state.faceInFlight
+                && capturedAt.timeIntervalSince(state.faceLastAt) >= 1
+                && thermal != .serious && thermal != .critical
+            let face = takeFace ? state.faceHandler : nil
+            if takeFace { state.faceInFlight = true; state.faceLastAt = capturedAt }
             if let after = state.lookAfter, capturedAt > after, !state.lookInFlight {
                 state.lookAfter = nil
                 state.lookInFlight = true
                 state.sampleSeq += 1
                 // The explicit lane wins this frame. Spending the same JPEG on passive inference
                 // too would double network work at the exact moment voice is waiting for sight.
-                return (false, state.lookGeneration, state.sampleSeq)
+                return (false, state.lookGeneration, state.sampleSeq, face, state.faceGeneration)
             }
             guard !state.inFlight,
                 capturedAt.timeIntervalSince(state.lastSampleAt) >= Self.sampleInterval
-            else { return (false, nil, nil) }
+            else { return (false, nil, nil, face, state.faceGeneration) }
             state.lastSampleAt = capturedAt
             state.inFlight = true
             state.sampleSeq += 1
-            return (true, nil, state.sampleSeq)
+            return (true, nil, state.sampleSeq, face, state.faceGeneration)
         }
-        guard decision.passive || decision.lookGeneration != nil else { return }
+        guard decision.passive || decision.lookGeneration != nil || decision.face != nil else { return }
 
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             throttle.withLock {
                 if decision.passive { $0.inFlight = false }
                 if decision.lookGeneration != nil { $0.lookInFlight = false }
+                if decision.face != nil, $0.faceGeneration == decision.faceGeneration { $0.faceInFlight = false }
             }
             RockyLog.write("camera: sampled frame had no image buffer")
             return
@@ -291,11 +328,22 @@ extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
             throttle.withLock {
                 if decision.passive { $0.inFlight = false }
                 if decision.lookGeneration != nil { $0.lookInFlight = false }
+                if decision.face != nil, $0.faceGeneration == decision.faceGeneration { $0.faceInFlight = false }
             }
             RockyLog.write(
                 "camera: JPEG conversion failed for \(decision.lookGeneration == nil ? "passive" : "explicit") frame"
             )
             return
+        }
+
+        if let face = decision.face {
+            let throttle = throttle
+            Task {
+                await face(jpegData, capturedAt)
+                throttle.withLock {
+                    if $0.faceGeneration == decision.faceGeneration { $0.faceInFlight = false }
+                }
+            }
         }
 
         Task { @MainActor [weak self] in

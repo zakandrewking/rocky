@@ -52,6 +52,7 @@ struct FaceProbeLab: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var model: FaceProbeLabModel
+    @ObservedObject var friends: FriendStore
     @State private var captureKind: CaptureRequest?
     @State private var authorizing = false
     @State private var permissionGeneration = 0
@@ -61,7 +62,7 @@ struct FaceProbeLab: View {
             Form {
                 Section {
                     Text("Test whether Rocky can tell faces apart across angles and lighting.")
-                    Text("Only capture someone who agrees to this test. Photos are processed on this phone, then discarded. Vectors and results stay in memory until Reset, closing this lab, or backgrounding the app.")
+                    Text("Photos are processed on this phone, then discarded. Test captures are temporary unless you choose Remember this face below.")
                         .font(.footnote).foregroundStyle(.secondary)
                     Text("Conversation is paused while you test. Resume it from the orb afterward.")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -76,6 +77,8 @@ struct FaceProbeLab: View {
                     }
                 }
                 .disabled(model.busy || authorizing)
+                FriendControls(store: friends, reference: model.evaluation.reference)
+                    .disabled(model.busy)
                 Section("2 · Compare") {
                     Text("Choose who is in the next photo. For the same person, vary angle, distance or lighting. For a different person, keep similar framing and background.")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -115,11 +118,11 @@ struct FaceProbeLab: View {
                         captureKind = nil
                         model.reset()
                     }
-                    Text("Experimental Apple Vision revision 2 · \(FaceProbeCapture.preprocessing). No names, face photos, vectors or scores are written to logs or backup.")
+                    Text("Experimental Apple Vision revision 2 · \(FaceProbeCapture.preprocessing). Reset clears test data only. Saved friends remain until you forget them.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Face test lab")
+            .navigationTitle("Friends & face test")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { clearAndClose() }

@@ -220,7 +220,7 @@ struct ConversationItemCreateEvent: Encodable, Sendable {
     struct Item: Encodable, Sendable {
         let id: String
         let type = "message"
-        let role = "user"
+        let role: String
         let content: [Content]
 
         struct Content: Encodable, Sendable {
@@ -229,8 +229,8 @@ struct ConversationItemCreateEvent: Encodable, Sendable {
         }
     }
 
-    init(id: String, text: String) {
-        item = Item(id: id, content: [Item.Content(text: text)])
+    init(id: String, text: String, role: String = "user") {
+        item = Item(id: id, role: role, content: [Item.Content(text: text)])
     }
 }
 

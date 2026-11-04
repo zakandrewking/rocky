@@ -16,7 +16,8 @@ enum FaceProbeCapture {
         request.revision = VNDetectFaceLandmarksRequestRevision3
         try VNImageRequestHandler(ciImage: image).perform([request])
         let faces = request.results ?? []
-        guard faces.count == 1, let face = faces.first else { throw CaptureError.faceCount }
+        guard !faces.isEmpty else { throw CaptureError.noFace }
+        guard faces.count == 1, let face = faces.first else { throw CaptureError.multipleFaces }
         guard let left = face.landmarks?.leftEye, let right = face.landmarks?.rightEye,
               left.pointCount > 0, right.pointCount > 0 else { throw CaptureError.eyesMissing }
         func center(_ eye: VNFaceLandmarkRegion2D) -> CGPoint {
@@ -58,11 +59,12 @@ enum FaceProbeCapture {
     }
 
     enum CaptureError: LocalizedError {
-        case invalidImage, faceCount, eyesMissing, faceNearEdge
+        case invalidImage, noFace, multipleFaces, eyesMissing, faceNearEdge
         var errorDescription: String? {
             switch self {
             case .invalidImage: "Couldn’t read this capture. Please retake it."
-            case .faceCount: "Keep exactly one face in the photo."
+            case .noFace: "No face found. Keep one face in the photo."
+            case .multipleFaces: "Keep exactly one face in the photo."
             case .eyesMissing: "Move closer and keep both eyes visible."
             case .faceNearEdge: "Center your face with some space around it."
             }

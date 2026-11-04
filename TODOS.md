@@ -590,8 +590,31 @@ Decisions already made:
     `pnpm check` passes, including 173 iOS tests with two hardware-only skips. The physical build
     and all six focused tests now pass on the iPhone 14 Pro, including the aligned synthetic
     fixture pipeline: same-person 0.2557–0.2779 versus different-person 0.4894–0.7670. Native visual QA
-    also remains pending: the computer-use service could not start. The real camera flow must be
-    checked on the phone before marking the evaluation UI verified.
+    could not run through the computer-use service, but the person confirmed the real reference
+    capture flow and reported that same/different-person comparisons work on the 14 Pro.
+- [ ] **Live conversation recognition MVP — implemented, needs the real conversation run.**
+  Explicitly save a captured reference and name in Friends, optionally add samples under the same
+  name. `FriendStore` persists only names/versioned templates with complete file protection and
+  atomic replacement, supports forget/clear, and refuses incompatible/corrupt vaults. Portable
+  password-protected AES-GCM export/import (PBKDF2-SHA256, 200k rounds) covers reinstall without
+  relying on keychain survival; iCloud sync and cross-iOS-major migration remain future work.
+  The continuous camera has a separate bounded local ~1fps lane, no backlog, no new network image
+  requests, and thermal load shedding. MVP intentionally handles one face; groups stay unnamed.
+  Face matching uses provisional distance ≤0.32 plus runner-up-person margin ≥0.10 and three
+  consecutive confirmations. Two-second stale results and three-second evidence expiry cannot
+  retain a name. These defaults are not a validated production accuracy claim.
+  Recognition projects only semantic transitions to the conversation, never embeddings. It can
+  enrich the next normal turn, with no forced question or recognition announcement. A quiet arrival
+  may get one short hello; a 1s speech-start grace, 15s opening suppression, 8s away qualification,
+  and 60s per-friend cooldown prevent camera blips and speaking turns from becoming greeting alarms.
+  Tests cover storage corruption/round-trip/delete, backup wrong-password/tamper recovery,
+  incompatible models, absolute/relative matching, consensus gaps/switches and arrival suppression.
+  Still verify named recognition during real speech, unknown/group rejection, leave/return, restart,
+  export/restore on the phone, and sustained thermal/audio performance before checking this off.
+  `pnpm check` passes (180 iOS tests, two hardware-only skips), and the final physical-device build
+  compiles and installs on the 14 Pro. New physical matcher/backup tests and the named live
+  conversation run are pending passcode unlock. The previously qualified aligned fixture path
+  remains covered; the added unknown-person matcher assertions still need their hardware run.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse

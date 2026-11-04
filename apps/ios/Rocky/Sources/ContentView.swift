@@ -65,6 +65,8 @@ struct ContentView: View {
     @State private var showEnvironmentLab = false
     @State private var showFaceProbeLab = false
     @StateObject private var faceProbeModel = FaceProbeLabModel()
+    @StateObject private var friends = FriendStore()
+    @StateObject private var liveFaces = LiveFaceRecognition()
 
     var body: some View {
         ZStack {
@@ -137,6 +139,10 @@ struct ContentView: View {
         .animation(.easeOut(duration: 0.2), value: personCamera.isRunning)
         .preferredColorScheme(.dark)
         .onAppear {
+            liveFaces.onChange = { [weak voiceSession] presence in
+                voiceSession?.updateFacePresence(presence)
+            }
+            configureFriends()
             behavior.onControlTrace = { [weak navigationProbe] event in
                 navigationProbe?.recordControlTrace(event)
             }
@@ -159,8 +165,10 @@ struct ContentView: View {
             if let sample { voiceSession.updateVision(sample) }
         }
         .onChange(of: personCamera.isRunning) { _, running in
+            if !running { liveFaces.reset() }
             voiceSession.eyesAvailabilityChanged(running)
         }
+        .onChange(of: friends.vault) { _, _ in configureFriends() }
         .onChange(of: scenePhase) { _, phase in
             handleScenePhase(phase)
         }
@@ -170,7 +178,17 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showFaceProbeLab, onDismiss: { faceProbeModel.reset() }) {
-            FaceProbeLab(model: faceProbeModel)
+            FaceProbeLab(model: faceProbeModel, friends: friends)
+        }
+    }
+
+    private func configureFriends() {
+        liveFaces.configure(friends.vault.friends)
+        if friends.vault.friends.isEmpty { personCamera.setFaceHandler(nil) }
+        else {
+            personCamera.setFaceHandler { [weak liveFaces] data, at in
+                await liveFaces?.process(data, capturedAt: at)
+            }
         }
     }
 
@@ -193,6 +211,8 @@ struct ContentView: View {
             behavior.releaseManualDriveForBackground()
             robotControlReset = UUID()
         case .background:
+            liveFaces.reset()
+            if personCamera.isRunning { personCamera.stop() }
             faceProbeModel.reset()
             showFaceProbeLab = false
             if !appWasInactive {
@@ -425,7 +445,7 @@ struct ContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             navigationProbeControls
-            Button("face test lab…") {
+            Button("friends & face test…") {
                 if voiceSession.state == .connected { voiceSession.pause() }
                 personCamera.stop()
                 navigationProbe.stop(reason: "face test lab opened")
@@ -433,6 +453,8 @@ struct ContentView: View {
             }
             .disabled(starting || voiceSession.state == .connecting)
             .foregroundStyle(RockyTheme.amberBright)
+            Text(liveFaces.presence.name.map { "familiar face: \($0)" } ?? "friends: \(friends.vault.friends.count) saved · recognition \(personCamera.isRunning ? "local" : "off")")
+                .foregroundStyle(RockyTheme.mint.opacity(0.7))
             if case .failed(let message) = voiceSession.state {
                 Text("voice: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
             }

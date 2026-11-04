@@ -93,6 +93,14 @@ final class RealtimeVoiceSession: ObservableObject {
     @Published private(set) var lastToolCall: String?
     /// True while Rocky's voice is actually coming out of the speaker.
     @Published private(set) var speaking = false
+    private var latestFacePresence: FacePresence?
+    private var projectedFacePresence: FacePresence?
+    private var faceSequence = 0
+    private var faceArrivals = FaceArrivalPolicy()
+    private var userIsSpeaking = false
+    private var lastUserSpeechAt = Date.distantPast
+    private var connectedAt = Date()
+    private var faceArrivalTask: Task<Void, Never>?
     /// False until her first word of the session has been *heard*. The UI keeps the loading
     /// animation up until then, so "loading" ends when Rocky starts talking rather than when a
     /// socket happens to be ready.
@@ -282,6 +290,12 @@ final class RealtimeVoiceSession: ObservableObject {
             return
         }
         state = .connecting
+        connectedAt = Date()
+        latestFacePresence = .off
+        userIsSpeaking = false
+        lastUserSpeechAt = .distantPast
+        projectedFacePresence = nil
+        faceArrivals = FaceArrivalPolicy()
         wakeBodyIfStill(reason: "voice start")
         // A reconnect gets a brand-new WebRTC track, which starts enabled.
         micOpen = true
@@ -448,6 +462,7 @@ final class RealtimeVoiceSession: ObservableObject {
         // Nothing goes out until she has the current picture. This is the promise the whole design
         // rests on: every response Rocky begins, begins grounded.
         projector.flush(reason)
+        flushFacePresence()
         client.send(ResponseCreateEvent(instructions: instructions))
         log("response request sent: \(reason)")
         WorldLog.shared.write(.response, "asked for a response: \(reason)", seq: world.seq)
@@ -803,6 +818,49 @@ final class RealtimeVoiceSession: ObservableObject {
         log("vision: #\(sample.seq) told (\(presenceChanged ? "presence" : sceneChanged ? "scene" : "refresh")): \(text)")
     }
 
+    func updateFacePresence(_ presence: FacePresence) {
+        faceArrivalTask?.cancel()
+        latestFacePresence = presence
+        flushFacePresence()
+        if faceArrivals.observe(presence, at: Date(),
+                                conversationAge: Date().timeIntervalSince(connectedAt), quiet: quietForFaceGreeting) {
+            faceArrivalTask = Task { [weak self] in
+                // Let a nearby speech-start event win before starting an unsolicited hello.
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled, let self, self.quietForFaceGreeting,
+                      self.latestFacePresence == presence else { return }
+                // Keep the session's full character instructions. A response-level instructions
+                // override would replace them with this tiny situational nudge.
+                self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("arrival_"), text: """
+                    <friend-arrival face_seq="\(self.faceSequence)">A familiar friend has come into
+                    view during a quiet moment. For the next response only, offer one brief, warm
+                    line in your established voice, using their name only if natural. Do not
+                    announce recognition or ask a follow-up question. Then leave room for them.
+                    This event is spent after that response; do not greet again because of it.</friend-arrival>
+                    """, role: "system"))
+                self.requestResponse(reason: "familiar friend arrived")
+            }
+        }
+    }
+
+    private var quietForFaceGreeting: Bool {
+        state == .connected && canReachVoice && !speaking && responseStartedAt == nil && !awaitingResponse
+            && activePerformance == nil && suspendedPerformance == nil && parkedRequest == nil
+            && !userIsSpeaking && Date().timeIntervalSince(lastUserSpeechAt) >= 3
+    }
+
+    private func flushFacePresence() {
+        guard canReachVoice, let latestFacePresence,
+              latestFacePresence != projectedFacePresence else { return }
+        faceSequence += 1
+        client.send(ConversationItemCreateEvent(
+            id: Self.shortItemId("face_"),
+            text: FaceConversation.context(latestFacePresence, sequence: faceSequence), role: "system"
+        ))
+        projectedFacePresence = latestFacePresence
+        // No names, vectors, or scores in diagnostic logs.
+    }
+
     nonisolated static func isNewerVision(_ sample: VisionSample, than latest: VisionSample?) -> Bool {
         latest.map { sample.seq > $0.seq } ?? true
     }
@@ -963,6 +1021,11 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     func disconnect() {
+        faceArrivalTask?.cancel()
+        faceArrivalTask = nil
+        latestFacePresence = .off
+        projectedFacePresence = nil
+        userIsSpeaking = false
         client.close()
         queuedPerformance = nil
         activePerformance = nil
@@ -1345,6 +1408,9 @@ final class RealtimeVoiceSession: ObservableObject {
             }
 
         case "input_audio_buffer.speech_started":
+            userIsSpeaking = true
+            lastUserSpeechAt = Date()
+            flushFacePresence()
             if responseStartedAt != nil {
                 log("speech_started DURING response — semantic VAD barge-in")
             }
@@ -1356,6 +1422,8 @@ final class RealtimeVoiceSession: ObservableObject {
             projector.flush("user started speaking")
 
         case "input_audio_buffer.speech_stopped":
+            userIsSpeaking = false
+            lastUserSpeechAt = Date()
             userStoppedSpeakingAt = Date()
             log("user stopped speaking")
             projector.flush("user stopped speaking")
