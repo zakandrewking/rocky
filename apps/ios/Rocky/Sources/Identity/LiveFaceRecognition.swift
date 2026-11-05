@@ -13,16 +13,26 @@ struct FacePresence: Equatable, Sendable {
 enum FaceMatcher {
     static let maximumDistance = 0.32
     static let minimumMargin = 0.10
+    struct Assessment {
+        var friend: FriendProfile?
+        var reason: String
+    }
     static func match(_ descriptor: FaceFeaturePrintDescriptor, friends: [FriendProfile]) -> FriendProfile? {
+        assess(descriptor, friends: friends).friend
+    }
+    static func assess(_ descriptor: FaceFeaturePrintDescriptor, friends: [FriendProfile]) -> Assessment {
         let ranked = friends.compactMap { friend -> (FriendProfile, Double)? in
             let distances = friend.templates.compactMap { try? descriptor.distance(to: $0) }
                 .filter(\.isFinite)
             guard let distance = distances.min() else { return nil }
             return (friend, distance)
         }.sorted { $0.1 < $1.1 }
-        guard let first = ranked.first, first.1 <= maximumDistance,
-              ranked.count < 2 || ranked[1].1 - first.1 >= minimumMargin else { return nil }
-        return first.0
+        guard let first = ranked.first else { return Assessment(reason: "incompatible templates") }
+        guard first.1 <= maximumDistance else { return Assessment(reason: "outside match threshold") }
+        guard ranked.count < 2 || ranked[1].1 - first.1 >= minimumMargin else {
+            return Assessment(reason: "ambiguous match")
+        }
+        return Assessment(friend: first.0, reason: "candidate match")
     }
 }
 
@@ -43,6 +53,7 @@ struct FaceConsensus {
 @MainActor
 final class LiveFaceRecognition: ObservableObject {
     @Published private(set) var presence: FacePresence = .off
+    @Published private(set) var diagnostic = "waiting for camera"
     var onChange: ((FacePresence) -> Void)?
     private var friends: [FriendProfile] = []
     private var generation = 0
@@ -50,6 +61,7 @@ final class LiveFaceRecognition: ObservableObject {
     private var expiry: Task<Void, Never>?
     private var validAfter = Date.distantPast
     private var lastProcessedAt = Date.distantPast
+    private var lastDiagnosticAt = Date.distantPast
 
     func configure(_ friends: [FriendProfile]) { self.friends = friends; reset() }
     func reset() {
@@ -59,6 +71,7 @@ final class LiveFaceRecognition: ObservableObject {
         consensus = FaceConsensus()
         expiry?.cancel()
         expiry = nil
+        diagnostic = friends.isEmpty ? "no saved friends" : "waiting for camera"
         publish(.off)
     }
     func process(_ data: Data, capturedAt: Date) async {
@@ -67,17 +80,23 @@ final class LiveFaceRecognition: ObservableObject {
         let result = await Task.detached(priority: .utility) { () -> Result<FaceFeaturePrintMeasurement, Error> in
             Result { try FaceProbeCapture.measure(data) }
         }.value
-        guard epoch == generation, Date().timeIntervalSince(capturedAt) < 2 else { return }
+        guard epoch == generation else { return }
+        guard Date().timeIntervalSince(capturedAt) < 2 else {
+            report("processing too slow")
+            return
+        }
         guard capturedAt > lastProcessedAt else { return }
         lastProcessedAt = capturedAt
         let proposed: FacePresence
         switch result {
         case .success(let measurement):
-            let friend = FaceMatcher.match(measurement.descriptor, friends: friends)
+            let assessment = FaceMatcher.assess(measurement.descriptor, friends: friends)
+            let friend = assessment.friend
             let confirmed = consensus.observe(friend?.id, at: capturedAt)
             if confirmed, let friend {
                 proposed = FacePresence(kind: .recognized, friendID: friend.id, name: friend.name)
             } else { proposed = FacePresence(kind: .unknown) }
+            report(confirmed ? "recognized" : assessment.reason)
         case .failure(let error):
             _ = consensus.observe(nil, at: capturedAt)
             switch error as? FaceProbeCapture.CaptureError {
@@ -85,6 +104,9 @@ final class LiveFaceRecognition: ObservableObject {
             case .multipleFaces: proposed = FacePresence(kind: .multiple)
             default: proposed = FacePresence(kind: .unknown)
             }
+            if let captureError = error as? FaceProbeCapture.CaptureError {
+                report(captureError.localizedDescription)
+            } else { report("feature extraction failed") }
         }
         publish(proposed)
         expiry?.cancel()
@@ -93,6 +115,15 @@ final class LiveFaceRecognition: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             self.consensus = FaceConsensus()
             self.publish(FacePresence(kind: .unknown))
+        }
+    }
+    private func report(_ message: String) {
+        let changed = diagnostic != message
+        diagnostic = message
+        if changed || Date().timeIntervalSince(lastDiagnosticAt) >= 5 {
+            lastDiagnosticAt = Date()
+            // Categories only: no names, images, vectors, or biometric distance scores.
+            RockyLog.write("faces: sample — \(message)")
         }
     }
     private func publish(_ next: FacePresence) {

@@ -618,6 +618,11 @@ Decisions already made:
   and quiet-arrival policy. The named live conversation, real unknown/group/re-entry behavior,
   and user-driven backup export/restore walkthrough remain pending; synthetic fixtures do not
   establish population recognition accuracy.
+  Live follow-up: the user reports conversation works but recognition is absent. The approved
+  device log confirms only `unknown` throughout the trial, never `recognized`. Add categorical
+  per-sample diagnostics and a face-check status in the existing details panel to distinguish
+  capture/quality failures, threshold rejection, ambiguity, and slow inference before changing
+  thresholds. Do not log names, images, vectors, or biometric distances in these diagnostics.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse

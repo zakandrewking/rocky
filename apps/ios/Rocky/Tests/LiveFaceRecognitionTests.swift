@@ -65,6 +65,10 @@ final class LiveFaceRecognitionTests: XCTestCase {
         let lookalike = FriendProfile(name: "Similar", templates: [vector(0.05)])
         XCTAssertNil(FaceMatcher.match(vector(0.02), friends: [zak, lookalike]))
         XCTAssertNil(FaceMatcher.match(vector(revision: 1), friends: [zak]))
+        XCTAssertEqual(FaceMatcher.assess(vector(0.45), friends: [zak, other]).reason, "outside match threshold")
+        XCTAssertEqual(FaceMatcher.assess(vector(0.02), friends: [zak, lookalike]).reason, "ambiguous match")
+        XCTAssertEqual(FaceMatcher.assess(vector(revision: 1), friends: [zak]).reason, "incompatible templates")
+        XCTAssertEqual(FaceMatcher.assess(vector(0.1), friends: [zak]).reason, "candidate match")
     }
 
     func testConsensusRejectsSingleFramesSwitchesAndLongGaps() {

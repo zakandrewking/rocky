@@ -454,6 +454,7 @@ struct ContentView: View {
             .disabled(starting || voiceSession.state == .connecting)
             .foregroundStyle(RockyTheme.amberBright)
             Text(liveFaces.presence.name.map { "familiar face: \($0)" } ?? "friends: \(friends.vault.friends.count) saved · recognition \(personCamera.isRunning ? "local" : "off")")
+            Text("face check: \(liveFaces.diagnostic)")
                 .foregroundStyle(RockyTheme.mint.opacity(0.7))
             if case .failed(let message) = voiceSession.state {
                 Text("voice: \(message)").foregroundStyle(RockyTheme.rust.opacity(0.9))
