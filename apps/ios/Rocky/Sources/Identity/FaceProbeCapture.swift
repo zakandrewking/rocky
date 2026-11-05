@@ -5,13 +5,16 @@ import Vision
 /// The lab's preprocessing is separate from the raw synthetic-fixture probe. Version this before
 /// reusing any vector in enrollment. This experiment never persists vectors or source images.
 enum FaceProbeCapture {
-    static let preprocessing = "eyes-320-v1"
+    static let legacyPreprocessing = "eyes-320-v1"
+    static let preprocessing = "camera-480-eyes-320-v2"
     static let outputSize = CGSize(width: 320, height: 320)
+    private static let context = CIContext()
 
     static func measure(_ data: Data) throws -> FaceFeaturePrintMeasurement {
-        guard let image = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
+        guard let source = CIImage(data: data, options: [.applyOrientationProperty: true]) else {
             throw CaptureError.invalidImage
         }
+        let image = try normalized(source)
         let request = VNDetectFaceLandmarksRequest()
         request.revision = VNDetectFaceLandmarksRequestRevision3
         try VNImageRequestHandler(ciImage: image).perform([request])
@@ -38,7 +41,29 @@ enum FaceProbeCapture {
         guard corners.allSatisfy({ image.extent.contains($0.applying(inverse)) }) else {
             throw CaptureError.faceNearEdge
         }
-        return try FaceFeaturePrintProbe().measure(aligned.cropped(to: crop))
+        let measurement = try FaceFeaturePrintProbe().measure(aligned.cropped(to: crop))
+        return FaceFeaturePrintMeasurement(
+            descriptor: .init(revision: measurement.descriptor.revision,
+                              values: measurement.descriptor.values, preprocessing: preprocessing),
+            elapsedMilliseconds: measurement.elapsedMilliseconds
+        )
+    }
+
+    /// Still photos and video must have the same sampling scale BEFORE landmark detection and
+    /// alignment. The image-similarity baseline is not invariant to their very different detail.
+    /// Rasterizing also prevents lazy Core Image transforms from changing Vision's input path.
+    static func normalized(_ source: CIImage) throws -> CIImage {
+        let extent = source.extent
+        guard extent.width > 0, extent.height > 0, !extent.isInfinite else { throw CaptureError.invalidImage }
+        let scale = min(1, 480 / max(extent.width, extent.height))
+        let image = source.transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let bounds = CGRect(x: 0, y: 0, width: floor(extent.width * scale), height: floor(extent.height * scale))
+        guard let raster = context.createCGImage(image, from: bounds, format: .RGBA8,
+                                                colorSpace: CGColorSpaceCreateDeviceRGB()) else {
+            throw CaptureError.invalidImage
+        }
+        return CIImage(cgImage: raster)
     }
 
     /// Roll-normalize and scale the eye centers onto a fixed 320×320 crop. This deliberately

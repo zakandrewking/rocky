@@ -457,8 +457,11 @@ struct ContentView: View {
             Text("face check: \(liveFaces.diagnostic)")
                 .foregroundStyle(RockyTheme.mint.opacity(0.7))
             if let distance = liveFaces.nearestDistance {
-                Text(String(format: "face distance: %.3f · cutoff %.2f (experimental)",
-                            distance, FaceMatcher.maximumDistance))
+                Text(String(format: "face match difference %.4f %@ cutoff %.4f",
+                            distance, distance <= FaceMatcher.maximumDistance ? "≤" : ">",
+                            FaceMatcher.maximumDistance))
+                    .foregroundStyle(RockyTheme.mint.opacity(0.7))
+                Text("Lower is more similar to a saved face—not distance from the camera.")
                     .foregroundStyle(RockyTheme.mint.opacity(0.7))
             }
             if case .failed(let message) = voiceSession.state {

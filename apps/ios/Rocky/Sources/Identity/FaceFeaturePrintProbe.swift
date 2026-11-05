@@ -14,18 +14,22 @@ struct FaceFeaturePrintDescriptor: Codable, Equatable, Sendable {
     let algorithm: String
     let revision: Int
     let values: [Float]
+    /// Nil identifies legacy/raw probes. Never compare them with normalized-camera templates.
+    let preprocessing: String?
 
-    init(revision: Int, values: [Float]) {
+    init(revision: Int, values: [Float], preprocessing: String? = nil) {
         self.algorithm = Self.algorithm
         self.revision = revision
         self.values = values
+        self.preprocessing = preprocessing
     }
 
     /// Euclidean distance matches Vision's feature-print comparison semantics: smaller is more
     /// similar. No recognition threshold belongs here; that must come from representative device
     /// trials rather than being borrowed from an unrelated model or dataset.
     func distance(to other: Self) throws -> Double {
-        guard algorithm == other.algorithm, revision == other.revision else {
+        guard algorithm == other.algorithm, revision == other.revision,
+              preprocessing == other.preprocessing else {
             throw FaceFeaturePrintError.incompatibleModel
         }
         guard values.count == other.values.count else {

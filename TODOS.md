@@ -629,6 +629,23 @@ Decisions already made:
   sensitivity. Show the nearest distance temporarily in the existing on-device details panel
   only (memory-only, no log/export/provider), so rejection severity is measurable. Keep the cutoff
   unchanged until real known/unknown separation is demonstrated; a larger cutoff alone is not a fix.
+  **Camera-domain cause reproduced and corrected:** 480px JPEG copies of the exact same synthetic
+  source scored 0.3925–0.4028. Size normalization alone still scored 0.3400–0.3827; lossless PNG
+  with the same normalization scored exactly zero for all three sources. Enrollment and local
+  video now use lossless memory-only PNG plus a common rasterized 480px input before alignment;
+  Gemini keeps its separate JPEG transport. `camera-480-eyes-320-v2` tags each new descriptor;
+  legacy vaults remain readable, but old templates cannot match new captures. Explicitly saving
+  a new reference under the same name refreshes only that friend's obsolete templates and keeps
+  IDs/other friends. All 15 focused physical-device tests pass, including the transport regression
+  and explicit refresh. The unchanged 0.32 cutoff still needs real known/unknown validation.
+  Label the live metric “face match difference” (four decimals, lower is more similar), not camera
+  distance; the user reasonably interpreted the old label as physical distance. Live values stay
+  out of logs; only categorical decisions are logged. Also investigate reported first-launch exits
+  after deployment separately from XCTest host termination; do not claim they are fixed yet.
+  At the user's explicit request, enable bounded scalar trend logs (~5s): latest/min/mean/max
+  nearest-person feature difference, sample count, fixed cutoff, closest saved-profile ordinal,
+  and decision. Log saved/usable/needs-refresh profile counts on configuration. Do not log names,
+  photos, or vectors. This supersedes the earlier decision to keep live numeric scores UI-only.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse

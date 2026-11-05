@@ -16,7 +16,8 @@ struct FriendVault: Codable, Equatable, Sendable {
     var friends: [FriendProfile] = []
 
     func validate() throws {
-        guard version == 1, preprocessing == FaceProbeCapture.preprocessing,
+        guard version == 1,
+              [FaceProbeCapture.preprocessing, FaceProbeCapture.legacyPreprocessing].contains(preprocessing),
               osMajor == ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
               friends.count <= 20, Set(friends.map(\.id)).count == friends.count,
               Set(friends.map { $0.name.lowercased() }).count == friends.count else {
@@ -28,6 +29,7 @@ struct FriendVault: Codable, Equatable, Sendable {
                   friend.templates.allSatisfy({
                       $0.algorithm == FaceFeaturePrintDescriptor.algorithm && $0.revision == 2
                           && $0.values.count == 768 && $0.values.allSatisfy(\.isFinite)
+                          && ($0.preprocessing == nil || $0.preprocessing == FaceProbeCapture.preprocessing)
                   }) else { throw FriendStoreError.incompatible }
         }
     }
@@ -83,12 +85,16 @@ final class FriendStore: ObservableObject {
         guard !name.isEmpty, Self.cleanName(name) == name else { throw FriendStoreError.invalidName }
         var next = vault
         if let index = next.friends.firstIndex(where: { $0.name.lowercased() == name.lowercased() }) {
+            // An explicit new capture refreshes only this friend's obsolete templates. Preserve
+            // their name/ID and every other friend; never silently compare across pipelines.
+            next.friends[index].templates.removeAll { $0.preprocessing != descriptor.preprocessing }
             guard next.friends[index].templates.count < 5 else { throw FriendStoreError.capacity }
             next.friends[index].templates.append(descriptor)
         } else {
             guard next.friends.count < 20 else { throw FriendStoreError.capacity }
             next.friends.append(FriendProfile(name: name, templates: [descriptor]))
         }
+        next.preprocessing = FaceProbeCapture.preprocessing
         try commit(next)
     }
 

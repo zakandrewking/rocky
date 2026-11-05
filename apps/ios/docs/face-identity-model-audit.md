@@ -133,3 +133,24 @@ and pauses recognition at serious/critical thermal pressure. Only stable state t
 conversation context, with explicit uncertainty replacing old identities. Face recognition does
 not identify the speaker. A delayed, cooldown-limited greeting is allowed in a quiet moment; normal
 conversation and stories keep priority. Face embeddings never enter the conversation or scene API.
+
+## Camera-domain correction (2026-11-04)
+
+Real conversation rejected the enrolled person, including near-identical reference attempts. The
+original lab gate did not establish real live acceptance. A physical-device regression isolated a
+transport mismatch: encoding the exact same synthetic source as a 480px JPEG scored
+0.3925–0.4028 against the original, above the 0.32 cutoff. Equalizing input resolution alone still
+scored 0.3400–0.3827 for JPEG; the corresponding lossless PNG scored exactly 0.0000 for all three
+fixtures. This baseline is sensitive to JPEG artifacts as well as input sampling scale.
+
+`camera-480-eyes-320-v2` therefore uses lossless memory-only PNG in both enrollment and the local
+video lane, normalizes the maximum input edge to 480px, rasterizes to RGBA8 device RGB, then runs
+the existing landmarks/alignment/feature request. Gemini retains its separate existing JPEG lane.
+Per-descriptor preprocessing tags prohibit cross-pipeline comparisons. Legacy vaults remain
+readable/exportable; saving a fresh capture under an existing name replaces only that friend's
+obsolete templates while preserving identity and other profiles. No photos are available to
+automatically regenerate legacy templates. The cutoff remains unchanged. Synthetic known/unknown
+checks and exact-source lossless transport checks do not replace the pending real-person trial.
+At the person's explicit request, live diagnostics now record a bounded five-second scalar trend
+(latest/min/mean/max difference, cutoff, sample count, profile ordinal, decision) and configured
+profile counts. No names, photos, or vectors are added to these diagnostics.

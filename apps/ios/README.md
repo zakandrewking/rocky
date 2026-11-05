@@ -331,10 +331,20 @@ conversation and stops other camera probes. To enroll once:
 
 Rocky needs three consistent, fresh matches before using a name. Faces are aligned locally and
 compared with saved friends at about 1fps, independently of Gemini's network lane. The provisional
-MVP gate is distance ≤0.32 and margin ≥0.10 over the next closest *person*. These are conservative
+MVP gate is distance ≤0.32 and margin ≥0.10 over the next closest *person*. The details panel shows
+the live nearest-person feature difference (minimum across their templates) beside the cutoff with
+four decimal places. Lower is more similar—not physical distance or a confidence percentage. These are conservative
 starting values, not validated population accuracy. Multiple faces, poor crops, uncertain matches,
 stale frames, serious/critical thermal pressure, and camera shutdown return to uncertainty. Only
 one face is recognized at a time in this MVP; voice/speaker recognition is not implemented.
+After the camera-normalization fix, old samples show **Refresh reference**. Capture one new
+reference and save the same name; this preserves the friend's name/ID, replaces only their obsolete
+samples, and leaves other friends unchanged. Old templates are never compared with the new pipeline.
+For debugging, `session.log` includes a bounded summary about every five seconds: latest/minimum/
+mean/maximum match difference, cutoff, sample count, closest saved-profile ordinal, and decision.
+Startup logs saved/usable/needs-refresh counts. These scalar diagnostics were requested for live
+trends; they contain no names, photos, or vectors. The log may still contain conversation from
+the existing voice diagnostics—treat exported session logs as private.
 
 Confirmed identities become quiet conversational context. Rocky can use a name without asking
 who is there, does not infer the speaker from a face, and does not narrate recognition. An arrival
@@ -373,7 +383,8 @@ The same sheet retains the temporary testing controls:
 The app keeps captured image bytes only during processing, never saves them to Photos or its
 files, and sends no lab embeddings to providers. Temporary vectors and measurements remain in
 memory, capped at 100 comparisons. Only **Remember this face** persists a reference. Eye alignment is
-versioned as `eyes-320-v1`, with Vision face landmarks revision 3 and image feature prints revision
+versioned as `camera-480-eyes-320-v2`, with lossless local image transport, a common 480px maximum
+input edge before alignment, Vision face landmarks revision 3 and image feature prints revision
 2. Saved profiles use that exact preprocessing and never mix with raw synthetic-fixture vectors.
 See [the model audit](docs/face-identity-model-audit.md) for the remaining acceptance gates. Live
 camera frames still feed the existing Gemini scene-description lane; no additional network image

@@ -46,13 +46,19 @@ struct FriendControls: View {
                 HStack {
                     Text(friend.name)
                     Spacer()
-                    Text("\(friend.templates.count)/5 samples").foregroundStyle(.secondary)
+                    Text(friend.templates.allSatisfy { $0.preprocessing == FaceProbeCapture.preprocessing }
+                         ? "\(friend.templates.count)/5 samples" : "Refresh reference")
+                        .foregroundStyle(.secondary)
                     Button("Forget", role: .destructive) { forgetID = friend.id }
                         .buttonStyle(.borderless)
                 }
             }
             Text("For better angle coverage, capture another reference and save the same name. Up to five samples per friend. Names can reach the conversation service; face vectors stay on this phone.")
                 .font(.footnote).foregroundStyle(.secondary)
+            if store.vault.friends.contains(where: { $0.templates.contains(where: { $0.preprocessing == nil }) }) {
+                Text("Camera normalization was corrected. Capture a new reference and save the same name to refresh that friend's old samples. Names and other friends are preserved.")
+                    .font(.footnote).foregroundStyle(.orange)
+            }
         }
         Section("Backup & restore") {
             Text("Before reinstalling, export a backup and keep its password. App deletion removes the local friend list. There is no automatic cloud sync.")

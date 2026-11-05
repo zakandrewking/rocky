@@ -338,11 +338,22 @@ extension PersonCamera: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         if let face = decision.face {
             let throttle = throttle
-            Task {
-                await face(jpegData, capturedAt)
+            // Do not reuse Gemini's lossy JPEG for identity. The baseline can move outside its
+            // match threshold after JPEG encoding alone, even for an otherwise identical image.
+            if let faceData = Self.ciContext.pngRepresentation(
+                of: ciImage, format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB(), options: [:]
+            ) {
+                Task {
+                    await face(faceData, capturedAt)
+                    throttle.withLock {
+                        if $0.faceGeneration == decision.faceGeneration { $0.faceInFlight = false }
+                    }
+                }
+            } else {
                 throttle.withLock {
                     if $0.faceGeneration == decision.faceGeneration { $0.faceInFlight = false }
                 }
+                RockyLog.write("faces: local frame encoding failed")
             }
         }
 

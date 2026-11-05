@@ -217,7 +217,9 @@ private struct FaceProbeCamera: UIViewControllerRepresentable {
             let normalized = UIGraphicsImageRenderer(size: size, format: format).image { _ in
                 image.draw(in: CGRect(origin: .zero, size: size))
             }
-            finish(normalized.jpegData(compressionQuality: 0.95))
+            // The local similarity baseline is sensitive even to JPEG recompression. Match the
+            // lossless local video lane; these bytes stay in memory and never reach a provider.
+            finish(normalized.pngData())
         }
         private func finish(_ data: Data?) {
             let callback = onCapture

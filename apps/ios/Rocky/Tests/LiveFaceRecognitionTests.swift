@@ -74,6 +74,31 @@ final class LiveFaceRecognitionTests: XCTestCase {
         XCTAssertNil(FaceMatcher.assess(vector(revision: 1), friends: [zak]).nearestDistance)
     }
 
+    @MainActor
+    func testLegacyTemplatesRequireExplicitRefreshWithoutLosingOtherFriends() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
+        try store.remember(name: "Zak", descriptor: vector())
+        try store.remember(name: "Other", descriptor: vector(0.8))
+        let previous = store.vault
+        let current = FaceFeaturePrintDescriptor(revision: 2, values: vector().values,
+                                                preprocessing: FaceProbeCapture.preprocessing)
+        XCTAssertThrowsError(try current.distance(to: vector()))
+        XCTAssertNil(FaceMatcher.match(current, friends: store.vault.friends))
+        try store.remember(name: "Zak", descriptor: current)
+        XCTAssertEqual(store.vault.friends.count, 2)
+        XCTAssertEqual(store.vault.friends[0].id, previous.friends[0].id)
+        XCTAssertEqual(store.vault.friends[0].templates, [current])
+        XCTAssertEqual(store.vault.friends[1], previous.friends[1])
+        XCTAssertEqual(FaceMatcher.match(current, friends: store.vault.friends)?.id, previous.friends[0].id)
+        var legacy = previous
+        legacy.preprocessing = FaceProbeCapture.legacyPreprocessing
+        try legacy.validate()
+        try store.restore(legacy)
+        XCTAssertEqual(store.vault, legacy)
+    }
+
     func testConsensusRejectsSingleFramesSwitchesAndLongGaps() {
         var consensus = FaceConsensus()
         let a = UUID(), b = UUID(), now = Date()
@@ -85,6 +110,21 @@ final class LiveFaceRecognitionTests: XCTestCase {
         XCTAssertFalse(consensus.observe(nil, at: now.addingTimeInterval(4)))
         XCTAssertFalse(consensus.observe(a, at: now.addingTimeInterval(5)))
         XCTAssertFalse(consensus.observe(a, at: now.addingTimeInterval(10)))
+    }
+
+    func testDistanceTrendsAreBoundedFiniteAndThrottled() throws {
+        var trend = FaceDistanceTrend()
+        let now = Date()
+        XCTAssertNil(trend.record(.nan, at: now))
+        XCTAssertNil(trend.record(-1, at: now))
+        XCTAssertEqual(trend.record(0.4, at: now)?.count, 1)
+        XCTAssertNil(trend.record(0.2, at: now.addingTimeInterval(1)))
+        let summary = try XCTUnwrap(trend.record(0.3, at: now.addingTimeInterval(5)))
+        XCTAssertEqual(summary.count, 2)
+        XCTAssertEqual(summary.minimum, 0.2)
+        XCTAssertEqual(summary.mean, 0.25)
+        XCTAssertEqual(summary.maximum, 0.3)
+        XCTAssertEqual(trend.record(0.1, at: now.addingTimeInterval(10))?.count, 1)
     }
 
     func testArrivalsDoNotInterruptOrRepeatAfterCameraBlips() {

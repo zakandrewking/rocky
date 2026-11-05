@@ -17,6 +17,7 @@ enum FaceMatcher {
         var friend: FriendProfile?
         var reason: String
         var nearestDistance: Double?
+        var nearestFriendID: UUID?
     }
     static func match(_ descriptor: FaceFeaturePrintDescriptor, friends: [FriendProfile]) -> FriendProfile? {
         assess(descriptor, friends: friends).friend
@@ -30,12 +31,32 @@ enum FaceMatcher {
         }.sorted { $0.1 < $1.1 }
         guard let first = ranked.first else { return Assessment(reason: "incompatible templates") }
         guard first.1 <= maximumDistance else {
-            return Assessment(reason: "outside match threshold", nearestDistance: first.1)
+            return Assessment(reason: "outside match threshold", nearestDistance: first.1, nearestFriendID: first.0.id)
         }
         guard ranked.count < 2 || ranked[1].1 - first.1 >= minimumMargin else {
-            return Assessment(reason: "ambiguous match", nearestDistance: first.1)
+            return Assessment(reason: "ambiguous match", nearestDistance: first.1, nearestFriendID: first.0.id)
         }
-        return Assessment(friend: first.0, reason: "candidate match", nearestDistance: first.1)
+        return Assessment(friend: first.0, reason: "candidate match", nearestDistance: first.1, nearestFriendID: first.0.id)
+    }
+}
+
+/// Bounded scalar diagnostics, enabled at the user's request. Never retains frames or vectors.
+struct FaceDistanceTrend {
+    struct Summary { let count: Int; let minimum: Double; let mean: Double; let maximum: Double }
+    private var count = 0
+    private var total = 0.0
+    private var minimum = Double.infinity
+    private var maximum = 0.0
+    private var lastReport = Date.distantPast
+
+    mutating func record(_ distance: Double, at: Date) -> Summary? {
+        guard distance.isFinite, distance >= 0 else { return nil }
+        count += 1; total += distance
+        minimum = min(minimum, distance); maximum = max(maximum, distance)
+        guard at.timeIntervalSince(lastReport) >= 5 else { return nil }
+        let summary = Summary(count: count, minimum: minimum, mean: total / Double(count), maximum: maximum)
+        count = 0; total = 0; minimum = .infinity; maximum = 0; lastReport = at
+        return summary
     }
 }
 
@@ -57,7 +78,8 @@ struct FaceConsensus {
 final class LiveFaceRecognition: ObservableObject {
     @Published private(set) var presence: FacePresence = .off
     @Published private(set) var diagnostic = "waiting for camera"
-    /// Temporary in-app measurement, never written to the log or identity vault.
+    /// Live UI measurement; bounded scalar trends are logged at the user's request, not stored
+    /// in the identity vault. Photos and face vectors are never included in diagnostics.
     @Published private(set) var nearestDistance: Double?
     var onChange: ((FacePresence) -> Void)?
     private var friends: [FriendProfile] = []
@@ -67,8 +89,14 @@ final class LiveFaceRecognition: ObservableObject {
     private var validAfter = Date.distantPast
     private var lastProcessedAt = Date.distantPast
     private var lastDiagnosticAt = Date.distantPast
+    private var distanceTrend = FaceDistanceTrend()
 
-    func configure(_ friends: [FriendProfile]) { self.friends = friends; reset() }
+    func configure(_ friends: [FriendProfile]) {
+        self.friends = friends
+        reset()
+        let current = friends.filter { $0.templates.contains { $0.preprocessing == FaceProbeCapture.preprocessing } }.count
+        RockyLog.write("faces: configured saved=\(friends.count) usable=\(current) needs_refresh=\(friends.count - current)")
+    }
     func reset() {
         generation += 1
         validAfter = Date()
@@ -78,6 +106,7 @@ final class LiveFaceRecognition: ObservableObject {
         expiry = nil
         diagnostic = friends.isEmpty ? "no saved friends" : "waiting for camera"
         nearestDistance = nil
+        distanceTrend = FaceDistanceTrend()
         publish(.off)
     }
     func process(_ data: Data, capturedAt: Date) async {
@@ -98,6 +127,14 @@ final class LiveFaceRecognition: ObservableObject {
         case .success(let measurement):
             let assessment = FaceMatcher.assess(measurement.descriptor, friends: friends)
             nearestDistance = assessment.nearestDistance
+            if let distance = assessment.nearestDistance,
+               let trend = distanceTrend.record(distance, at: capturedAt) {
+                let profile = friends.firstIndex { $0.id == assessment.nearestFriendID }.map { $0 + 1 } ?? 0
+                RockyLog.write(String(format:
+                    "faces: match difference latest=%.4f cutoff=%.4f n=%d min=%.4f mean=%.4f max=%.4f closest_profile=%d saved=%d decision=%@",
+                    distance, FaceMatcher.maximumDistance, trend.count, trend.minimum, trend.mean, trend.maximum,
+                    profile, friends.count, assessment.reason))
+            }
             let friend = assessment.friend
             let confirmed = consensus.observe(friend?.id, at: capturedAt)
             if confirmed, let friend {
