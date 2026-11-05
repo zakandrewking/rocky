@@ -66,6 +66,30 @@ final class FaceFeaturePrintProbeTests: XCTestCase {
         "synthetic-b-2", "synthetic-c-1", "synthetic-c-2",
     ]
 
+    func testVideoResolutionAndMirroringAgainstStillReferenceOnDevice() throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip("Run camera-domain feature comparison on the paired iPhone")
+        #else
+        let context = CIContext()
+        for name in ["synthetic-a-1", "synthetic-b-1", "synthetic-c-1"] {
+            let image = try Self.fixture(named: name)
+            let reference = try FaceProbeCapture.measure(Data(contentsOf: Self.fixtureURL(named: name)))
+            let scale = 480 / max(image.extent.width, image.extent.height)
+            let video = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            let mirrored = video.transformed(by: CGAffineTransform(a: -1, b: 0, c: 0, d: 1,
+                                                                   tx: video.extent.width, ty: 0))
+            for (label, candidate) in [("video", video), ("mirrored video", mirrored)] {
+                let data = try XCTUnwrap(context.jpegRepresentation(of: candidate,
+                    colorSpace: CGColorSpaceCreateDeviceRGB(), options: [:]))
+                let measurement = try FaceProbeCapture.measure(data)
+                let distance = try reference.descriptor.distance(to: measurement.descriptor)
+                print("synthetic camera domain \(name) \(label): \(distance)")
+                XCTAssertTrue(distance.isFinite)
+            }
+        }
+        #endif
+    }
+
     func testCapturePipelineAlignsAndSeparatesSyntheticFacesOnDevice() throws {
         #if targetEnvironment(simulator)
         throw XCTSkip("Run the face capture pipeline on the paired iPhone")

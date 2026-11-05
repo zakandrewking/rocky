@@ -16,6 +16,7 @@ enum FaceMatcher {
     struct Assessment {
         var friend: FriendProfile?
         var reason: String
+        var nearestDistance: Double?
     }
     static func match(_ descriptor: FaceFeaturePrintDescriptor, friends: [FriendProfile]) -> FriendProfile? {
         assess(descriptor, friends: friends).friend
@@ -28,11 +29,13 @@ enum FaceMatcher {
             return (friend, distance)
         }.sorted { $0.1 < $1.1 }
         guard let first = ranked.first else { return Assessment(reason: "incompatible templates") }
-        guard first.1 <= maximumDistance else { return Assessment(reason: "outside match threshold") }
-        guard ranked.count < 2 || ranked[1].1 - first.1 >= minimumMargin else {
-            return Assessment(reason: "ambiguous match")
+        guard first.1 <= maximumDistance else {
+            return Assessment(reason: "outside match threshold", nearestDistance: first.1)
         }
-        return Assessment(friend: first.0, reason: "candidate match")
+        guard ranked.count < 2 || ranked[1].1 - first.1 >= minimumMargin else {
+            return Assessment(reason: "ambiguous match", nearestDistance: first.1)
+        }
+        return Assessment(friend: first.0, reason: "candidate match", nearestDistance: first.1)
     }
 }
 
@@ -54,6 +57,8 @@ struct FaceConsensus {
 final class LiveFaceRecognition: ObservableObject {
     @Published private(set) var presence: FacePresence = .off
     @Published private(set) var diagnostic = "waiting for camera"
+    /// Temporary in-app measurement, never written to the log or identity vault.
+    @Published private(set) var nearestDistance: Double?
     var onChange: ((FacePresence) -> Void)?
     private var friends: [FriendProfile] = []
     private var generation = 0
@@ -72,6 +77,7 @@ final class LiveFaceRecognition: ObservableObject {
         expiry?.cancel()
         expiry = nil
         diagnostic = friends.isEmpty ? "no saved friends" : "waiting for camera"
+        nearestDistance = nil
         publish(.off)
     }
     func process(_ data: Data, capturedAt: Date) async {
@@ -91,6 +97,7 @@ final class LiveFaceRecognition: ObservableObject {
         switch result {
         case .success(let measurement):
             let assessment = FaceMatcher.assess(measurement.descriptor, friends: friends)
+            nearestDistance = assessment.nearestDistance
             let friend = assessment.friend
             let confirmed = consensus.observe(friend?.id, at: capturedAt)
             if confirmed, let friend {
@@ -98,6 +105,7 @@ final class LiveFaceRecognition: ObservableObject {
             } else { proposed = FacePresence(kind: .unknown) }
             report(confirmed ? "recognized" : assessment.reason)
         case .failure(let error):
+            nearestDistance = nil
             _ = consensus.observe(nil, at: capturedAt)
             switch error as? FaceProbeCapture.CaptureError {
             case .noFace: proposed = FacePresence(kind: .nobody)
@@ -114,6 +122,7 @@ final class LiveFaceRecognition: ObservableObject {
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled, let self else { return }
             self.consensus = FaceConsensus()
+            self.nearestDistance = nil
             self.publish(FacePresence(kind: .unknown))
         }
     }

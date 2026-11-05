@@ -69,6 +69,9 @@ final class LiveFaceRecognitionTests: XCTestCase {
         XCTAssertEqual(FaceMatcher.assess(vector(0.02), friends: [zak, lookalike]).reason, "ambiguous match")
         XCTAssertEqual(FaceMatcher.assess(vector(revision: 1), friends: [zak]).reason, "incompatible templates")
         XCTAssertEqual(FaceMatcher.assess(vector(0.1), friends: [zak]).reason, "candidate match")
+        XCTAssertEqual(FaceMatcher.assess(vector(0.45), friends: [zak]).nearestDistance ?? -1,
+                       0.44, accuracy: 0.000_001)
+        XCTAssertNil(FaceMatcher.assess(vector(revision: 1), friends: [zak]).nearestDistance)
     }
 
     func testConsensusRejectsSingleFramesSwitchesAndLongGaps() {

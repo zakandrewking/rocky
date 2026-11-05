@@ -623,6 +623,12 @@ Decisions already made:
   per-sample diagnostics and a face-check status in the existing details panel to distinguish
   capture/quality failures, threshold rejection, ambiguity, and slow inference before changing
   thresholds. Do not log names, images, vectors, or biometric distances in these diagnostics.
+  The user now confirms threshold rejection even with two near-identical reference attempts.
+  Do not call this a working recognizer yet: real-person acceptance has failed. Compare synthetic
+  stills with 480px JPEG and mirrored variants on the physical phone to isolate camera-domain
+  sensitivity. Show the nearest distance temporarily in the existing on-device details panel
+  only (memory-only, no log/export/provider), so rejection severity is measurable. Keep the cutoff
+  unchanged until real known/unknown separation is demonstrated; a larger cutoff alone is not a fix.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse
