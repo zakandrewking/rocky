@@ -97,7 +97,7 @@ final class FaceFeaturePrintProbeTests: XCTestCase {
                     // these exact same sources outside 0.32 even after scale normalization.
                     XCTAssertLessThan(distance, 0.01)
                 } else if label == "video" {
-                    XCTAssertGreaterThan(distance, FaceMatcher.maximumDistance)
+                    XCTAssertGreaterThan(distance, 0.32) // Old Apple baseline's cutoff, not AuraFace's.
                 }
             }
         }
@@ -125,14 +125,9 @@ final class FaceFeaturePrintProbeTests: XCTestCase {
         ]
         print("synthetic aligned capture pipeline \(FaceProbeCapture.preprocessing): same=\(same) different=\(different)")
         XCTAssertLessThan(try XCTUnwrap(same.max()), try XCTUnwrap(different.min()))
-        let a = FriendProfile(name: "Synthetic A", templates: [try XCTUnwrap(measurements["synthetic-a-1"]).descriptor])
-        let b = FriendProfile(name: "Synthetic B", templates: [try XCTUnwrap(measurements["synthetic-b-1"]).descriptor])
-        XCTAssertEqual(FaceMatcher.match(try XCTUnwrap(measurements["synthetic-a-2"]).descriptor,
-                                        friends: [a, b])?.id, a.id)
-        XCTAssertEqual(FaceMatcher.match(try XCTUnwrap(measurements["synthetic-b-2"]).descriptor,
-                                        friends: [a, b])?.id, b.id)
+        // Retain the old baseline experiment, but never use it for current identity decisions.
         XCTAssertNil(FaceMatcher.match(try XCTUnwrap(measurements["synthetic-c-2"]).descriptor,
-                                     friends: [a, b]))
+                                     friends: []))
         #endif
     }
 

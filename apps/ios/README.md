@@ -335,15 +335,20 @@ The option appears only when a single, successfully processed face is less than 
 at the moment you open Friends. It retains a descriptor, never a photo, and nothing persists until
 you choose **Remember this face**. Closing or backgrounding clears the temporary reference.
 
-Rocky needs three consistent, fresh matches before using a name. Faces are aligned locally and
+Rocky uses the bundled, face-specific **AuraFace v1** Core ML model (512-value, unit-normalized
+identity embeddings), with Vision used only for face detection/landmarks. All identity inference
+runs on the phone; no image-similarity fallback is used for recognition. Rocky needs three
+consistent, fresh matches before using a name. Faces are aligned locally and
 compared with saved friends at about 1fps, independently of Gemini's network lane. The provisional
-MVP gate is distance ≤0.32 and margin ≥0.10 over the next closest *person*. The details panel shows
+MVP gate is unit-embedding L2 distance ≤0.90 and margin ≥0.10 over the next closest *person*.
+This is a new model and scale, not a loosened Apple-feature-print threshold; its old 0.32 cutoff
+and old distances do not apply. The details panel shows
 the live nearest-person feature difference (minimum across their templates) beside the cutoff with
 four decimal places. Lower is more similar—not physical distance or a confidence percentage. These are conservative
 starting values, not validated population accuracy. Multiple faces, poor crops, uncertain matches,
 stale frames, serious/critical thermal pressure, and camera shutdown return to uncertainty. Only
 one face is recognized at a time in this MVP; voice/speaker recognition is not implemented.
-After the camera-normalization fix, old samples show **Refresh reference**. Capture one new
+After the dedicated-model upgrade, old samples show **Refresh reference**. Capture one new
 reference and save the same name; this preserves the friend's name/ID, replaces only their obsolete
 samples, and leaves other friends unchanged. Old templates are never compared with the new pipeline.
 For debugging, `session.log` includes a bounded summary about every five seconds: latest/minimum/
@@ -389,9 +394,11 @@ The same sheet retains the temporary testing controls:
 The app keeps captured image bytes only during processing, never saves them to Photos or its
 files, and sends no lab embeddings to providers. Temporary vectors and measurements remain in
 memory, capped at 100 comparisons. Only **Remember this face** persists a reference. Eye alignment is
-versioned as `camera-480-eyes-320-v2`, with lossless local image transport, a common 480px maximum
-input edge before alignment, Vision face landmarks revision 3 and image feature prints revision
-2. Saved profiles use that exact preprocessing and never mix with raw synthetic-fixture vectors.
+versioned as `arcface-five-point-rgb-112-v1`: Vision landmarks revision 3, five-point similarity
+alignment to the publisher's canonical 112px crop, RGB pixel normalization, and AuraFace identity
+inference. Lossless local image transport avoids unnecessary compression. Saved profiles tag each
+template with its model/revision/preprocessing and never compare new embeddings with legacy
+Apple image-feature prints. The legacy baseline remains only in regression tests and the audit.
 See [the model audit](docs/face-identity-model-audit.md) for the remaining acceptance gates. Live
 camera frames still feed the existing Gemini scene-description lane; no additional network image
 requests are made for identity, and local face embeddings are never sent there.

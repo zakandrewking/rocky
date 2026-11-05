@@ -11,7 +11,9 @@ struct FacePresence: Equatable, Sendable {
 /// Conservative MVP thresholds, deliberately not advertised as validated recognition accuracy.
 /// Score per person (not per template), require an absolute match AND separation from runner-up.
 enum FaceMatcher {
-    static let maximumDistance = 0.32
+    // L2 distance between UNIT AuraFace vectors (not Apple's old image-print distances).
+    // Provisional cosine >= 0.595; real known/unknown acceptance remains a separate gate.
+    static let maximumDistance = 0.90
     static let minimumMargin = 0.10
     struct Assessment {
         var friend: FriendProfile?
@@ -23,13 +25,14 @@ enum FaceMatcher {
         assess(descriptor, friends: friends).friend
     }
     static func assess(_ descriptor: FaceFeaturePrintDescriptor, friends: [FriendProfile]) -> Assessment {
+        guard descriptor.isCurrentIdentityTemplate else { return Assessment(reason: "incompatible templates") }
         let ranked = friends.compactMap { friend -> (FriendProfile, Double)? in
-            let distances = friend.templates.compactMap { try? descriptor.distance(to: $0) }
+            let distances = friend.templates.filter(\.isCurrentIdentityTemplate).compactMap { try? descriptor.distance(to: $0) }
                 .filter(\.isFinite)
             guard let distance = distances.min() else { return nil }
             return (friend, distance)
         }.sorted { $0.1 < $1.1 }
-        guard let first = ranked.first else { return Assessment(reason: "incompatible templates") }
+        guard let first = ranked.first else { return Assessment(reason: "refresh saved face samples for AuraFace") }
         guard first.1 <= maximumDistance else {
             return Assessment(reason: "outside match threshold", nearestDistance: first.1, nearestFriendID: first.0.id)
         }
@@ -101,8 +104,8 @@ final class LiveFaceRecognition: ObservableObject {
     func configure(_ friends: [FriendProfile]) {
         self.friends = friends
         reset()
-        let current = friends.filter { $0.templates.contains { $0.preprocessing == FaceProbeCapture.preprocessing } }.count
-        RockyLog.write("faces: configured saved=\(friends.count) usable=\(current) needs_refresh=\(friends.count - current)")
+        let current = friends.filter { $0.templates.contains(where: \.isCurrentIdentityTemplate) }.count
+        RockyLog.write("faces: model=AuraFace-v1 configured saved=\(friends.count) usable=\(current) needs_refresh=\(friends.count - current)")
     }
     func reset() {
         generation += 1
@@ -120,9 +123,9 @@ final class LiveFaceRecognition: ObservableObject {
     func process(_ data: Data, capturedAt: Date) async {
         guard !friends.isEmpty, capturedAt >= validAfter, capturedAt > lastProcessedAt else { return }
         let epoch = generation
-        let result = await Task.detached(priority: .utility) { () -> Result<FaceFeaturePrintMeasurement, Error> in
-            Result { try FaceProbeCapture.measure(data) }
-        }.value
+        let result: Result<FaceFeaturePrintMeasurement, Error>
+        do { result = .success(try await AuraFaceProbe.shared.measure(data).identityMeasurement) }
+        catch { result = .failure(error) }
         guard epoch == generation else { return }
         guard Date().timeIntervalSince(capturedAt) < 2 else {
             report("processing too slow")

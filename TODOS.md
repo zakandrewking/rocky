@@ -567,6 +567,14 @@ Decisions already made:
   old names but require explicit new-model enrollment, show model-specific comparison values,
   and validate the actual enrolled person plus unknowns while talking. Do not promote synthetic
   success into a claim that real recognition works again. First hardware run is waiting for unlock.
+  **Physical gate passed and integrated:** all four probe tests pass on the 14 Pro; original/device
+  cosine 0.9997274–0.9997707, same-person synthetic unit-L2 0.6229–0.6991 vs cross-person 1.1264–1.2482,
+  923.9ms cold and 43.8–48.1ms warm end-to-end. Enrollment/live now use AuraFace exclusively. The
+  new metric uses provisional unit-L2 <=0.90 plus 0.10 margin and three confirmations; the Apple
+  0.32 threshold is not comparable. New templates require the exact model/revision/preprocessing,
+  512 finite values and unit norm. Legacy names/IDs/backups are preserved but samples are ineligible
+  until explicitly refreshed. Full checks and integrated physical tests pass; actual user and
+  unknown-person conversation trials still need to demonstrate acceptance/rejection.
 - [ ] **Prove one face-embedding model in isolation.** Check published source, weights provenance,
   training-data and redistribution terms before conversion; reject a technically good model whose
   weights cannot responsibly ship. Build a disposable Core ML probe that accepts already-cropped

@@ -27,9 +27,7 @@ final class FaceProbeLabModel: ObservableObject {
             do {
                 // Only encoded image bytes cross isolation. Vision and Core Image stay entirely
                 // on this worker; no camera or audio callback waits for extraction.
-                let measurement = try await Task.detached(priority: .userInitiated) {
-                    try FaceProbeCapture.measure(data)
-                }.value
+                let measurement = try await AuraFaceProbe.shared.measure(data).identityMeasurement
                 guard let self, epoch == self.generation else { return }
                 try self.evaluation.add(measurement, as: kind)
                 self.busy = false
@@ -132,7 +130,7 @@ struct FaceProbeLab: View {
                         captureKind = nil
                         model.reset()
                     }
-                    Text("Experimental Apple Vision revision 2 · \(FaceProbeCapture.preprocessing). Reset clears test data only. Saved friends remain until you forget them.")
+                    Text("AuraFace v1 · 512-value identity embedding · \(AuraFaceProbe.preprocessing). Reset clears test data only. Saved friends remain until you forget them.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

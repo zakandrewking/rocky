@@ -17,11 +17,22 @@ struct FaceFeaturePrintDescriptor: Codable, Equatable, Sendable {
     /// Nil identifies legacy/raw probes. Never compare them with normalized-camera templates.
     let preprocessing: String?
 
-    init(revision: Int, values: [Float], preprocessing: String? = nil) {
-        self.algorithm = Self.algorithm
+    init(algorithm: String = Self.algorithm, revision: Int, values: [Float], preprocessing: String? = nil) {
+        self.algorithm = algorithm
         self.revision = revision
         self.values = values
         self.preprocessing = preprocessing
+    }
+
+    var isCurrentIdentityTemplate: Bool {
+        algorithm == AuraFaceProbe.algorithm && revision == 1 && preprocessing == AuraFaceProbe.preprocessing
+            && values.count == 512 && values.allSatisfy(\.isFinite)
+            && abs(values.reduce(0.0) { $0 + Double($1) * Double($1) } - 1) < 0.001
+    }
+
+    var isLegacyImageTemplate: Bool {
+        algorithm == Self.algorithm && revision == 2 && values.count == 768 && values.allSatisfy(\.isFinite)
+            && (preprocessing == nil || preprocessing == FaceProbeCapture.preprocessing)
     }
 
     /// Euclidean distance matches Vision's feature-print comparison semantics: smaller is more

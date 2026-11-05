@@ -2,10 +2,11 @@ import XCTest
 @testable import Rocky
 
 final class LiveFaceRecognitionTests: XCTestCase {
-    private func vector(_ first: Float = 0, revision: Int = 2) -> FaceFeaturePrintDescriptor {
-        var values = [Float](repeating: 0, count: 768)
-        values[0] = first
-        return .init(revision: revision, values: values)
+    private func vector(_ angle: Float = 0, revision: Int = 1) -> FaceFeaturePrintDescriptor {
+        var values = [Float](repeating: 0, count: 512)
+        values[0] = cos(angle); values[1] = sin(angle)
+        return .init(algorithm: AuraFaceProbe.algorithm, revision: revision, values: values,
+                     preprocessing: AuraFaceProbe.preprocessing)
     }
 
     @MainActor
@@ -20,7 +21,7 @@ final class LiveFaceRecognitionTests: XCTestCase {
         XCTAssertEqual(store.vault.friends.first?.templates.count, 2)
         let bytes = try Data(contentsOf: url)
         XCTAssertThrowsError(try store.remember(name: "<instruction>", descriptor: vector()))
-        XCTAssertThrowsError(try store.remember(name: "Other", descriptor: vector(revision: 1)))
+        XCTAssertThrowsError(try store.remember(name: "Other", descriptor: vector(revision: 2)))
         XCTAssertEqual(try Data(contentsOf: url), bytes)
         let reloaded = FriendStore(url: url)
         XCTAssertEqual(reloaded.vault, store.vault)
@@ -59,19 +60,19 @@ final class LiveFaceRecognitionTests: XCTestCase {
 
     func testOpenSetMatchRequiresAbsoluteThresholdAndPersonMargin() {
         let zak = FriendProfile(name: "Zak", templates: [vector(0), vector(0.01)])
-        let other = FriendProfile(name: "Other", templates: [vector(0.8)])
+        let other = FriendProfile(name: "Other", templates: [vector(2)])
         XCTAssertEqual(FaceMatcher.match(vector(0.1), friends: [zak, other])?.id, zak.id)
-        XCTAssertNil(FaceMatcher.match(vector(0.45), friends: [zak, other]))
+        XCTAssertNil(FaceMatcher.match(vector(1), friends: [zak, other]))
         let lookalike = FriendProfile(name: "Similar", templates: [vector(0.05)])
         XCTAssertNil(FaceMatcher.match(vector(0.02), friends: [zak, lookalike]))
-        XCTAssertNil(FaceMatcher.match(vector(revision: 1), friends: [zak]))
-        XCTAssertEqual(FaceMatcher.assess(vector(0.45), friends: [zak, other]).reason, "outside match threshold")
+        XCTAssertNil(FaceMatcher.match(vector(revision: 2), friends: [zak]))
+        XCTAssertEqual(FaceMatcher.assess(vector(1), friends: [zak, other]).reason, "outside match threshold")
         XCTAssertEqual(FaceMatcher.assess(vector(0.02), friends: [zak, lookalike]).reason, "ambiguous match")
-        XCTAssertEqual(FaceMatcher.assess(vector(revision: 1), friends: [zak]).reason, "incompatible templates")
+        XCTAssertEqual(FaceMatcher.assess(vector(revision: 2), friends: [zak]).reason, "incompatible templates")
         XCTAssertEqual(FaceMatcher.assess(vector(0.1), friends: [zak]).reason, "candidate match")
         XCTAssertEqual(FaceMatcher.assess(vector(0.45), friends: [zak]).nearestDistance ?? -1,
-                       0.44, accuracy: 0.000_001)
-        XCTAssertNil(FaceMatcher.assess(vector(revision: 1), friends: [zak]).nearestDistance)
+                       2 * sin(0.44 / 2), accuracy: 0.000_001)
+        XCTAssertNil(FaceMatcher.assess(vector(revision: 2), friends: [zak]).nearestDistance)
     }
 
     @MainActor
@@ -79,13 +80,15 @@ final class LiveFaceRecognitionTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
-        try store.remember(name: "Zak", descriptor: vector())
-        try store.remember(name: "Other", descriptor: vector(0.8))
+        let old = FaceFeaturePrintDescriptor(revision: 2, values: Array(repeating: 0, count: 768),
+                                             preprocessing: FaceProbeCapture.preprocessing)
+        try store.restore(FriendVault(preprocessing: FaceProbeCapture.preprocessing,
+            friends: [FriendProfile(name: "Zak", templates: [old]), FriendProfile(name: "Other", templates: [old])]))
         let previous = store.vault
-        let current = FaceFeaturePrintDescriptor(revision: 2, values: vector().values,
-                                                preprocessing: FaceProbeCapture.preprocessing)
-        XCTAssertThrowsError(try current.distance(to: vector()))
+        let current = vector()
+        XCTAssertThrowsError(try current.distance(to: old))
         XCTAssertNil(FaceMatcher.match(current, friends: store.vault.friends))
+        XCTAssertThrowsError(try store.remember(name: "Zak", descriptor: old))
         try store.remember(name: "Zak", descriptor: current)
         XCTAssertEqual(store.vault.friends.count, 2)
         XCTAssertEqual(store.vault.friends[0].id, previous.friends[0].id)

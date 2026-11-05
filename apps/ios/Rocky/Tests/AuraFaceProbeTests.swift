@@ -68,6 +68,8 @@ final class AuraFaceProbeTests: XCTestCase {
         let different = try [distance("synthetic-a-1", "synthetic-b-1"), distance("synthetic-a-1", "synthetic-c-1"), distance("synthetic-b-1", "synthetic-c-1")]
         print("AuraFace synthetic pipeline same=\(same) different=\(different) total_ms=\(timing)")
         XCTAssertLessThan(try XCTUnwrap(same.max()), try XCTUnwrap(different.min()))
+        XCTAssertLessThan(try XCTUnwrap(same.max()), FaceMatcher.maximumDistance)
+        XCTAssertGreaterThan(try XCTUnwrap(different.min()), FaceMatcher.maximumDistance)
         XCTAssertLessThan(try XCTUnwrap(timing.dropFirst().max()), 1000)
         #endif
     }

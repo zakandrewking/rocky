@@ -462,6 +462,8 @@ struct ContentView: View {
             Text(liveFaces.presence.name.map { "familiar face: \($0)" } ?? "friends: \(friends.vault.friends.count) saved · recognition \(personCamera.isRunning ? "local" : "off")")
             Text("face check: \(liveFaces.diagnostic)")
                 .foregroundStyle(RockyTheme.mint.opacity(0.7))
+            Text("face model: AuraFace v1 · 512-value identity embedding")
+                .foregroundStyle(RockyTheme.mint.opacity(0.7))
             if let distance = liveFaces.nearestDistance {
                 Text(String(format: "face match difference %.4f %@ cutoff %.4f",
                             distance, distance <= FaceMatcher.maximumDistance ? "≤" : ">",

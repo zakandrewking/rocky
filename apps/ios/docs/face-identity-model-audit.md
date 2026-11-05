@@ -1,8 +1,9 @@
 # Face identity model audit
 
-Status: the Apple image-similarity baseline failed the real-person acceptance trial. Do not treat
-it as working face recognition. A dedicated AuraFace Core ML probe is under qualification before
-replacing the live path; population accuracy and sustained conversation/thermal gates remain open.
+Status: the Apple image-similarity baseline failed the real-person acceptance trial and has been
+removed from live identity decisions. AuraFace passed the isolated 14 Pro gates and now supplies
+enrollment/live identity embeddings. Real enrolled/unknown acceptance and sustained voice/thermal
+qualification remain open; the synthetic test is not a claim that real recognition is solved.
 
 ## Requirements
 
@@ -200,3 +201,19 @@ mkdir -p local-data/face-models/auraface
 curl -fL https://huggingface.co/fal/AuraFace-v1/resolve/af6d057c9b0ec4071d4c49c80e3539258798b609/glintr100.onnx -o local-data/face-models/auraface/glintr100.onnx
 local-data/face-models/venv/bin/python apps/ios/scripts/convert-auraface.py local-data/face-models/auraface/glintr100.onnx apps/ios/Rocky/Resources/AuraFace.mlpackage --fixtures apps/ios/Rocky/Tests/Fixtures/AuraFace
 ```
+
+### Physical proof and live integration
+
+All four isolated tests passed on the iPhone 14 Pro, iOS 27.0.1 (24A446): ONNX/device RGB-fixture
+cosines 0.9997274–0.9997707; synthetic same-person unit-L2 distances 0.6229–0.6991 versus cross-person
+1.1264–1.2482. Complete pipeline time was 923.9ms cold, then 43.8–48.1ms warm. This includes landmark
+detection/alignment/inference, unlike the earlier Apple feature-extraction-only timing.
+Converted weight SHA-256: `0eae279372e0ee42d755640db7aa9aa39d13377b17e8f720e87c6f203e327306`.
+
+Enrollment and conversation now use the same serialized AuraFace actor. There is no Apple fallback
+for identity. A provisional unit-L2 gate of 0.90 (cosine >=0.595), 0.10 person margin, and three-frame
+consensus starts the real-person trial; it is a new metric scale, not a tweak of the old 0.32 gate.
+The vault can read old profiles/backups to preserve names/IDs and exportability, but only finite,
+512-dimensional, unit-length AuraFace templates are eligible for new enrollment and matching.
+Explicit enrollment under an existing name replaces only its legacy templates. All other friends
+and the raw-media-free encrypted backup contract are preserved.

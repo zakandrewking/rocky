@@ -11,13 +11,13 @@ struct FriendProfile: Codable, Equatable, Identifiable, Sendable {
 
 struct FriendVault: Codable, Equatable, Sendable {
     var version = 1
-    var preprocessing = FaceProbeCapture.preprocessing
+    var preprocessing = AuraFaceProbe.preprocessing
     var osMajor = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
     var friends: [FriendProfile] = []
 
     func validate() throws {
         guard version == 1,
-              [FaceProbeCapture.preprocessing, FaceProbeCapture.legacyPreprocessing].contains(preprocessing),
+              [AuraFaceProbe.preprocessing, FaceProbeCapture.preprocessing, FaceProbeCapture.legacyPreprocessing].contains(preprocessing),
               osMajor == ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
               friends.count <= 20, Set(friends.map(\.id)).count == friends.count,
               Set(friends.map { $0.name.lowercased() }).count == friends.count else {
@@ -27,9 +27,7 @@ struct FriendVault: Codable, Equatable, Sendable {
             guard FriendStore.cleanName(friend.name) == friend.name,
                   !friend.name.isEmpty, !friend.templates.isEmpty, friend.templates.count <= 5,
                   friend.templates.allSatisfy({
-                      $0.algorithm == FaceFeaturePrintDescriptor.algorithm && $0.revision == 2
-                          && $0.values.count == 768 && $0.values.allSatisfy(\.isFinite)
-                          && ($0.preprocessing == nil || $0.preprocessing == FaceProbeCapture.preprocessing)
+                      $0.isCurrentIdentityTemplate || $0.isLegacyImageTemplate
                   }) else { throw FriendStoreError.incompatible }
         }
     }
@@ -81,20 +79,21 @@ final class FriendStore: ObservableObject {
 
     func remember(name: String, descriptor: FaceFeaturePrintDescriptor) throws {
         guard !loadFailed else { throw FriendStoreError.incompatible }
+        guard descriptor.isCurrentIdentityTemplate else { throw FriendStoreError.incompatible }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, Self.cleanName(name) == name else { throw FriendStoreError.invalidName }
         var next = vault
         if let index = next.friends.firstIndex(where: { $0.name.lowercased() == name.lowercased() }) {
             // An explicit new capture refreshes only this friend's obsolete templates. Preserve
             // their name/ID and every other friend; never silently compare across pipelines.
-            next.friends[index].templates.removeAll { $0.preprocessing != descriptor.preprocessing }
+            next.friends[index].templates.removeAll { !$0.isCurrentIdentityTemplate }
             guard next.friends[index].templates.count < 5 else { throw FriendStoreError.capacity }
             next.friends[index].templates.append(descriptor)
         } else {
             guard next.friends.count < 20 else { throw FriendStoreError.capacity }
             next.friends.append(FriendProfile(name: name, templates: [descriptor]))
         }
-        next.preprocessing = FaceProbeCapture.preprocessing
+        next.preprocessing = AuraFaceProbe.preprocessing
         try commit(next)
     }
 
