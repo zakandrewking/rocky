@@ -329,6 +329,16 @@ conversation and stops other camera probes. To enroll once:
    sample, capture another reference and save the same name (up to five samples per friend).
 3. Close the sheet and resume the orb. Recognition now runs automatically during conversation.
 
+You can also meet Rocky in conversation. A stable, clearly unfamiliar face can earn one brief
+name question during a quiet pause, without opening Friends. Rocky must ask whether she may
+remember that person's face and name for next time; a name alone is not permission. After explicit
+spoken agreement, a phone-local tool saves the current continuous single-face encounter. The
+face must still be visible and fresh; groups, face switches, stale tokens, and ambiguous near-
+matches cannot be enrolled. Existing names cannot be overwritten by voice—use Friends for a
+correction. Face vectors stay on-device; the conversation provider receives names and temporary
+encounter IDs only. Forget/export/restore remain available in Friends. Refusing should not prompt
+another request during that conversation. This MVP does not identify the audio speaker from sight.
+
 For a reference from the exact conversation camera: while talking, face the phone and open
 **friends & face test…**, then choose **Use face just seen in conversation** and save the same name.
 The option appears only when a single, successfully processed face is less than two seconds old

@@ -144,6 +144,13 @@ struct ContentView: View {
                 voiceSession?.updateFacePresence(presence)
             }
             configureFriends()
+            voiceSession.useFaceRememberer { [weak liveFaces, weak friends] name, encounter, consent in
+                guard let liveFaces, let friends else { return ["ok": false, "problem": "Face memory is unavailable."] }
+                do {
+                    try liveFaces.rememberVisibleFriend(name: name, encounterID: encounter, consent: consent, store: friends)
+                    return ["ok": true, "saved": true, "guidance": "The new friend is saved locally. Acknowledge warmly in a short natural line, then continue the shared topic. Do not describe the tool or storage."]
+                } catch { return ["ok": false, "saved": false, "problem": error.localizedDescription] }
+            }
             behavior.onControlTrace = { [weak navigationProbe] event in
                 navigationProbe?.recordControlTrace(event)
             }
@@ -188,11 +195,8 @@ struct ContentView: View {
 
     private func configureFriends() {
         liveFaces.configure(friends.vault.friends)
-        if friends.vault.friends.isEmpty { personCamera.setFaceHandler(nil) }
-        else {
-            personCamera.setFaceHandler { [weak liveFaces] data, at in
-                await liveFaces?.process(data, capturedAt: at)
-            }
+        personCamera.setFaceHandler { [weak liveFaces] data, at in
+            await liveFaces?.process(data, capturedAt: at)
         }
     }
 

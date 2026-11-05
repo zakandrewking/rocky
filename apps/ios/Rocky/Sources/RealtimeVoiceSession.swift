@@ -97,6 +97,12 @@ final class RealtimeVoiceSession: ObservableObject {
     private var projectedFacePresence: FacePresence?
     private var faceSequence = 0
     private var faceArrivals = FaceArrivalPolicy()
+    private var offeredIntroduction = false
+    private var faceRememberer: ((String, String, Bool) -> [String: Any])?
+
+    func useFaceRememberer(_ handler: @escaping (String, String, Bool) -> [String: Any]) {
+        faceRememberer = handler
+    }
     private var userIsSpeaking = false
     private var lastUserSpeechAt = Date.distantPast
     private var connectedAt = Date()
@@ -296,6 +302,7 @@ final class RealtimeVoiceSession: ObservableObject {
         lastUserSpeechAt = .distantPast
         projectedFacePresence = nil
         faceArrivals = FaceArrivalPolicy()
+        offeredIntroduction = false
         wakeBodyIfStill(reason: "voice start")
         // A reconnect gets a brand-new WebRTC track, which starts enabled.
         micOpen = true
@@ -822,6 +829,30 @@ final class RealtimeVoiceSession: ObservableObject {
         faceArrivalTask?.cancel()
         latestFacePresence = presence
         flushFacePresence()
+        if presence.kind == .unfamiliar, !offeredIntroduction {
+            faceArrivalTask = Task { [weak self] in
+                for _ in 0..<20 {
+                    try? await Task.sleep(for: .seconds(1))
+                    guard !Task.isCancelled, let self, self.latestFacePresence == presence else { return }
+                    guard self.quietForFaceGreeting, Date().timeIntervalSince(self.connectedAt) >= 8 else { continue }
+                    self.offeredIntroduction = true // at most one unsolicited introduction per conversation
+                    self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("intro_"), text: """
+                        <new-friend-moment>One unfamiliar person has remained in view during a quiet
+                        moment. If you have not already introduced yourselves and they have not
+                        declined, ask their name in one short, natural line in your established
+                        voice. Do not restart the conversation or explain recognition. If you know
+                        their self-given name already, ask whether you may remember their face and
+                        name for next time instead. Never save without explicit agreement. This cue
+                        is spent after this turn; a camera blip is not a reason to ask again. If
+                        they already declined or already answered the remember question, leave
+                        the quiet alone: no repeated question or replacement topic.</new-friend-moment>
+                        """, role: "system"))
+                    self.requestResponse(reason: "new friend introduction")
+                    return
+                }
+            }
+            return
+        }
         if faceArrivals.observe(presence, at: Date(),
                                 conversationAge: Date().timeIntervalSince(connectedAt), quiet: quietForFaceGreeting) {
             faceArrivalTask = Task { [weak self] in
@@ -1583,7 +1614,7 @@ final class RealtimeVoiceSession: ObservableObject {
             } else {
                 let names = calls.compactMap(\.name)
                 requestResponse(
-                    instructions: Self.followupPrompt(after: names),
+                    instructions: names.contains("remember_visible_friend") ? nil : Self.followupPrompt(after: names),
                     reason: "after \(names.joined(separator: "+"))"
                 )
             }
@@ -1646,8 +1677,9 @@ final class RealtimeVoiceSession: ObservableObject {
     // MARK: - Tools
 
     private func performToolCall(name: String, argumentsJSON: String, callId: String) async -> Bool {
-        RockyLog.write("tool call: \(name) \(argumentsJSON)")
-        WorldLog.shared.write(.tool, "\(name) \(argumentsJSON)", seq: world.seq)
+        let diagnosticArgs = name == "remember_visible_friend" ? "[private face/name arguments omitted]" : argumentsJSON
+        RockyLog.write("tool call: \(name) \(diagnosticArgs)")
+        WorldLog.shared.write(.tool, "\(name) \(diagnosticArgs)", seq: world.seq)
         lastToolCall = name
         let output: String
         do {
@@ -1669,6 +1701,14 @@ final class RealtimeVoiceSession: ObservableObject {
         // (`OpenAIRealtimeMinter.phoneToolNames` is the other half of that -- it keeps this tool
         // when the body tools are stripped.)
         if name == "look_now" { return await lookNow() }
+        if name == "remember_visible_friend" {
+            struct Arguments: Decodable { let name: String; let encounter_id: String; let consent: Bool }
+            let args = try JSONDecoder().decode(Arguments.self, from: data)
+            guard state == .connected, let faceRememberer else {
+                return Self.encodeResult(["ok": false, "problem": "Face memory is unavailable while conversation is paused."])
+            }
+            return Self.encodeResult(faceRememberer(args.name, args.encounter_id, args.consent))
+        }
 
         guard let behavior, behavior.connected else {
             return Self.encodeResult([

@@ -1,10 +1,11 @@
 import Foundation
 
 struct FacePresence: Equatable, Sendable {
-    enum Kind: String, Sendable { case off, nobody, unknown, multiple, recognized }
+    enum Kind: String, Sendable { case off, nobody, unknown, unfamiliar, multiple, recognized }
     var kind: Kind
     var friendID: UUID?
     var name: String?
+    var encounterID: UUID?
     static let off = FacePresence(kind: .off)
 }
 
@@ -32,7 +33,9 @@ enum FaceMatcher {
             guard let distance = distances.min() else { return nil }
             return (friend, distance)
         }.sorted { $0.1 < $1.1 }
-        guard let first = ranked.first else { return Assessment(reason: "refresh saved face samples for AuraFace") }
+        guard let first = ranked.first else {
+            return Assessment(reason: friends.isEmpty ? "no saved friends yet" : "refresh saved face samples for AuraFace")
+        }
         guard first.1 <= maximumDistance else {
             return Assessment(reason: "outside match threshold", nearestDistance: first.1, nearestFriendID: first.0.id)
         }
@@ -94,6 +97,7 @@ final class LiveFaceRecognition: ObservableObject {
     private var lastDiagnosticAt = Date.distantPast
     private var distanceTrend = FaceDistanceTrend()
     private var latestMeasurement: FaceFeaturePrintMeasurement?
+    private var encounter = FaceEncounter()
     /// A face found through the actual conversation camera, not a separate still-photo path.
     /// Export only a fresh descriptor for explicit enrollment; never retain the source frame.
     var freshReference: FaceFeaturePrintMeasurement? {
@@ -118,10 +122,25 @@ final class LiveFaceRecognition: ObservableObject {
         nearestDistance = nil
         distanceTrend = FaceDistanceTrend()
         latestMeasurement = nil
+        encounter.reset()
         publish(.off)
     }
+
+    func rememberVisibleFriend(name: String, encounterID: String, consent: Bool, store: FriendStore) throws {
+        guard consent else { throw FaceEnrollmentError.consentRequired }
+        guard presence.kind == .unfamiliar, UUID(uuidString: encounterID) == presence.encounterID else {
+            throw FaceEnrollmentError.encounterChanged
+        }
+        let reference = try encounter.referenceForEnrollment(token: encounterID, consent: consent, at: Date())
+        guard !store.vault.friends.contains(where: { $0.name.caseInsensitiveCompare(name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame }) else {
+            throw FaceEnrollmentError.existingName
+        }
+        try store.remember(name: name, descriptor: reference)
+        RockyLog.write("faces: saved new conversation friend with spoken consent")
+        configure(store.vault.friends) // immediately revoke the single-use encounter token
+    }
     func process(_ data: Data, capturedAt: Date) async {
-        guard !friends.isEmpty, capturedAt >= validAfter, capturedAt > lastProcessedAt else { return }
+        guard capturedAt >= validAfter, capturedAt > lastProcessedAt else { return }
         let epoch = generation
         let result: Result<FaceFeaturePrintMeasurement, Error>
         do { result = .success(try await AuraFaceProbe.shared.measure(data).identityMeasurement) }
@@ -149,11 +168,17 @@ final class LiveFaceRecognition: ObservableObject {
             }
             let friend = assessment.friend
             let confirmed = consensus.observe(friend?.id, at: capturedAt)
+            // A near-miss of a saved friend is uncertainty, not a stranger to re-introduce.
+            let distinctUnfamiliar = assessment.nearestDistance.map { $0 > FaceMatcher.maximumDistance + 0.15 } ?? true
+            let token = encounter.observe(distinctUnfamiliar ? measurement.descriptor : nil, at: capturedAt)
             if confirmed, let friend {
                 proposed = FacePresence(kind: .recognized, friendID: friend.id, name: friend.name)
+            } else if let token {
+                proposed = FacePresence(kind: .unfamiliar, encounterID: token)
             } else { proposed = FacePresence(kind: .unknown) }
             report(confirmed ? "recognized" : assessment.reason)
         case .failure(let error):
+            encounter.reset()
             latestMeasurement = nil
             nearestDistance = nil
             _ = consensus.observe(nil, at: capturedAt)
@@ -174,6 +199,7 @@ final class LiveFaceRecognition: ObservableObject {
             self.consensus = FaceConsensus()
             self.nearestDistance = nil
             self.latestMeasurement = nil
+            self.encounter.reset()
             self.publish(FacePresence(kind: .unknown))
         }
     }

@@ -43,6 +43,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
             tools: [
                 ["type": "function", "name": "robot_gesture"],
                 ["type": "function", "name": "look_now"],
+                ["type": "function", "name": "remember_visible_friend"],
             ],
             instructions: "You are Rocky."
         )
@@ -50,7 +51,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
         let stripped = session(of: OpenAIRealtimeMinter.withoutRobotBody(input))
         let names = (stripped["tools"] as! [[String: Any]]).map { $0["name"] as! String }
 
-        XCTAssertEqual(names, ["look_now"])
+        XCTAssertEqual(names, ["look_now", "remember_visible_friend"])
         XCTAssertEqual(stripped["tool_choice"] as! String, "auto")
         XCTAssertTrue((stripped["instructions"] as! String).contains("You can still see normally"))
     }
@@ -82,11 +83,11 @@ final class RealtimeSessionConfigTests: XCTestCase {
         let connectedSession = try XCTUnwrap(connected["session"] as? [String: Any])
         let voiceOnlySession = try XCTUnwrap(voiceOnly["session"] as? [String: Any])
         XCTAssertEqual(connectedSession["type"] as? String, "realtime")
-        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 9)
+        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 10)
         XCTAssertEqual(connectedSession["tool_choice"] as? String, "auto")
         // Not zero: losing the body does not close Rocky's eyes.
         XCTAssertEqual(
-            (voiceOnlySession["tools"] as? [[String: Any]])?.map { $0["name"] as? String }, ["look_now"]
+            (voiceOnlySession["tools"] as? [[String: Any]])?.map { $0["name"] as? String }, ["look_now", "remember_visible_friend"]
         )
         XCTAssertEqual(voiceOnlySession["tool_choice"] as? String, "auto")
         XCTAssertTrue(
@@ -121,7 +122,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
 
         let groups = try XCTUnwrap(setup["tools"] as? [[String: Any]])
         let tools = try XCTUnwrap(groups.first?["functionDeclarations"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 8)
+        XCTAssertEqual(tools.count, 9)
         XCTAssertTrue(tools.allSatisfy { $0["behavior"] as? String == "BLOCKING" })
         XCTAssertFalse(tools.contains { ($0["name"] as? String) == "look_now" })
         let firstSchema = try XCTUnwrap(tools.first?["parameters"] as? [String: Any])
@@ -132,7 +133,9 @@ final class RealtimeSessionConfigTests: XCTestCase {
     func testER2VoiceOnlySetupKeepsEyesButDropsBodyTools() throws {
         let message = try ER2LiveVoiceClient.setupMessage(hasBody: false)
         let setup = try XCTUnwrap(message["setup"] as? [String: Any])
-        XCTAssertNil(setup["tools"])
+        let groups = try XCTUnwrap(setup["tools"] as? [[String: Any]])
+        let tools = try XCTUnwrap(groups.first?["functionDeclarations"] as? [[String: Any]])
+        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["remember_visible_friend"])
     }
 
     func testER2LocalActivityIsGatedOnlyForPlaybackDiagnostics() {

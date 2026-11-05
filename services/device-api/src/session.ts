@@ -16,6 +16,19 @@ export const DEFAULT_VOICE = "cedar";
  * wheels and LEDs are Rocky's body language through the tools below.
  */
 export const DEVICE_ADDENDUM = `
+FRIENDS AND INTRODUCTIONS
+- Local familiar-face messages are private visual context, not speaker identification. Use a
+  recognized friend's name naturally and sparingly; never announce recognition or camera changes.
+- For a stable unfamiliar face with a current encounter_id, at a natural pause ask their name
+  briefly if introductions have not happened. Never interrupt a story, interrogate a group, or
+  ask a known friend again because confidence briefly dipped.
+- A self-given name is not consent to save biometrics. Ask warmly whether you may remember their
+  face and name for next time. Only explicit agreement permits remember_visible_friend with their
+  stated name, the current encounter_id and consent=true. Never guess, enroll someone merely being
+  discussed, or infer the speaker from sight. If they decline, do not ask again this conversation.
+- Saving earns at most one short friendly acknowledgement after success. Never claim a memory
+  was saved when the tool refused; never narrate tokens, vectors or tool mechanics.
+
 YOUR BODY — PRIVATE DEVICE CONTEXT
 - You are speaking through a phone mounted on a small wheeled robot body. There is no keyboard, no
   file browser, and no spreadsheet here.
@@ -233,16 +246,27 @@ const GET_STATE_TOOL = {
 } as const;
 
 /**
- * Rocky's eyes, and the only tool here that is not the robot's at all -- the camera is the
- * phone's, so this one survives `OpenAIRealtimeMinter.withoutRobotBody` and works in a voice-only
- * session.
- *
- * Exists because of a live failure that no amount of prompt work could reach: sight arrives on its
- * own roughly once a second and takes another beat to judge, so at the instant any question lands,
- * the newest look Rocky has is from *before* it was asked. A friend held a drink up and asked
- * about it; the answer was assembled from a look taken before they raised it. This blocks the
- * answer until a look taken after the question comes back.
+ * Phone-local, consent-gated face memory. It survives body disconnection just like sight does.
+ * Temporary encounter tokens are validated against live single-face continuity by iOS; no
+ * embeddings or raw media are exposed to the conversational model.
  */
+const REMEMBER_VISIBLE_FRIEND_TOOL = {
+  type: "function",
+  name: "remember_visible_friend",
+  description: "Remember the single currently visible unfamiliar person's self-given name and local face template only AFTER explicit agreement to remember their face and name for next time. A name alone is not consent. Use the latest familiar-face encounter_id. Never infer an audio speaker from sight or save someone merely being discussed. Stale, changed or group faces must not be saved. This cannot overwrite existing friends. After success acknowledge naturally; after failure never claim it was saved.",
+  parameters: {
+    type: "object",
+    properties: {
+      name: { type: "string", description: "The visible person's self-given name." },
+      encounter_id: { type: "string", description: "Exact temporary encounter_id from the latest familiar-face context." },
+      consent: { type: "boolean", description: "True only after explicit spoken permission to remember this face and name." },
+    },
+    required: ["name", "encounter_id", "consent"],
+    additionalProperties: false,
+  },
+};
+
+/** Fresh visual evidence for explicit sight questions; never waits behind the passive lane. */
 const LOOK_TOOL = {
   type: "function",
   name: "look_now",
@@ -452,6 +476,7 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       STOP_TOOL,
       GET_STATE_TOOL,
       LOOK_TOOL,
+      REMEMBER_VISIBLE_FRIEND_TOOL,
       SET_MOOD_TOOL,
       LIGHT_TOOL,
       GESTURE_TOOL,

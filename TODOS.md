@@ -556,6 +556,18 @@ Decisions already made:
   an assumption that the app container or Keychain happened to survive deletion.
 
 - [ ] **Dedicated face-model replacement — active, Apple baseline rejected by real use.**
+  User confirms the dedicated model recognized them. They now want introductions and name/face
+  memory within natural live conversation, not the lab. Implement stable anonymous encounters
+  (three frames, strict continuity, fresh token), distinguish clearly unfamiliar faces from known
+  near-misses, offer at most one unsolicited introduction per conversation during a quiet pause,
+  and expose the phone-local `remember_visible_friend` tool. A self-given name is not consent:
+  require an explicit spoken yes to remembering face/name before saving. Reject stale/switched/
+  group encounters, missing consent, duplicate existing names and invalid descriptors. Existing
+  friend corrections stay in Friends. Tool arguments are redacted from both diagnostic logs.
+  No profiles are needed for the local face lane to run; new users can introduce themselves.
+  Tool results continue with the full persona, not the generic silent-body-tool follow-up. The
+  OpenAI Docs skill's verified response/item semantics guided this integration. Real conversation
+  trials must still verify introduction timing, refusal handling, spoken consent/save, and re-entry.
   The user explicitly requested this after the live-reference trial still failed. Qualify only
   fal's Apache-2.0 AuraFace v1 recognition weights, with a publisher statement of commercial
   training/use; no unrelated InsightFace detector/attribute weights. Pinned ONNX hash and full
