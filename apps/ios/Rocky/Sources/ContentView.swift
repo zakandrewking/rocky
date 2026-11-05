@@ -64,6 +64,7 @@ struct ContentView: View {
     @State private var showRobotControls = true
     @State private var showEnvironmentLab = false
     @State private var showFaceProbeLab = false
+    @State private var conversationFaceReference: FaceFeaturePrintMeasurement?
     @StateObject private var faceProbeModel = FaceProbeLabModel()
     @StateObject private var friends = FriendStore()
     @StateObject private var liveFaces = LiveFaceRecognition()
@@ -177,8 +178,11 @@ struct ContentView: View {
                 showEnvironmentLab = false
             }
         }
-        .sheet(isPresented: $showFaceProbeLab, onDismiss: { faceProbeModel.reset() }) {
-            FaceProbeLab(model: faceProbeModel, friends: friends)
+        .sheet(isPresented: $showFaceProbeLab, onDismiss: {
+            faceProbeModel.reset()
+            conversationFaceReference = nil
+        }) {
+            FaceProbeLab(model: faceProbeModel, friends: friends, conversationReference: conversationFaceReference)
         }
     }
 
@@ -215,6 +219,7 @@ struct ContentView: View {
             if personCamera.isRunning { personCamera.stop() }
             faceProbeModel.reset()
             showFaceProbeLab = false
+            conversationFaceReference = nil
             if !appWasInactive {
                 appWasInactive = true
                 navigationProbe.stop(reason: "app backgrounded")
@@ -446,6 +451,7 @@ struct ContentView: View {
             }
             navigationProbeControls
             Button("friends & face test…") {
+                conversationFaceReference = liveFaces.freshReference
                 if voiceSession.state == .connected { voiceSession.pause() }
                 personCamera.stop()
                 navigationProbe.stop(reason: "face test lab opened")

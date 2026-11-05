@@ -38,6 +38,18 @@ final class FaceProbeEvaluationTests: XCTestCase {
     }
 
     @MainActor
+    func testConversationReferenceReplacesOnlyTemporaryLabState() {
+        let model = FaceProbeLabModel()
+        let reference = measurement([0.25, 0.5], 12)
+        model.useConversationReference(reference)
+        XCTAssertEqual(model.evaluation.reference, reference.descriptor)
+        XCTAssertEqual(model.evaluation.referenceMilliseconds, 12)
+        XCTAssertTrue(model.evaluation.trials.isEmpty)
+        model.reset()
+        XCTAssertNil(model.evaluation.reference)
+    }
+
+    @MainActor
     func testResetInvalidatesAnInFlightCapture() async {
         let model = FaceProbeLabModel()
         let generation = model.generation

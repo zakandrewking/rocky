@@ -646,6 +646,17 @@ Decisions already made:
   nearest-person feature difference, sample count, fixed cutoff, closest saved-profile ordinal,
   and decision. Log saved/usable/needs-refresh profile counts on configuration. Do not log names,
   photos, or vectors. This supersedes the earlier decision to keep live numeric scores UI-only.
+  First approved scalar log after the transport fix still rejects a current profile: five samples
+  min 0.4543 / mean 0.4721 / max 0.5086; the person reports occasional ~0.9. Do not declare live
+  recognition fixed or raise the cutoff to accommodate this. Add an explicit “Use face just seen
+  in conversation” option when opening Friends: snapshot only a <2s-old successful single-face
+  descriptor before pausing the camera, then let the person explicitly save under the same name.
+  This controls the remaining still-photo vs video capture-domain variable without saving photos,
+  adaptive enrollment, or changing thresholds. Reset/dismiss/background clears temporary state.
+  Compare live known/unknown behavior after this controlled refresh; if real scores still overlap,
+  replace the general image-similarity baseline with a license-cleared face-specific model.
+  A normal non-XCTest first launch on the updated 14 Pro remained alive (PID 3967). This does not
+  explain the user's intermittent first-launch exit; keep that report open pending reproduction.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse

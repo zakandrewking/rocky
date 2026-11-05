@@ -90,6 +90,13 @@ final class LiveFaceRecognition: ObservableObject {
     private var lastProcessedAt = Date.distantPast
     private var lastDiagnosticAt = Date.distantPast
     private var distanceTrend = FaceDistanceTrend()
+    private var latestMeasurement: FaceFeaturePrintMeasurement?
+    /// A face found through the actual conversation camera, not a separate still-photo path.
+    /// Export only a fresh descriptor for explicit enrollment; never retain the source frame.
+    var freshReference: FaceFeaturePrintMeasurement? {
+        guard Date().timeIntervalSince(lastProcessedAt) < 2 else { return nil }
+        return latestMeasurement
+    }
 
     func configure(_ friends: [FriendProfile]) {
         self.friends = friends
@@ -107,6 +114,7 @@ final class LiveFaceRecognition: ObservableObject {
         diagnostic = friends.isEmpty ? "no saved friends" : "waiting for camera"
         nearestDistance = nil
         distanceTrend = FaceDistanceTrend()
+        latestMeasurement = nil
         publish(.off)
     }
     func process(_ data: Data, capturedAt: Date) async {
@@ -125,6 +133,7 @@ final class LiveFaceRecognition: ObservableObject {
         let proposed: FacePresence
         switch result {
         case .success(let measurement):
+            latestMeasurement = measurement
             let assessment = FaceMatcher.assess(measurement.descriptor, friends: friends)
             nearestDistance = assessment.nearestDistance
             if let distance = assessment.nearestDistance,
@@ -142,6 +151,7 @@ final class LiveFaceRecognition: ObservableObject {
             } else { proposed = FacePresence(kind: .unknown) }
             report(confirmed ? "recognized" : assessment.reason)
         case .failure(let error):
+            latestMeasurement = nil
             nearestDistance = nil
             _ = consensus.observe(nil, at: capturedAt)
             switch error as? FaceProbeCapture.CaptureError {
@@ -160,6 +170,7 @@ final class LiveFaceRecognition: ObservableObject {
             guard !Task.isCancelled, let self else { return }
             self.consensus = FaceConsensus()
             self.nearestDistance = nil
+            self.latestMeasurement = nil
             self.publish(FacePresence(kind: .unknown))
         }
     }

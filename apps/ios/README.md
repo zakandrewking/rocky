@@ -329,6 +329,12 @@ conversation and stops other camera probes. To enroll once:
    sample, capture another reference and save the same name (up to five samples per friend).
 3. Close the sheet and resume the orb. Recognition now runs automatically during conversation.
 
+For a reference from the exact conversation camera: while talking, face the phone and open
+**friends & face test…**, then choose **Use face just seen in conversation** and save the same name.
+The option appears only when a single, successfully processed face is less than two seconds old
+at the moment you open Friends. It retains a descriptor, never a photo, and nothing persists until
+you choose **Remember this face**. Closing or backgrounding clears the temporary reference.
+
 Rocky needs three consistent, fresh matches before using a name. Faces are aligned locally and
 compared with saved friends at about 1fps, independently of Gemini's network lane. The provisional
 MVP gate is distance ≤0.32 and margin ≥0.10 over the next closest *person*. The details panel shows

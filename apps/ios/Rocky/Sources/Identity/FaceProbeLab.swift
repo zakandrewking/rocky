@@ -10,6 +10,12 @@ final class FaceProbeLabModel: ObservableObject {
     private(set) var generation = 0
     private var work: Task<Void, Never>?
 
+    func useConversationReference(_ measurement: FaceFeaturePrintMeasurement) {
+        reset()
+        do { try evaluation.add(measurement, as: .reference) }
+        catch { self.error = error.localizedDescription }
+    }
+
     @discardableResult
     func capture(_ data: Data, as kind: FaceProbeEvaluation.CaptureKind,
                  generation expectedGeneration: Int) -> Task<Void, Never>? {
@@ -53,6 +59,7 @@ struct FaceProbeLab: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var model: FaceProbeLabModel
     @ObservedObject var friends: FriendStore
+    var conversationReference: FaceFeaturePrintMeasurement?
     @State private var captureKind: CaptureRequest?
     @State private var authorizing = false
     @State private var permissionGeneration = 0
@@ -68,6 +75,13 @@ struct FaceProbeLab: View {
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("1 · Reference") {
+                    if let conversationReference {
+                        Button("Use face just seen in conversation") {
+                            model.useConversationReference(conversationReference)
+                        }
+                        Text("Uses the exact same camera and processing as live recognition. It is only saved when you choose Remember this face.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                     Button(model.evaluation.reference == nil ? "Capture reference" : "Replace reference & clear comparisons") {
                         prepare(.reference)
                     }
