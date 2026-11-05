@@ -555,6 +555,18 @@ Decisions already made:
   for a no-iCloud path. Recognition still runs locally. Reinstall restore is a designed flow, not
   an assumption that the app container or Keychain happened to survive deletion.
 
+- [ ] **Dedicated face-model replacement — active, Apple baseline rejected by real use.**
+  The user explicitly requested this after the live-reference trial still failed. Qualify only
+  fal's Apache-2.0 AuraFace v1 recognition weights, with a publisher statement of commercial
+  training/use; no unrelated InsightFace detector/attribute weights. Pinned ONNX hash and full
+  license/provenance/recipe are in the model audit. A ~63 MB int8-weight/FP32-math Core ML conversion
+  passes >0.999 cosine parity against the official ONNX checkpoint; FP16 math variants did not.
+  The isolated actor probe uses proper five-point 112px RGB alignment and 512-value normalized
+  identity embeddings. Physical-device tests must prove input parity, identity separation, and
+  latency before switching live conversation. Then version the new descriptors/store, preserve
+  old names but require explicit new-model enrollment, show model-specific comparison values,
+  and validate the actual enrolled person plus unknowns while talking. Do not promote synthetic
+  success into a claim that real recognition works again. First hardware run is waiting for unlock.
 - [ ] **Prove one face-embedding model in isolation.** Check published source, weights provenance,
   training-data and redistribution terms before conversion; reject a technically good model whose
   weights cannot responsibly ship. Build a disposable Core ML probe that accepts already-cropped

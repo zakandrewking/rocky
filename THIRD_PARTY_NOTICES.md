@@ -1,5 +1,18 @@
 # Third-party notices
 
+## AuraFace face-recognition model
+
+The iOS app bundles a converted/compressed recognition-only checkpoint from
+[fal/AuraFace-v1](https://huggingface.co/fal/AuraFace-v1), source revision
+`af6d057c9b0ec4071d4c49c80e3539258798b609`, under the publisher's Apache-2.0 license.
+The original license is included as `apps/ios/Rocky/Resources/AuraFace-LICENSE.md` in the app.
+Rocky's conversion changes the format to Core ML, compresses weights to int8, retains FP32 math,
+and wraps RGB pixel normalization. No age/gender, detector, or unrelated model-pack weights are
+included. See `apps/ios/docs/face-identity-model-audit.md` for the pinned source hash and recipe.
+
+The conversion uses InsightFace's published ArcFace alignment coordinates and input convention
+as a reference (MIT implementation); its restricted pretrained model packs are not included.
+
 ## RockyVoice
 
 Rocky's persona prompt adapts conversational mechanics and safety ideas from

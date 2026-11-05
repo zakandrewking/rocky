@@ -1,7 +1,8 @@
 # Face identity model audit
 
-Status: experimental live MVP enabled for explicitly saved friends; population accuracy and
-sustained conversation/thermal qualification remain open.
+Status: the Apple image-similarity baseline failed the real-person acceptance trial. Do not treat
+it as working face recognition. A dedicated AuraFace Core ML probe is under qualification before
+replacing the live path; population accuracy and sustained conversation/thermal gates remain open.
 
 ## Requirements
 
@@ -154,3 +155,48 @@ checks and exact-source lossless transport checks do not replace the pending rea
 At the person's explicit request, live diagnostics now record a bounded five-second scalar trend
 (latest/min/mean/max difference, cutoff, sample count, profile ordinal, decision) and configured
 profile counts. No names, photos, or vectors are added to these diagnostics.
+
+## Dedicated face model: AuraFace v1 (2026-11-04)
+
+The user requested a dedicated model after live-reference enrollment still produced ~0.41–0.84
+same-person differences, with earlier spikes above 1.0. Stop tuning the general image baseline.
+
+Selected for an isolated proof: [fal/AuraFace-v1](https://huggingface.co/fal/AuraFace-v1), specifically
+`glintr100.onnx`, not the accompanying detector, landmark, age, or gender checkpoints. The
+publisher labels its weights Apache-2.0, describes training on a commercial dataset, and explicitly
+permits commercial applications in its [release announcement](https://huggingface.co/blog/isidentical/auraface).
+This is a publisher representation, not an independent audit of every training image or a claim
+that all demographic groups are equally represented; the model card discloses coverage limits.
+Unlike the held SFace artifact and restricted InsightFace model packs, this provides an explicit
+commercial face-model release. Include the publisher's original license in app resources.
+
+- Source revision: `af6d057c9b0ec4071d4c49c80e3539258798b609`.
+- Recognition ONNX SHA-256: `a7933ea5330113b01c9b60351d8f4c33003f145d8470ac5f0e52ee2effe25c60`.
+- Architecture: ResNet100 / ArcFace-style identity training, 512-value embedding.
+- Publisher preprocessing: 112px RGB, `(pixel - 127.5) / 127.5`, five-point similarity alignment
+  to canonical ArcFace eyes/nose/mouth coordinates. Never reuse Apple's eye-only 320px crops.
+- Conversion: `apps/ios/scripts/convert-auraface.py`; pinned Python 3.11 environment with
+  `torch==2.5.1`, `torchvision==0.20.1`, `onnx==1.17.0`, `onnxruntime==1.20.1`,
+  `onnx2torch==1.5.15`, `coremltools==8.3.0`, `numpy==1.26.4`, and Pillow.
+- Retain FP32 activation math and use per-channel symmetric int8 weight-only compression. FP16
+  activation versions failed the >0.999 cosine conversion gate on seeded test inputs; preserving
+  only the last projection was insufficient. Changing math precision addressed that structural
+  error. The final ~63 MB model passes the unchanged gate: minimum cosine 0.9993806 against ONNX,
+  while the intermediate PyTorch model matches at >0.99999. RGB image input embeds normalization
+  in Core ML and avoids a separate hand-written tensor layout/color conversion in Swift.
+- Output is explicitly L2-normalized. Do not compare these vectors, distances, or thresholds with
+  Apple feature prints; old templates cannot be migrated without new enrollment.
+- Probe isolation: one actor owns model loading and synchronous Vision/Core ML calls; nothing
+  runs in camera/audio callbacks or startup. Existing live recognition is not switched merely
+  because conversion succeeds. Device-only tests check upstream RGB parity, synthetic identity
+  separation, and warm latency; geometry/normalization tests also run on the simulator.
+
+Reproduction (from repository root; model source and environment remain gitignored):
+
+```sh
+uv venv --python /opt/homebrew/bin/python3.11 local-data/face-models/venv
+uv pip install --python local-data/face-models/venv/bin/python coremltools==8.3.0 torch==2.5.1 torchvision==0.20.1 onnx==1.17.0 onnxruntime==1.20.1 onnx2torch==1.5.15 numpy==1.26.4 pillow
+mkdir -p local-data/face-models/auraface
+curl -fL https://huggingface.co/fal/AuraFace-v1/resolve/af6d057c9b0ec4071d4c49c80e3539258798b609/glintr100.onnx -o local-data/face-models/auraface/glintr100.onnx
+local-data/face-models/venv/bin/python apps/ios/scripts/convert-auraface.py local-data/face-models/auraface/glintr100.onnx apps/ios/Rocky/Resources/AuraFace.mlpackage --fixtures apps/ios/Rocky/Tests/Fixtures/AuraFace
+```
