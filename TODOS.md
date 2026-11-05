@@ -612,9 +612,12 @@ Decisions already made:
   Still verify named recognition during real speech, unknown/group rejection, leave/return, restart,
   export/restore on the phone, and sustained thermal/audio performance before checking this off.
   `pnpm check` passes (180 iOS tests, two hardware-only skips), and the final physical-device build
-  compiles and installs on the 14 Pro. New physical matcher/backup tests and the named live
-  conversation run are pending passcode unlock. The previously qualified aligned fixture path
-  remains covered; the added unknown-person matcher assertions still need their hardware run.
+  compiles and installs on the 14 Pro. On 2026-11-04 all 13 focused physical-device tests passed:
+  aligned synthetic known/unknown matching, comparison/reset, protected-store round-trip/deletion,
+  corrupt-store rejection, authenticated backup round-trip/wrong-password/tamper checks, consensus
+  and quiet-arrival policy. The named live conversation, real unknown/group/re-entry behavior,
+  and user-driven backup export/restore walkthrough remain pending; synthetic fixtures do not
+  establish population recognition accuracy.
 - [ ] **Define the durable identity-vault contract before collecting anyone.** Add versioned
   `FriendProfile`, face-template, voice-template, and model-version types; an actor-isolated local
   store; complete file protection; atomic writes; delete/export/import; and migrations that refuse
