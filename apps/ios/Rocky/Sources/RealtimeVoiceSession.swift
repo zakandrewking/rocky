@@ -718,6 +718,7 @@ final class RealtimeVoiceSession: ObservableObject {
         faceIntroductionTask?.cancel()
         faceIntroductionTask = nil
         userIsSpeaking = false
+        suspendActivePerformance(notifyVoice: false, reason: "app backgrounded")
         stopLocalAudio()
         speechSynthesizer?.cancel()
         client.send(ResponseCancelEvent(responseId: activeResponseId))
