@@ -568,6 +568,11 @@ Decisions already made:
   Tool results continue with the full persona, not the generic silent-body-tool follow-up. The
   OpenAI Docs skill's verified response/item semantics guided this integration. Real conversation
   trials must still verify introduction timing, refusal handling, spoken consent/save, and re-entry.
+  **2026-11-05 hardware follow-up:** all 27 focused tests pass on the unlocked 14 Pro: dedicated
+  model parity/separation, encounter continuity/consent/stale-token guards, friend-vault/matcher
+  behavior, and both voice-tool configurations. Full face pipeline: 974.6ms cold, 42.9–51.2ms warm.
+  Test runner completed before reopening Rocky normally; the real introduction/refusal/save and
+  recognition-on-return walkthrough remains a user-driven acceptance gate.
   The user explicitly requested this after the live-reference trial still failed. Qualify only
   fal's Apache-2.0 AuraFace v1 recognition weights, with a publisher statement of commercial
   training/use; no unrelated InsightFace detector/attribute weights. Pinned ONNX hash and full
