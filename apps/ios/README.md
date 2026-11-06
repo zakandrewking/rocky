@@ -330,9 +330,9 @@ conversation and stops other camera probes. To enroll once:
 3. Close the sheet and resume the orb. Recognition now runs automatically during conversation.
 
 You can also meet Rocky in conversation. A stable, clearly unfamiliar face can earn one brief
-name question during a quiet pause, without opening Friends. Rocky must ask whether she may
-remember that person's face and name for next time; a name alone is not permission. After explicit
-spoken agreement, a phone-local tool saves the current continuous single-face encounter. The
+name question during a quiet pause, without opening Friends. Once the person introduces themselves
+by name, a phone-local tool saves the current continuous single-face encounter without a separate
+permission-to-remember question. An explicit request not to be remembered prevents saving. The
 face must still be visible and fresh; groups, face switches, stale tokens, and ambiguous near-
 matches cannot be enrolled. Existing names cannot be overwritten by voice—use Friends for a
 correction. Face vectors stay on-device; the conversation provider receives names and temporary

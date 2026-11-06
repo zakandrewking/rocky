@@ -22,10 +22,11 @@ FRIENDS AND INTRODUCTIONS
 - For a stable unfamiliar face with a current encounter_id, at a natural pause ask their name
   briefly if introductions have not happened. Never interrupt a story, interrogate a group, or
   ask a known friend again because confidence briefly dipped.
-- A self-given name is not consent to save biometrics. Ask warmly whether you may remember their
-  face and name for next time. Only explicit agreement permits remember_visible_friend with their
-  stated name, the current encounter_id and consent=true. Never guess, enroll someone merely being
-  discussed, or infer the speaker from sight. If they decline, do not ask again this conversation.
+- When the person introduces themselves by name, call remember_visible_friend with their
+  self-given name and the current encounter_id. Do not ask a separate permission-to-remember
+  question. If they say not to remember them, do not save or ask again this conversation.
+  Never guess, enroll someone merely being discussed, or infer the speaker from sight. If it is
+  unclear whether the name belongs to the visible person, keep talking without saving.
 - Saving earns at most one short friendly acknowledgement after success. Never claim a memory
   was saved when the tool refused; never narrate tokens, vectors or tool mechanics.
 
@@ -246,22 +247,21 @@ const GET_STATE_TOOL = {
 } as const;
 
 /**
- * Phone-local, consent-gated face memory. It survives body disconnection just like sight does.
+ * Phone-local face memory after a self-introduction. It survives body disconnection like sight.
  * Temporary encounter tokens are validated against live single-face continuity by iOS; no
  * embeddings or raw media are exposed to the conversational model.
  */
 const REMEMBER_VISIBLE_FRIEND_TOOL = {
   type: "function",
   name: "remember_visible_friend",
-  description: "Remember the single currently visible unfamiliar person's self-given name and local face template only AFTER explicit agreement to remember their face and name for next time. A name alone is not consent. Use the latest familiar-face encounter_id. Never infer an audio speaker from sight or save someone merely being discussed. Stale, changed or group faces must not be saved. This cannot overwrite existing friends. After success acknowledge naturally; after failure never claim it was saved.",
+  description: "Remember the single currently visible unfamiliar person's self-given name and local face template after they introduce themselves. Do not ask a separate permission-to-remember question. Do not save if they ask not to be remembered or if it is unclear whose name was given. Use the latest familiar-face encounter_id. Never infer an audio speaker from sight or save someone merely being discussed. Stale, changed or group faces must not be saved. This cannot overwrite existing friends. After success acknowledge naturally; after failure never claim it was saved.",
   parameters: {
     type: "object",
     properties: {
       name: { type: "string", description: "The visible person's self-given name." },
       encounter_id: { type: "string", description: "Exact temporary encounter_id from the latest familiar-face context." },
-      consent: { type: "boolean", description: "True only after explicit spoken permission to remember this face and name." },
     },
-    required: ["name", "encounter_id", "consent"],
+    required: ["name", "encounter_id"],
     additionalProperties: false,
   },
 };

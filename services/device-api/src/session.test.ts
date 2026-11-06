@@ -22,12 +22,13 @@ interface SessionConfig {
 }
 
 describe("createDeviceSessionConfig", () => {
-  it("requires explicit permission and a current visible encounter for face memory", () => {
+  it("remembers self-introductions without a separate permission question", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const tool = (config.tools as Array<{ name: string; parameters: object }>).find(t => t.name === "remember_visible_friend");
-    expect(tool?.parameters).toMatchObject({ required: ["name", "encounter_id", "consent"], additionalProperties: false });
-    expect(config.instructions).toContain("A self-given name is not consent");
-    expect(config.instructions).toContain("If they decline, do not ask again");
+    expect(tool?.parameters).toMatchObject({ required: ["name", "encounter_id"], additionalProperties: false });
+    expect(tool?.parameters).not.toHaveProperty("properties.consent");
+    expect(config.instructions).toContain("Do not ask a separate permission-to-remember");
+    expect(config.instructions).toContain("If they say not to remember them, do not save");
   });
   it("speaks as Rocky", () => {
     const rocky = createDeviceSessionConfig({ character: ROCKY }) as SessionConfig;

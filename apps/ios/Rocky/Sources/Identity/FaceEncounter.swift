@@ -21,8 +21,7 @@ struct FaceEncounter {
 
     mutating func reset() { id = nil; reference = nil; count = 0; lastAt = nil }
 
-    func referenceForEnrollment(token: String, consent: Bool, at: Date) throws -> FaceFeaturePrintDescriptor {
-        guard consent else { throw FaceEnrollmentError.consentRequired }
+    func referenceForEnrollment(token: String, at: Date) throws -> FaceFeaturePrintDescriptor {
         guard let id, UUID(uuidString: token) == id, count >= 3, let lastAt,
               (0..<2).contains(at.timeIntervalSince(lastAt)), let reference else {
             throw FaceEnrollmentError.encounterChanged
@@ -32,10 +31,9 @@ struct FaceEncounter {
 }
 
 enum FaceEnrollmentError: LocalizedError {
-    case consentRequired, encounterChanged, existingName
+    case encounterChanged, existingName
     var errorDescription: String? {
         switch self {
-        case .consentRequired: "Do not save. Ask the person whether Rocky may remember their face and name."
         case .encounterChanged: "Do not save. The same single unfamiliar face is no longer confidently visible. Keep talking; do not guess who is speaking."
         case .existingName: "That name already belongs to a saved friend. Do not replace or add to their face samples by voice; use Friends for an explicit correction."
         }

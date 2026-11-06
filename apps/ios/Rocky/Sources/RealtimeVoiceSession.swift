@@ -101,9 +101,9 @@ final class RealtimeVoiceSession: ObservableObject {
     private var faceIntroductionTask: Task<Void, Never>?
     private var faceIntroductionGeneration = 0
     private var outputGate = ConversationOutputGate()
-    private var faceRememberer: ((String, String, Bool) -> [String: Any])?
+    private var faceRememberer: ((String, String) -> [String: Any])?
 
-    func useFaceRememberer(_ handler: @escaping (String, String, Bool) -> [String: Any]) {
+    func useFaceRememberer(_ handler: @escaping (String, String) -> [String: Any]) {
         faceRememberer = handler
     }
     private var userIsSpeaking = false
@@ -1773,12 +1773,12 @@ final class RealtimeVoiceSession: ObservableObject {
         // when the body tools are stripped.)
         if name == "look_now" { return await lookNow() }
         if name == "remember_visible_friend" {
-            struct Arguments: Decodable { let name: String; let encounter_id: String; let consent: Bool }
+            struct Arguments: Decodable { let name: String; let encounter_id: String }
             let args = try JSONDecoder().decode(Arguments.self, from: data)
             guard state == .connected, let faceRememberer else {
                 return Self.encodeResult(["ok": false, "problem": "Face memory is unavailable while conversation is paused."])
             }
-            return Self.encodeResult(faceRememberer(args.name, args.encounter_id, args.consent))
+            return Self.encodeResult(faceRememberer(args.name, args.encounter_id))
         }
 
         guard let behavior, behavior.connected else {

@@ -9,17 +9,18 @@ final class FaceEncounterTests: XCTestCase {
                      preprocessing: AuraFaceProbe.preprocessing)
     }
 
-    func testEnrollmentRequiresThreeFreshContinuousFramesTokenAndExplicitConsent() throws {
+    func testEnrollmentRequiresThreeFreshContinuousFramesAndCurrentToken() throws {
         var encounter = FaceEncounter()
         let now = Date()
         XCTAssertNil(encounter.observe(vector(), at: now))
+        let incompleteToken = try XCTUnwrap(encounter.id).uuidString
+        XCTAssertThrowsError(try encounter.referenceForEnrollment(token: incompleteToken, at: now))
         XCTAssertNil(encounter.observe(vector(0.1), at: now.addingTimeInterval(1)))
         let token = try XCTUnwrap(encounter.observe(vector(0.2), at: now.addingTimeInterval(2))).uuidString
         let at = now.addingTimeInterval(2.5)
-        XCTAssertThrowsError(try encounter.referenceForEnrollment(token: token, consent: false, at: at))
-        XCTAssertThrowsError(try encounter.referenceForEnrollment(token: UUID().uuidString, consent: true, at: at))
-        XCTAssertThrowsError(try encounter.referenceForEnrollment(token: token, consent: true, at: now.addingTimeInterval(5)))
-        XCTAssertEqual(try encounter.referenceForEnrollment(token: token, consent: true, at: at), vector())
+        XCTAssertThrowsError(try encounter.referenceForEnrollment(token: UUID().uuidString, at: at))
+        XCTAssertThrowsError(try encounter.referenceForEnrollment(token: token, at: now.addingTimeInterval(5)))
+        XCTAssertEqual(try encounter.referenceForEnrollment(token: token, at: at), vector())
     }
 
     func testFaceSwitchGroupGapAndResetRevokeOldEncounter() throws {
@@ -35,7 +36,7 @@ final class FaceEncounterTests: XCTestCase {
             case "gap": _ = encounter.observe(vector(), at: now.addingTimeInterval(6))
             default: encounter.reset()
             }
-            XCTAssertThrowsError(try encounter.referenceForEnrollment(token: token, consent: true,
+            XCTAssertThrowsError(try encounter.referenceForEnrollment(token: token,
                                                                        at: now.addingTimeInterval(6)))
         }
     }
@@ -44,7 +45,9 @@ final class FaceEncounterTests: XCTestCase {
         let id = UUID()
         let context = FaceConversation.context(.init(kind: .unfamiliar, encounterID: id), sequence: 1)
         XCTAssertTrue(context.contains(id.uuidString))
-        XCTAssertTrue(context.contains("A name alone is not permission"))
+        XCTAssertTrue(context.contains("When they introduce themselves by name"))
+        XCTAssertTrue(context.contains("Do not ask a separate permission-to-remember"))
+        XCTAssertTrue(context.contains("If they say not to remember them, do not save"))
         XCTAssertTrue(context.contains("remember_visible_friend"))
         let uncertain = FaceConversation.context(.init(kind: .unknown), sequence: 2)
         XCTAssertFalse(uncertain.contains(id.uuidString))

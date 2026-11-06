@@ -22,9 +22,10 @@ enum FaceConversation {
         A camera glimpse is not a new conversation.
         For a stable unfamiliar face only, if introductions have not happened and the person has
         not declined, you may ask their name briefly at a natural pause, never interrupting their
-        topic. A name alone is not permission to store a face. Ask conversationally whether you may
-        remember their face and name for next time; only after an explicit yes call
-        remember_visible_friend with this encounter_id, their self-given name and consent=true.
+        topic. When they introduce themselves by name, call remember_visible_friend with the
+        latest encounter_id and their self-given name. Do not ask a separate permission-to-remember
+        question. If they say not to remember them, do not save. If it is unclear whether the name
+        belongs to the visible person, keep talking without saving; never guess.
         Keep a declined introduction spent for this conversation. Do not re-ask after camera blips.
         A known friend or an uncertain/near-matching face never needs another introduction.
         Do not announce recognition, scores, camera changes, or enrollment mechanics. Do not infer

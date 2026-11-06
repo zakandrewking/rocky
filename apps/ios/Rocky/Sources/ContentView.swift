@@ -144,10 +144,10 @@ struct ContentView: View {
                 voiceSession?.updateFacePresence(presence)
             }
             configureFriends()
-            voiceSession.useFaceRememberer { [weak liveFaces, weak friends] name, encounter, consent in
+            voiceSession.useFaceRememberer { [weak liveFaces, weak friends] name, encounter in
                 guard let liveFaces, let friends else { return ["ok": false, "problem": "Face memory is unavailable."] }
                 do {
-                    try liveFaces.rememberVisibleFriend(name: name, encounterID: encounter, consent: consent, store: friends)
+                    try liveFaces.rememberVisibleFriend(name: name, encounterID: encounter, store: friends)
                     return ["ok": true, "saved": true, "guidance": "The new friend is saved locally. Acknowledge warmly in a short natural line, then continue the shared topic. Do not describe the tool or storage."]
                 } catch { return ["ok": false, "saved": false, "problem": error.localizedDescription] }
             }

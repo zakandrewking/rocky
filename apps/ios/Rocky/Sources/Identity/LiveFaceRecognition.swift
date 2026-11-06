@@ -126,17 +126,16 @@ final class LiveFaceRecognition: ObservableObject {
         publish(.off)
     }
 
-    func rememberVisibleFriend(name: String, encounterID: String, consent: Bool, store: FriendStore) throws {
-        guard consent else { throw FaceEnrollmentError.consentRequired }
+    func rememberVisibleFriend(name: String, encounterID: String, store: FriendStore) throws {
         guard presence.kind == .unfamiliar, UUID(uuidString: encounterID) == presence.encounterID else {
             throw FaceEnrollmentError.encounterChanged
         }
-        let reference = try encounter.referenceForEnrollment(token: encounterID, consent: consent, at: Date())
+        let reference = try encounter.referenceForEnrollment(token: encounterID, at: Date())
         guard !store.vault.friends.contains(where: { $0.name.caseInsensitiveCompare(name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame }) else {
             throw FaceEnrollmentError.existingName
         }
         try store.remember(name: name, descriptor: reference)
-        RockyLog.write("faces: saved new conversation friend with spoken consent")
+        RockyLog.write("faces: saved new conversation friend after self-introduction")
         configure(store.vault.friends) // immediately revoke the single-use encounter token
     }
     func process(_ data: Data, capturedAt: Date) async {

@@ -560,14 +560,16 @@ Decisions already made:
   memory within natural live conversation, not the lab. Implement stable anonymous encounters
   (three frames, strict continuity, fresh token), distinguish clearly unfamiliar faces from known
   near-misses, offer at most one unsolicited introduction per conversation during a quiet pause,
-  and expose the phone-local `remember_visible_friend` tool. A self-given name is not consent:
-  require an explicit spoken yes to remembering face/name before saving. Reject stale/switched/
-  group encounters, missing consent, duplicate existing names and invalid descriptors. Existing
+  and expose the phone-local `remember_visible_friend` tool. **Product update 2026-11-05:**
+  a self-introduction now saves the given name with the current face without a separate
+  permission-to-remember question, per user request. Honor an explicit request not to remember;
+  never save a name merely being discussed or guess who is speaking. Reject stale/switched/
+  group encounters, duplicate existing names and invalid descriptors. Existing
   friend corrections stay in Friends. Tool arguments are redacted from both diagnostic logs.
   No profiles are needed for the local face lane to run; new users can introduce themselves.
   Tool results continue with the full persona, not the generic silent-body-tool follow-up. The
   OpenAI Docs skill's verified response/item semantics guided this integration. Real conversation
-  trials must still verify introduction timing, refusal handling, spoken consent/save, and re-entry.
+  trials must still verify introduction timing, refusal handling, self-introduction/save, and re-entry.
   **2026-11-05 hardware follow-up:** all 27 focused tests pass on the unlocked 14 Pro: dedicated
   model parity/separation, encounter continuity/consent/stale-token guards, friend-vault/matcher
   behavior, and both voice-tool configurations. Full face pipeline: 974.6ms cold, 42.9–51.2ms warm.
@@ -592,7 +594,14 @@ Decisions already made:
   14 Pro build compiles. New tests exercise late-response suppression across resume, paused VAD
   events, background microphone policy, finite stuck-playback deadlines, long valid audio buffers,
   and introduction readiness after reacquiring a fresh face. Phone was locked at preflight; no
-  waiting test runner was started. A real quiet-greeting/pause/resume/name-question trial is pending.
+  waiting test runner was started. Subsequent focused recovery tests pass on the 14 Pro (17/17).
+  Latest live log confirms the name question completed and Rocky understood Zach; speech then
+  failed twice with ElevenLabs `quota_exceeded`, not a frozen conversation. Restore voice quota
+  before the next spoken-save/re-entry trial; add a visible provider-failure state in a follow-up.
+  The no-extra-permission flow removes the obsolete consent argument from both tool schema and
+  native handler; freshness, continuity, single-face and duplicate-name guards remain unchanged.
+  Validation: full `pnpm check` passes with the new self-introduction schema and native tests
+  (195 iOS tests, five hardware-only skips). Live speech acceptance still depends on restored quota.
   The user explicitly requested this after the live-reference trial still failed. Qualify only
   fal's Apache-2.0 AuraFace v1 recognition weights, with a publisher statement of commercial
   training/use; no unrelated InsightFace detector/attribute weights. Pinned ONNX hash and full
