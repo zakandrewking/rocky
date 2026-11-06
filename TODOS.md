@@ -573,6 +573,26 @@ Decisions already made:
   behavior, and both voice-tool configurations. Full face pipeline: 974.6ms cold, 42.9–51.2ms warm.
   Test runner completed before reopening Rocky normally; the real introduction/refusal/save and
   recognition-on-return walkthrough remains a user-driven acceptance gate.
+  **2026-11-05 live failure:** user reports audio stopped/froze and no name question. Approved
+  session log shows saved=0 (so an introduction was appropriate), short unfamiliar→unknown
+  transitions repeatedly canceling the introduction task, repeated semantic-VAD `turn_detected`
+  response cancellations, and a separate confirmed lifecycle race: a response created after pause
+  still reached ElevenLabs in background, followed by invalid speaker-format/graph-start errors.
+  Queued-but-unplayed audio then made the turn watchdog extend indefinitely. Do not infer that
+  face inference caused audio starvation or that every detected interruption was false speech.
+  Fix: keep a pending introduction across uncertain frames but require a CURRENT stable unfamiliar
+  face at the quiet moment; preserve enrollment-token freshness/continuity checks. Gate late voice
+  events/tools and PCM after pause/background, remember suppressed response IDs across resume,
+  clear pending input audio at pause/resume, and mute/cancel promptly on background. Bound stuck
+  playback by completion progress and ignore pre-stop buffer callbacks after a new queue starts.
+  OpenAI Docs verified cancel/clear semantics. Keep barge-in settings unchanged until a silent-
+  greeting trial can distinguish genuine interruption from false detection. Re-test actual voice
+  continuity, pause/resume, and the introduction; unit/hardware gates alone did not prove the flow.
+  Recovery patch: full `pnpm check` passes (195 iOS tests, five hardware-only skips) and the signed
+  14 Pro build compiles. New tests exercise late-response suppression across resume, paused VAD
+  events, background microphone policy, finite stuck-playback deadlines, long valid audio buffers,
+  and introduction readiness after reacquiring a fresh face. Phone was locked at preflight; no
+  waiting test runner was started. A real quiet-greeting/pause/resume/name-question trial is pending.
   The user explicitly requested this after the live-reference trial still failed. Qualify only
   fal's Apache-2.0 AuraFace v1 recognition weights, with a publisher statement of commercial
   training/use; no unrelated InsightFace detector/attribute weights. Pinned ONNX hash and full

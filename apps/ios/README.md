@@ -338,6 +338,11 @@ matches cannot be enrolled. Existing names cannot be overwritten by voice—use 
 correction. Face vectors stay on-device; the conversation provider receives names and temporary
 encounter IDs only. Forget/export/restore remain available in Friends. Refusing should not prompt
 another request during that conversation. This MVP does not identify the audio speaker from sight.
+Brief uncertain frames postpone that introduction rather than erase the pending opportunity;
+the question still waits for a currently stable face and a quiet moment. Pausing/backgrounding
+blocks late voice output and tool continuations, and backgrounding mutes the microphone until
+the existing foreground recovery replaces the suspended connection. Playback with no completion
+progress has a finite watchdog deadline instead of treating stuck queued buffers as live speech.
 
 For a reference from the exact conversation camera: while talking, face the phone and open
 **friends & face test…**, then choose **Use face just seen in conversation** and save the same name.

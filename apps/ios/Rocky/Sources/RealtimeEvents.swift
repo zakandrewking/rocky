@@ -1,5 +1,9 @@
 import Foundation
 
+struct InputAudioBufferClearEvent: Encodable {
+    let type = "input_audio_buffer.clear"
+}
+
 /// Minimal typed slice of the Realtime API's data-channel event schema -- only what this app
 /// actually reads, mirroring apps/desktop/src/renderer/src/App.tsx's handleRealtimeEvent, not
 /// the full event union. Swift's Codable ignores unmodeled keys by default, so a `response.done`

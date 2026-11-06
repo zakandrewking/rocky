@@ -98,6 +98,9 @@ final class RealtimeVoiceSession: ObservableObject {
     private var faceSequence = 0
     private var faceArrivals = FaceArrivalPolicy()
     private var offeredIntroduction = false
+    private var faceIntroductionTask: Task<Void, Never>?
+    private var faceIntroductionGeneration = 0
+    private var outputGate = ConversationOutputGate()
     private var faceRememberer: ((String, String, Bool) -> [String: Any])?
 
     func useFaceRememberer(_ handler: @escaping (String, String, Bool) -> [String: Any]) {
@@ -303,6 +306,7 @@ final class RealtimeVoiceSession: ObservableObject {
         projectedFacePresence = nil
         faceArrivals = FaceArrivalPolicy()
         offeredIntroduction = false
+        outputGate = ConversationOutputGate()
         wakeBodyIfStill(reason: "voice start")
         // A reconnect gets a brand-new WebRTC track, which starts enabled.
         micOpen = true
@@ -459,7 +463,7 @@ final class RealtimeVoiceSession: ObservableObject {
     /// rather than queueing behind it, because by the time the older one gets its turn the moment
     /// that prompted it has passed.
     private func requestResponse(instructions: String? = nil, reason: String) {
-        guard client.isDataChannelOpen, !isPaused else { return }
+        guard client.isDataChannelOpen, !isPaused, !connectionNeedsRefreshAfterBackground else { return }
         if activeResponseId != nil || awaitingResponse {
             parkedRequest = (instructions, reason)
             log("holding a response request (\(reason)) until the current one finishes")
@@ -638,6 +642,10 @@ final class RealtimeVoiceSession: ObservableObject {
         guard state == .connected else { return }
         // Set first: finishResponse below reopens the microphone, and pausing has to outrank that.
         isPaused = true
+        userIsSpeaking = false
+        faceIntroductionTask?.cancel()
+        faceIntroductionTask = nil
+        outputGate.suppress(activeResponseId)
         if behavior?.stillForVoicePause(id: "voice-paused") == true {
             log("robot moved into still (voice paused)")
         }
@@ -647,6 +655,7 @@ final class RealtimeVoiceSession: ObservableObject {
         // Unconditionally, not only mid-response: generation may have finished while audio is
         // still arriving, and cancelling a response that has already ended is harmless.
         client.send(ResponseCancelEvent(responseId: activeResponseId))
+        client.send(InputAudioBufferClearEvent())
         // Silences a character voiced by the Realtime model, whose audio plays through the peer
         // connection rather than any local player -- stopping local audio leaves it talking.
         client.setRemoteAudioEnabled(false)
@@ -681,6 +690,9 @@ final class RealtimeVoiceSession: ObservableObject {
         pauseTimeout?.cancel()
         pauseTimeout = nil
         isPaused = false
+        userIsSpeaking = false
+        lastUserSpeechAt = Date()
+        client.send(InputAudioBufferClearEvent())
         state = .connected
         wakeBodyIfStill(reason: "voice resume")
         client.setRemoteAudioEnabled(true)
@@ -702,6 +714,22 @@ final class RealtimeVoiceSession: ObservableObject {
     func noteAppBackgrounded() {
         guard state == .connected || state == .paused else { return }
         connectionNeedsRefreshAfterBackground = true
+        outputGate.suppress(activeResponseId)
+        faceIntroductionTask?.cancel()
+        faceIntroductionTask = nil
+        userIsSpeaking = false
+        stopLocalAudio()
+        speechSynthesizer?.cancel()
+        client.send(ResponseCancelEvent(responseId: activeResponseId))
+        client.send(InputAudioBufferClearEvent())
+        client.setRemoteAudioEnabled(false)
+        activeResponseId = nil
+        awaitingResponse = false
+        responseCreateWatchdog?.cancel()
+        cancelWatchdog?.cancel()
+        parkedRequest = nil
+        finishResponse(reason: "app backgrounded")
+        refreshMicrophone("app backgrounded")
         log("app backgrounded; voice connection marked for refresh")
     }
 
@@ -829,12 +857,25 @@ final class RealtimeVoiceSession: ObservableObject {
         faceArrivalTask?.cancel()
         latestFacePresence = presence
         flushFacePresence()
-        if presence.kind == .unfamiliar, !offeredIntroduction {
-            faceArrivalTask = Task { [weak self] in
-                for _ in 0..<20 {
+        if [.off, .nobody, .multiple, .recognized].contains(presence.kind) {
+            faceIntroductionTask?.cancel()
+            faceIntroductionTask = nil
+        }
+        if presence.kind == .unfamiliar, !offeredIntroduction, faceIntroductionTask == nil {
+            faceIntroductionGeneration += 1
+            let epoch = faceIntroductionGeneration
+            faceIntroductionTask = Task { [weak self] in
+                defer {
+                    if self?.faceIntroductionGeneration == epoch { self?.faceIntroductionTask = nil }
+                }
+                for _ in 0..<60 {
                     try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled, let self, self.latestFacePresence == presence else { return }
-                    guard self.quietForFaceGreeting, Date().timeIntervalSince(self.connectedAt) >= 8 else { continue }
+                    guard !Task.isCancelled, let self, !self.offeredIntroduction else { return }
+                    // An uncertain frame can postpone the question, but must not erase the
+                    // opportunity. Ask only when a fresh stable unfamiliar face is visible NOW;
+                    // requestResponse flushes its CURRENT token, never the old encounter's.
+                    guard Self.shouldOfferFaceIntroduction(current: self.latestFacePresence,
+                        quiet: self.quietForFaceGreeting, conversationAge: Date().timeIntervalSince(self.connectedAt)) else { continue }
                     self.offeredIntroduction = true // at most one unsolicited introduction per conversation
                     self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("intro_"), text: """
                         <new-friend-moment>One unfamiliar person has remained in view during a quiet
@@ -878,6 +919,10 @@ final class RealtimeVoiceSession: ObservableObject {
         state == .connected && canReachVoice && !speaking && responseStartedAt == nil && !awaitingResponse
             && activePerformance == nil && suspendedPerformance == nil && parkedRequest == nil
             && !userIsSpeaking && Date().timeIntervalSince(lastUserSpeechAt) >= 3
+    }
+
+    nonisolated static func shouldOfferFaceIntroduction(current: FacePresence?, quiet: Bool, conversationAge: TimeInterval) -> Bool {
+        current?.kind == .unfamiliar && quiet && conversationAge >= 8
     }
 
     private func flushFacePresence() {
@@ -1053,6 +1098,8 @@ final class RealtimeVoiceSession: ObservableObject {
 
     func disconnect() {
         faceArrivalTask?.cancel()
+        faceIntroductionTask?.cancel()
+        faceIntroductionTask = nil
         faceArrivalTask = nil
         latestFacePresence = .off
         projectedFacePresence = nil
@@ -1129,6 +1176,7 @@ final class RealtimeVoiceSession: ObservableObject {
         speechPlayer = player
         speechSynthesizer.onAudio = { [weak self] base64, isLastChunk in
             guard let self else { return }
+            guard !self.isPaused, !self.connectionNeedsRefreshAfterBackground else { return }
             if self.firstAudioAt == nil {
                 self.firstAudioAt = Date()
                 self.audioStartedAt = Date()
@@ -1188,15 +1236,15 @@ final class RealtimeVoiceSession: ObservableObject {
     /// through WebRTC's injected voice-processing device, so its AEC removes Rocky while keeping
     /// real nearby speech available to semantic VAD throughout her response.
     private func refreshMicrophone(_ reason: String) {
-        let open = Self.microphoneShouldBeOpen(isPaused: isPaused)
+        let open = Self.microphoneShouldBeOpen(isPaused: isPaused, backgrounded: connectionNeedsRefreshAfterBackground)
         guard micOpen != open else { return }
         micOpen = open
         client.setMicrophoneEnabled(open)
         log("mic \(open ? "open" : "closed") (\(reason))")
     }
 
-    static func microphoneShouldBeOpen(isPaused: Bool) -> Bool {
-        !isPaused
+    nonisolated static func microphoneShouldBeOpen(isPaused: Bool, backgrounded: Bool = false) -> Bool {
+        !isPaused && !backgrounded
     }
 
     /// Local speech reports playback independently from the Realtime text stream.
@@ -1337,6 +1385,12 @@ final class RealtimeVoiceSession: ObservableObject {
 
     private func handleTurnOverrun(budget: Int) {
         guard responseStartedAt != nil else { return }
+        if speechPlayer?.playbackHasStalled == true {
+            log("turn watchdog: audio queue stopped progressing; releasing stalled playback")
+            finishResponse(reason: "audio playback stalled")
+            stopLocalAudio()
+            return
+        }
         let queued = speechPlayer?.millisecondsUntilPlaybackEnd ?? 0
         // Genuinely still talking: extend rather than cut real audio off mid-word.
         if queued > 750 {
@@ -1420,6 +1474,16 @@ final class RealtimeVoiceSession: ObservableObject {
         // being mistaken for her talking -- which would start watchdogs, gate the microphone and
         // put deliberation into the chord layer.
         if handleOutOfBand(event) { return }
+
+        switch outputGate.decision(type: event.type, responseID: event.response?.id ?? event.response_id,
+                                   blocked: isPaused || connectionNeedsRefreshAfterBackground) {
+        case .cancel(let id):
+            client.send(ResponseCancelEvent(responseId: id))
+            log("cancelled late response while conversation is paused/backgrounded")
+            return
+        case .ignore: return
+        case .process: break
+        }
 
         switch event.type {
         case "error":
@@ -1609,6 +1673,12 @@ final class RealtimeVoiceSession: ObservableObject {
             ) || performancePrepared
         }
         if !calls.isEmpty {
+            // Tools may await a fresh look or another local operation. Pause can win that await;
+            // its late completion must not start a performance or another speech turn.
+            guard !isPaused, !connectionNeedsRefreshAfterBackground else {
+                queuedPerformance = nil
+                return
+            }
             if performancePrepared {
                 startQueuedPerformance()
             } else {

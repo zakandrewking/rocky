@@ -1,5 +1,23 @@
 import AVFoundation
 
+/// A queued buffer is not proof that playback is advancing. Use completion progress, allowing
+/// each individual buffer its full duration, to bound recovery from a stopped audio graph.
+struct PlaybackProgress {
+    private var lastProgress: Date?
+    private var longestChunk = 0.0
+    mutating func queued(seconds: Double, at: Date) {
+        if lastProgress == nil { lastProgress = at }
+        longestChunk = max(longestChunk, seconds)
+    }
+    mutating func completed(at: Date, hasPending: Bool) {
+        lastProgress = hasPending ? at : nil
+        if !hasPending { longestChunk = 0 }
+    }
+    func stalled(at: Date) -> Bool {
+        lastProgress.map { at.timeIntervalSince($0) > max(3, longestChunk + 1) } ?? false
+    }
+}
+
 /// Plays raw mono PCM from a local speech provider. The shared engine runs at 48 kHz, so a
 /// provider streaming at a lower rate is resampled before it is scheduled.
 ///
@@ -27,6 +45,8 @@ final class LocalPcmPlayer {
     private var pendingChunks = 0
     private var queuedSeconds = 0.0
     private var isSpeaking = false
+    private var queueGeneration = 0
+    private var progress = PlaybackProgress()
 
     init(sourceSampleRate: Double) {
         self.outputSampleRate = RockyAudioEngine.shared.sampleRate
@@ -61,11 +81,13 @@ final class LocalPcmPlayer {
         pendingChunks += 1
         chunksThisResponse += 1
         queuedSeconds += seconds
+        progress.queued(seconds: seconds, at: Date())
         setSpeaking(true)
         // .dataPlayedBack fires when the audio has actually been heard, not merely consumed --
         // which is what "Rocky finished speaking" has to mean for the mic to reopen safely.
+        let generation = queueGeneration
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-            Task { @MainActor in self?.chunkFinished(seconds: seconds) }
+            Task { @MainActor in self?.chunkFinished(seconds: seconds, generation: generation) }
         }
     }
 
@@ -76,6 +98,7 @@ final class LocalPcmPlayer {
     }
 
     var speaking: Bool { isSpeaking }
+    var playbackHasStalled: Bool { pendingChunks > 0 && progress.stalled(at: Date()) }
 
     /// Total audio pushed this response, for the logs: "no audio at all" and "audio that stopped
     /// early" are different failures and look identical from the outside.
@@ -84,7 +107,9 @@ final class LocalPcmPlayer {
     /// Barge-in: drop everything queued, or the next thing Rocky says waits behind audio nobody
     /// is listening to any more.
     func stop() {
+        queueGeneration += 1
         player.stop()
+        progress = PlaybackProgress()
         pendingChunks = 0
         chunksThisResponse = 0
         queuedSeconds = 0
@@ -94,9 +119,11 @@ final class LocalPcmPlayer {
         setSpeaking(false)
     }
 
-    private func chunkFinished(seconds: Double) {
+    private func chunkFinished(seconds: Double, generation: Int) {
+        guard generation == queueGeneration else { return }
         pendingChunks = max(0, pendingChunks - 1)
         queuedSeconds = max(0, queuedSeconds - seconds)
+        progress.completed(at: Date(), hasPending: pendingChunks > 0)
         if pendingChunks == 0 {
             queuedSeconds = 0
             setSpeaking(false)
