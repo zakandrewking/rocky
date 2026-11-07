@@ -556,6 +556,19 @@ Decisions already made:
   an assumption that the app container or Keychain happened to survive deletion.
 
 - [ ] **Dedicated face-model replacement — active, Apple baseline rejected by real use.**
+  **2026-11-06 tentative identity band:** retain confident <=0.90, add >0.90 through1.20
+  for a three-frame, person-margin-separated tentative identity. During a quiet pause, check
+  once per candidate per conversation rather than claiming recognition. Explicit yes through
+  `resolve_visible_friend` adds a local embedding to the identified profile; preserve the initial
+  anchor and rotate oldest supplemental samples at the five-sample cap. Explicit no leaves all
+  saved profiles untouched, suppresses that guess for the continuous encounter, and follows up
+  naturally for a self-given name. Fresh same-face tokens are mandatory; never learn from silence,
+  a different encounter, or an unrelated yes. No photos or vectors leave the device. Tool arguments
+  remain redacted and full-persona follow-ups are preserved. Native/matcher/store and schema tests
+  cover both outcomes. Full `pnpm check` passes: 200 iOS tests, five hardware-only skips, no
+  failures; lint/typecheck/service tests/build also pass. Signed 14 Pro build succeeds and is installed. Phone is
+  locked at preflight, so no waiting test runner was started. Real yes/no conversation acceptance
+  remains pending and still requires a functioning voice-provider quota.
   User confirms the dedicated model recognized them. They now want introductions and name/face
   memory within natural live conversation, not the lab. Implement stable anonymous encounters
   (three frames, strict continuity, fresh token), distinguish clearly unfamiliar faces from known

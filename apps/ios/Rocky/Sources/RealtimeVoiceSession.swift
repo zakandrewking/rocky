@@ -98,10 +98,17 @@ final class RealtimeVoiceSession: ObservableObject {
     private var faceSequence = 0
     private var faceArrivals = FaceArrivalPolicy()
     private var offeredIntroduction = false
+    private var checkedFaceIDs: Set<UUID> = []
     private var faceIntroductionTask: Task<Void, Never>?
     private var faceIntroductionGeneration = 0
     private var outputGate = ConversationOutputGate()
     private var faceRememberer: ((String, String) -> [String: Any])?
+    nonisolated static let faceMemoryToolNames: Set<String> = ["remember_visible_friend", "resolve_visible_friend"]
+    private var faceResolver: ((String, String, Bool) -> [String: Any])?
+
+    func useFaceResolver(_ handler: @escaping (String, String, Bool) -> [String: Any]) {
+        faceResolver = handler
+    }
 
     func useFaceRememberer(_ handler: @escaping (String, String) -> [String: Any]) {
         faceRememberer = handler
@@ -306,6 +313,7 @@ final class RealtimeVoiceSession: ObservableObject {
         projectedFacePresence = nil
         faceArrivals = FaceArrivalPolicy()
         offeredIntroduction = false
+        checkedFaceIDs = []
         outputGate = ConversationOutputGate()
         wakeBodyIfStill(reason: "voice start")
         // A reconnect gets a brand-new WebRTC track, which starts enabled.
@@ -862,7 +870,8 @@ final class RealtimeVoiceSession: ObservableObject {
             faceIntroductionTask?.cancel()
             faceIntroductionTask = nil
         }
-        if presence.kind == .unfamiliar, !offeredIntroduction, faceIntroductionTask == nil {
+        if (presence.kind == .unfamiliar && !offeredIntroduction
+            || presence.kind == .tentative && presence.friendID.map { !checkedFaceIDs.contains($0) } == true), faceIntroductionTask == nil {
             faceIntroductionGeneration += 1
             let epoch = faceIntroductionGeneration
             faceIntroductionTask = Task { [weak self] in
@@ -871,11 +880,27 @@ final class RealtimeVoiceSession: ObservableObject {
                 }
                 for _ in 0..<60 {
                     try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled, let self, !self.offeredIntroduction else { return }
+                    guard !Task.isCancelled, let self else { return }
+                    if let current = self.latestFacePresence, current.kind == .tentative,
+                       let id = current.friendID, !self.checkedFaceIDs.contains(id),
+                       self.quietForFaceGreeting, Date().timeIntervalSince(self.connectedAt) >= 8 {
+                        self.checkedFaceIDs.insert(id)
+                        self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("verify_"), text: """
+                            <identity-check-moment friend_id="\(id.uuidString)" encounter_id="\(current.encounterID?.uuidString ?? "unavailable")">For the current tentative face only, ask one brief
+                            natural 'is that you?' question using the suggested name as a question,
+                            not a fact. If this person has already confirmed or rejected that identity
+                            in this conversation, do not ask again. Resolve their explicit answer with
+                            resolve_visible_friend using the exact IDs from this check. If no, follow
+                            up naturally to learn their name, not another guess. Never interrupt or
+                            explain scores. This cue is spent after this response.</identity-check-moment>
+                            """, role: "system"))
+                        self.requestResponse(reason: "tentative face identity check")
+                        return
+                    }
                     // An uncertain frame can postpone the question, but must not erase the
                     // opportunity. Ask only when a fresh stable unfamiliar face is visible NOW;
                     // requestResponse flushes its CURRENT token, never the old encounter's.
-                    guard Self.shouldOfferFaceIntroduction(current: self.latestFacePresence,
+                    guard !self.offeredIntroduction, Self.shouldOfferFaceIntroduction(current: self.latestFacePresence,
                         quiet: self.quietForFaceGreeting, conversationAge: Date().timeIntervalSince(self.connectedAt)) else { continue }
                     self.offeredIntroduction = true // at most one unsolicited introduction per conversation
                     self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("intro_"), text: """
@@ -883,10 +908,10 @@ final class RealtimeVoiceSession: ObservableObject {
                         moment. If you have not already introduced yourselves and they have not
                         declined, ask their name in one short, natural line in your established
                         voice. Do not restart the conversation or explain recognition. If you know
-                        their self-given name already, ask whether you may remember their face and
-                        name for next time instead. Never save without explicit agreement. This cue
+                        their self-given name already, remember the current face/name without a
+                        separate permission question unless they asked not to be remembered. This cue
                         is spent after this turn; a camera blip is not a reason to ask again. If
-                        they already declined or already answered the remember question, leave
+                        they already declined or already introduced themselves, leave
                         the quiet alone: no repeated question or replacement topic.</new-friend-moment>
                         """, role: "system"))
                     self.requestResponse(reason: "new friend introduction")
@@ -1685,7 +1710,7 @@ final class RealtimeVoiceSession: ObservableObject {
             } else {
                 let names = calls.compactMap(\.name)
                 requestResponse(
-                    instructions: names.contains("remember_visible_friend") ? nil : Self.followupPrompt(after: names),
+                    instructions: names.contains(where: { Self.faceMemoryToolNames.contains($0) }) ? nil : Self.followupPrompt(after: names),
                     reason: "after \(names.joined(separator: "+"))"
                 )
             }
@@ -1748,7 +1773,7 @@ final class RealtimeVoiceSession: ObservableObject {
     // MARK: - Tools
 
     private func performToolCall(name: String, argumentsJSON: String, callId: String) async -> Bool {
-        let diagnosticArgs = name == "remember_visible_friend" ? "[private face/name arguments omitted]" : argumentsJSON
+        let diagnosticArgs = Self.faceMemoryToolNames.contains(name) ? "[private face/name arguments omitted]" : argumentsJSON
         RockyLog.write("tool call: \(name) \(diagnosticArgs)")
         WorldLog.shared.write(.tool, "\(name) \(diagnosticArgs)", seq: world.seq)
         lastToolCall = name
@@ -1772,6 +1797,16 @@ final class RealtimeVoiceSession: ObservableObject {
         // (`OpenAIRealtimeMinter.phoneToolNames` is the other half of that -- it keeps this tool
         // when the body tools are stripped.)
         if name == "look_now" { return await lookNow() }
+        if name == "resolve_visible_friend" {
+            struct Arguments: Decodable { let friend_id: String; let encounter_id: String; let confirmed: Bool }
+            let args = try JSONDecoder().decode(Arguments.self, from: data)
+            guard state == .connected, let faceResolver else {
+                return Self.encodeResult(["ok": false, "problem": "Face memory is unavailable while conversation is paused."])
+            }
+            // The tool-result continuation owns the name follow-up after a rejection.
+            if !args.confirmed { offeredIntroduction = true }
+            return Self.encodeResult(faceResolver(args.friend_id, args.encounter_id, args.confirmed))
+        }
         if name == "remember_visible_friend" {
             struct Arguments: Decodable { let name: String; let encounter_id: String }
             let args = try JSONDecoder().decode(Arguments.self, from: data)

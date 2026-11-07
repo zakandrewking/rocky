@@ -321,6 +321,19 @@ Robot integration needs a real Wi-Fi network reaching the CyberPi.
 
 ### Friends: live face recognition (MVP)
 
+Recognition has two bands: **≤0.90** is a confident match; **>0.90 through 1.20** is a
+tentative match that can earn one natural “Zach, is that you?” during a quiet pause. Both need
+three consistent frames and separation from the next-closest person. An ambiguous score is not
+a reason to guess. The live diagnostics show both cutoffs.
+
+An explicit yes updates that friend's local face references from the same fresh, continuous
+single-face encounter. Only embeddings are saved, never reference photos. At five samples the
+oldest supplemental sample rotates out while the original anchor remains. A no changes no saved
+references: Rocky drops that guess for the encounter, asks your name naturally, and learns your
+self-introduction. Camera gaps/switches revoke old confirmation tokens; silence and unrelated
+agreement never authorize a reference update. Each candidate gets at most one proactive check
+per conversation. The OpenAI Docs-guided cue preserves the full character instructions.
+
 Tap the state chip in the lower-left corner, then **friends & face test…**. Opening it pauses
 conversation and stops other camera probes. To enroll once:
 
@@ -334,8 +347,9 @@ name question during a quiet pause, without opening Friends. Once the person int
 by name, a phone-local tool saves the current continuous single-face encounter without a separate
 permission-to-remember question. An explicit request not to be remembered prevents saving. The
 face must still be visible and fresh; groups, face switches, stale tokens, and ambiguous near-
-matches cannot be enrolled. Existing names cannot be overwritten by voice—use Friends for a
-correction. Face vectors stay on-device; the conversation provider receives names and temporary
+matches cannot be enrolled. Self-introductions cannot overwrite an existing name; only an explicit
+yes to a tentative identity check can add that friend's sample. Use Friends for other corrections.
+Face vectors stay on-device; the conversation provider receives names and temporary
 encounter IDs only. Forget/export/restore remain available in Friends. Refusing should not prompt
 another request during that conversation. This MVP does not identify the audio speaker from sight.
 Brief uncertain frames postpone that introduction rather than erase the pending opportunity;

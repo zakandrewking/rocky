@@ -53,4 +53,15 @@ final class FaceEncounterTests: XCTestCase {
         XCTAssertFalse(uncertain.contains(id.uuidString))
         XCTAssertFalse(uncertain.contains("One stable unfamiliar face is visible"))
     }
+
+    func testTentativeContextCarriesQuestionIdsWithoutClaimingRecognition() {
+        let friend = UUID(), encounter = UUID()
+        let context = FaceConversation.context(.init(kind: .tentative, friendID: friend, name: "Zak", encounterID: encounter), sequence: 3)
+        XCTAssertTrue(context.contains("NOT a confirmed identity"))
+        XCTAssertTrue(context.contains(friend.uuidString))
+        XCTAssertTrue(context.contains(encounter.uuidString))
+        XCTAssertTrue(context.contains("resolve_visible_friend"))
+        XCTAssertTrue(context.contains("a no leaves that friend's samples untouched"))
+        XCTAssertFalse(context.contains("I recognize one visible saved friend"))
+    }
 }

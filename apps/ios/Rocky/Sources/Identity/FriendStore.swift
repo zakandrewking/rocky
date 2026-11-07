@@ -97,6 +97,20 @@ final class FriendStore: ObservableObject {
         try commit(next)
     }
 
+    func addConfirmedSample(friendID: UUID, descriptor: FaceFeaturePrintDescriptor) throws {
+        guard !loadFailed, descriptor.isCurrentIdentityTemplate,
+              let index = vault.friends.firstIndex(where: { $0.id == friendID }) else {
+            throw FriendStoreError.incompatible
+        }
+        var next = vault
+        var samples = next.friends[index].templates.filter(\.isCurrentIdentityTemplate)
+        // Keep the original anchor; rotate the oldest supplemental sample at the five-sample cap.
+        if samples.count >= 5 { samples.remove(at: 1) }
+        samples.append(descriptor)
+        next.friends[index].templates = samples
+        try commit(next)
+    }
+
     func forget(_ id: UUID) throws {
         guard !loadFailed else { throw FriendStoreError.incompatible }
         var next = vault

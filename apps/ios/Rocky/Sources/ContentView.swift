@@ -144,6 +144,15 @@ struct ContentView: View {
                 voiceSession?.updateFacePresence(presence)
             }
             configureFriends()
+            voiceSession.useFaceResolver { [weak liveFaces, weak friends] friendID, encounter, confirmed in
+                guard let liveFaces, let friends else { return ["ok": false, "problem": "Face memory is unavailable."] }
+                do {
+                    try liveFaces.resolveVisibleFriend(friendID: friendID, encounterID: encounter, confirmed: confirmed, store: friends)
+                    return ["ok": true, "updated": confirmed, "guidance": confirmed
+                        ? "Identity confirmed and local reference updated. Acknowledge briefly, then continue naturally."
+                        : "That guess was rejected. No saved reference changed. Ask their name naturally unless they already supplied it, then remember the current unfamiliar face with their self-given name."]
+                } catch { return ["ok": false, "updated": false, "problem": error.localizedDescription] }
+            }
             voiceSession.useFaceRememberer { [weak liveFaces, weak friends] name, encounter in
                 guard let liveFaces, let friends else { return ["ok": false, "problem": "Face memory is unavailable."] }
                 do {
@@ -463,7 +472,7 @@ struct ContentView: View {
             }
             .disabled(starting || voiceSession.state == .connecting)
             .foregroundStyle(RockyTheme.amberBright)
-            Text(liveFaces.presence.name.map { "familiar face: \($0)" } ?? "friends: \(friends.vault.friends.count) saved · recognition \(personCamera.isRunning ? "local" : "off")")
+            Text(liveFaces.presence.name.map { "\(liveFaces.presence.kind == .tentative ? "possible face" : "familiar face"): \($0)" } ?? "friends: \(friends.vault.friends.count) saved · recognition \(personCamera.isRunning ? "local" : "off")")
             Text("face check: \(liveFaces.diagnostic)")
                 .foregroundStyle(RockyTheme.mint.opacity(0.7))
             Text("face model: AuraFace v1 · 512-value identity embedding")
@@ -474,6 +483,8 @@ struct ContentView: View {
                             FaceMatcher.maximumDistance))
                     .foregroundStyle(RockyTheme.mint.opacity(0.7))
                 Text("Lower is more similar to a saved face—not distance from the camera.")
+                    .foregroundStyle(RockyTheme.mint.opacity(0.7))
+                Text(String(format: "Ask-to-confirm cutoff %.2f · confident cutoff %.2f", FaceMatcher.verificationDistance, FaceMatcher.maximumDistance))
                     .foregroundStyle(RockyTheme.mint.opacity(0.7))
             }
             if case .failed(let message) = voiceSession.state {

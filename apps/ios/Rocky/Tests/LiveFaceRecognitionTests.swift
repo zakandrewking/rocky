@@ -66,7 +66,7 @@ final class LiveFaceRecognitionTests: XCTestCase {
         let lookalike = FriendProfile(name: "Similar", templates: [vector(0.05)])
         XCTAssertNil(FaceMatcher.match(vector(0.02), friends: [zak, lookalike]))
         XCTAssertNil(FaceMatcher.match(vector(revision: 2), friends: [zak]))
-        XCTAssertEqual(FaceMatcher.assess(vector(1), friends: [zak, other]).reason, "outside match threshold")
+        XCTAssertEqual(FaceMatcher.assess(vector(1), friends: [zak, other]).reason, "ambiguous match")
         XCTAssertEqual(FaceMatcher.assess(vector(0.02), friends: [zak, lookalike]).reason, "ambiguous match")
         XCTAssertEqual(FaceMatcher.assess(vector(revision: 2), friends: [zak]).reason, "incompatible templates")
         XCTAssertEqual(FaceMatcher.assess(vector(0.1), friends: [zak]).reason, "candidate match")
@@ -113,6 +113,104 @@ final class LiveFaceRecognitionTests: XCTestCase {
         XCTAssertFalse(consensus.observe(nil, at: now.addingTimeInterval(4)))
         XCTAssertFalse(consensus.observe(a, at: now.addingTimeInterval(5)))
         XCTAssertFalse(consensus.observe(a, at: now.addingTimeInterval(10)))
+    }
+
+    func testTentativeBandIsNotRecognitionAndStillRequiresPersonMargin() {
+        let zak = FriendProfile(name: "Zak", templates: [vector()])
+        XCTAssertNotNil(FaceMatcher.assess(vector(0.8), friends: [zak]).friend)
+        let maybe = FaceMatcher.assess(vector(1.1), friends: [zak])
+        XCTAssertNil(maybe.friend)
+        XCTAssertEqual(maybe.tentativeFriend?.id, zak.id)
+        XCTAssertNil(FaceMatcher.assess(vector(1.4), friends: [zak]).tentativeFriend)
+        let similar = FriendProfile(name: "Other", templates: [vector(0.03)])
+        XCTAssertNil(FaceMatcher.assess(vector(1.1), friends: [zak, similar]).tentativeFriend)
+        XCTAssertNil(FaceMatcher.assess(vector(revision: 2), friends: [zak]).tentativeFriend)
+        XCTAssertEqual(FaceMatcher.verificationDistance, 1.2)
+    }
+
+    @MainActor
+    func testConfirmedSamplesPreserveAnchorAndOtherPeopleAtCapacity() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
+        try store.remember(name: "Zak", descriptor: vector())
+        try store.remember(name: "Other", descriptor: vector(2))
+        let id = store.vault.friends[0].id
+        let other = store.vault.friends[1]
+        for angle in [Float(0.1), 0.2, 0.3, 0.4, 0.5, 0.6] {
+            try store.addConfirmedSample(friendID: id, descriptor: vector(angle))
+        }
+        XCTAssertEqual(store.vault.friends[0].templates.count, 5)
+        XCTAssertEqual(store.vault.friends[0].templates.first, vector())
+        XCTAssertEqual(store.vault.friends[0].templates.last, vector(0.6))
+        XCTAssertEqual(store.vault.friends[1], other)
+        let before = store.vault
+        XCTAssertThrowsError(try store.addConfirmedSample(friendID: UUID(), descriptor: vector()))
+        XCTAssertThrowsError(try store.addConfirmedSample(friendID: id, descriptor: vector(revision: 2)))
+        XCTAssertEqual(store.vault, before)
+    }
+
+    @MainActor
+    func testTentativeYesLearnsAndNoEnablesNewIntroductionWithoutChangingGuessedFriend() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for confirmed in [true, false] {
+            let store = FriendStore(url: directory.appendingPathComponent("\(confirmed).json"))
+            try store.remember(name: "Zak", descriptor: vector())
+            let original = store.vault.friends[0]
+            let live = LiveFaceRecognition()
+            live.configure(store.vault.friends)
+            for _ in 0..<3 {
+                live.accept(.success(FaceFeaturePrintMeasurement(descriptor: vector(1.1), elapsedMilliseconds: 1)), capturedAt: Date())
+            }
+            XCTAssertEqual(live.presence.kind, .tentative)
+            let token = try XCTUnwrap(live.presence.encounterID).uuidString
+            XCTAssertThrowsError(try live.resolveVisibleFriend(friendID: original.id.uuidString, encounterID: token,
+                                                              confirmed: confirmed, store: store, at: Date().addingTimeInterval(3)))
+            XCTAssertEqual(store.vault.friends, [original])
+            XCTAssertThrowsError(try live.resolveVisibleFriend(friendID: UUID().uuidString, encounterID: token,
+                                                              confirmed: confirmed, store: store))
+            XCTAssertThrowsError(try live.resolveVisibleFriend(friendID: original.id.uuidString, encounterID: UUID().uuidString,
+                                                              confirmed: confirmed, store: store))
+            try live.resolveVisibleFriend(friendID: original.id.uuidString, encounterID: token,
+                                          confirmed: confirmed, store: store)
+            if confirmed {
+                XCTAssertEqual(store.vault.friends[0].templates.count, 2)
+                XCTAssertEqual(FaceMatcher.match(vector(1.1), friends: store.vault.friends)?.id, original.id)
+            } else {
+                XCTAssertEqual(store.vault.friends, [original])
+                XCTAssertEqual(live.presence.kind, .unfamiliar)
+                live.accept(.success(FaceFeaturePrintMeasurement(descriptor: vector(1.1), elapsedMilliseconds: 1)), capturedAt: Date())
+                XCTAssertEqual(live.presence.kind, .unfamiliar)
+                try live.rememberVisibleFriend(name: "Alex", encounterID: token, store: store)
+                XCTAssertEqual(store.vault.friends.count, 2)
+                XCTAssertEqual(store.vault.friends[0], original)
+                XCTAssertEqual(store.vault.friends[1].name, "Alex")
+            }
+            XCTAssertThrowsError(try live.resolveVisibleFriend(friendID: original.id.uuidString, encounterID: token,
+                                                              confirmed: true, store: store))
+            live.reset()
+        }
+    }
+
+    @MainActor
+    func testFaceLossRevokesTentativeReferenceUpdate() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
+        try store.remember(name: "Zak", descriptor: vector())
+        let original = store.vault
+        let live = LiveFaceRecognition()
+        live.configure(store.vault.friends)
+        for _ in 0..<3 {
+            live.accept(.success(.init(descriptor: vector(1.1), elapsedMilliseconds: 1)), capturedAt: Date())
+        }
+        let token = try XCTUnwrap(live.presence.encounterID).uuidString
+        live.accept(.failure(FaceProbeCapture.CaptureError.noFace), capturedAt: Date())
+        XCTAssertThrowsError(try live.resolveVisibleFriend(friendID: original.friends[0].id.uuidString,
+                            encounterID: token, confirmed: true, store: store))
+        XCTAssertEqual(store.vault, original)
+        live.reset()
     }
 
     func testDistanceTrendsAreBoundedFiniteAndThrottled() throws {

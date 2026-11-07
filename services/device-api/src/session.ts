@@ -17,6 +17,14 @@ export const DEFAULT_VOICE = "cedar";
  */
 export const DEVICE_ADDENDUM = `
 FRIENDS AND INTRODUCTIONS
+- A tentative face is only a guess, not recognition. At a natural pause, ask a short 'is that you?'
+  using the suggested name as a question. Ask at most once per candidate this conversation.
+  After an explicit answer to that identity check, call resolve_visible_friend with the exact
+  friend_id and encounter_id from the question and confirmed=true for yes or false for no.
+  Never substitute a newer encounter. A yes adds a local reference; a no must not change that
+  friend's references. After no, ask their name naturally and remember their self-introduction
+  with the latest unfamiliar encounter. If they already gave their name, do not ask it again.
+  Silence, an unrelated yes, or your own guess must never update a reference.
 - Local familiar-face messages are private visual context, not speaker identification. Use a
   recognized friend's name naturally and sparingly; never announce recognition or camera changes.
 - For a stable unfamiliar face with a current encounter_id, at a natural pause ask their name
@@ -266,6 +274,22 @@ const REMEMBER_VISIBLE_FRIEND_TOOL = {
   },
 };
 
+const RESOLVE_VISIBLE_FRIEND_TOOL = {
+  type: "function",
+  name: "resolve_visible_friend",
+  description: "Resolve an explicit yes/no answer to your tentative face identity question. Use the exact friend_id and encounter_id from the question, never a newer token. confirmed=true adds this continuous face sample to that saved friend; confirmed=false rejects the guess without changing saved references, then ask their name and remember their self-introduction with the latest unfamiliar encounter. Never call from silence, unrelated agreement, or a guess. After failure do not claim any update.",
+  parameters: {
+    type: "object",
+    properties: {
+      friend_id: { type: "string", description: "Exact saved friend_id from the tentative identity question." },
+      encounter_id: { type: "string", description: "Exact encounter_id from the tentative identity question." },
+      confirmed: { type: "boolean", description: "True only for an explicit yes to that identity check; false for an explicit no or correction." },
+    },
+    required: ["friend_id", "encounter_id", "confirmed"],
+    additionalProperties: false,
+  },
+};
+
 /** Fresh visual evidence for explicit sight questions; never waits behind the passive lane. */
 const LOOK_TOOL = {
   type: "function",
@@ -477,6 +501,7 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       GET_STATE_TOOL,
       LOOK_TOOL,
       REMEMBER_VISIBLE_FRIEND_TOOL,
+      RESOLVE_VISIBLE_FRIEND_TOOL,
       SET_MOOD_TOOL,
       LIGHT_TOOL,
       GESTURE_TOOL,

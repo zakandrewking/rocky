@@ -22,6 +22,14 @@ interface SessionConfig {
 }
 
 describe("createDeviceSessionConfig", () => {
+  it("resolves tentative identity answers before learning references or a new name", () => {
+    const config = createDeviceSessionConfig() as SessionConfig;
+    const tool = (config.tools as Array<{ name: string; parameters: object }>).find(t => t.name === "resolve_visible_friend");
+    expect(tool?.parameters).toMatchObject({ required: ["friend_id", "encounter_id", "confirmed"], additionalProperties: false });
+    expect(config.instructions).toContain("A tentative face is only a guess");
+    expect(config.instructions).toContain("After no, ask their name naturally");
+    expect(config.instructions).toContain("Silence, an unrelated yes, or your own guess must never update a reference");
+  });
   it("remembers self-introductions without a separate permission question", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const tool = (config.tools as Array<{ name: string; parameters: object }>).find(t => t.name === "remember_visible_friend");
@@ -103,6 +111,7 @@ describe("createDeviceSessionConfig", () => {
       "get_robot_state",
       "look_now",
       "remember_visible_friend",
+      "resolve_visible_friend",
       "set_robot_mood",
       "robot_light",
       "robot_gesture",
