@@ -22,6 +22,16 @@ interface SessionConfig {
 }
 
 describe("createDeviceSessionConfig", () => {
+  it("lets native social memory own clarification and refusal", () => {
+    const config = createDeviceSessionConfig() as SessionConfig;
+    const tools = config.tools as Array<{ name: string; parameters: object }>;
+    expect(tools.find(t => t.name === "resolve_pending_friend")?.parameters).toMatchObject({
+      required: ["intent_id", "encounter_id", "confirmed"], additionalProperties: false,
+    });
+    expect(tools.find(t => t.name === "decline_face_introduction")?.parameters).toMatchObject({ properties: {}, additionalProperties: false });
+    expect(config.instructions).toContain("Only a face-question cue permits");
+    expect(config.instructions).toContain("An expired raw encounter token does not erase an introduction");
+  });
   it("resolves tentative identity answers before learning references or a new name", () => {
     const config = createDeviceSessionConfig() as SessionConfig;
     const tool = (config.tools as Array<{ name: string; parameters: object }>).find(t => t.name === "resolve_visible_friend");
@@ -114,6 +124,8 @@ describe("createDeviceSessionConfig", () => {
       "look_now",
       "remember_visible_friend",
       "resolve_visible_friend",
+      "resolve_pending_friend",
+      "decline_face_introduction",
       "set_robot_mood",
       "robot_light",
       "robot_gesture",

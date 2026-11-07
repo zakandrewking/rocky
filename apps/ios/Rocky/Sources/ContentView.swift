@@ -146,24 +146,44 @@ struct ContentView: View {
             liveFaces.onSaveOutcome = { [weak voiceSession] name, saved, reason in
                 voiceSession?.noteFaceSaveOutcome(name: name, saved: saved, reason: reason)
             }
+            liveFaces.onInteractionChange = { [weak voiceSession] in voiceSession?.refreshFaceSocialContext() }
+            voiceSession.useFaceInteraction(
+                next: { [weak liveFaces] at, quiet, age in liveFaces?.nextQuestion(at: at, quiet: quiet, conversationAge: age) },
+                started: { [weak liveFaces] id, at in liveFaces?.questionStarted(id, at: at) },
+                finished: { [weak liveFaces] id in liveFaces?.questionFinished(id) },
+                interrupted: { [weak liveFaces] in liveFaces?.questionInterrupted() },
+                context: { [weak liveFaces] in liveFaces?.interaction.context(at: Date()) ?? "" },
+                begin: { [weak liveFaces] in liveFaces?.beginConversation() },
+                decline: { [weak liveFaces] in liveFaces?.declineIntroduction() },
+                resolvePending: { [weak liveFaces] intent, encounter, confirmed in
+                    guard let liveFaces else { return ["ok": false, "saved": false] }
+                    do {
+                        let result = try liveFaces.resolvePendingFriend(intentID: intent, encounterID: encounter, confirmed: confirmed)
+                        return ["ok": true, "saved": result == .saved, "pending": confirmed && result != .saved,
+                                "guidance": confirmed ? "Association confirmed. Only saved=true means persisted; continue naturally."
+                                    : "That was not the person who introduced themselves. No face was saved. Ask the current person's name naturally if they have not already supplied it."]
+                    } catch { return ["ok": false, "saved": false, "problem": error.localizedDescription] }
+                })
             configureFriends()
             voiceSession.useFaceResolver { [weak liveFaces, weak friends] friendID, encounter, confirmed in
                 guard let liveFaces, let friends else { return ["ok": false, "problem": "Face memory is unavailable."] }
                 do {
-                    try liveFaces.resolveVisibleFriend(friendID: friendID, encounterID: encounter, confirmed: confirmed, store: friends)
-                    return ["ok": true, "updated": confirmed, "guidance": confirmed
-                        ? "Identity confirmed and local reference updated. Acknowledge briefly, then continue naturally."
+                    let disposition = try liveFaces.resolveVisibleFriend(friendID: friendID, encounterID: encounter, confirmed: confirmed, store: friends)
+                    let updated = confirmed && disposition == .saved
+                    return ["ok": true, "updated": updated, "pending": confirmed && !updated, "guidance": confirmed
+                        ? (updated ? "Identity confirmed and local reference updated. Acknowledge briefly, then continue naturally."
+                            : "Identity answer retained; reference update is pending fresh evidence, NOT saved. Do not ask who they are again. Native memory owns recovery; continue the shared topic.")
                         : "That guess was rejected. No saved reference changed. Ask their name naturally unless they already supplied it, then remember the current unfamiliar face with their self-given name."]
                 } catch { return ["ok": false, "updated": false, "problem": error.localizedDescription] }
             }
-            voiceSession.useFaceRememberer { [weak liveFaces, weak friends] name, encounter in
+            voiceSession.useFaceRememberer { [weak liveFaces, weak friends] name, encounter, sourceTurnID in
                 guard let liveFaces, let friends else { return ["ok": false, "problem": "Face memory is unavailable."] }
                 do {
-                    let disposition = try liveFaces.rememberVisibleFriend(name: name, encounterID: encounter, store: friends)
+                    let disposition = try liveFaces.rememberVisibleFriend(name: name, encounterID: encounter, store: friends, sourceTurnID: sourceTurnID)
                     let saved = disposition == .saved
                     return ["ok": true, "saved": saved, "pending": !saved, "guidance": saved
                         ? "The new friend is saved locally. Acknowledge warmly in a short natural line, then continue the shared topic. Do not describe the tool or storage."
-                        : "The name is pending for this same continuous face, not saved yet. The phone will retry automatically for up to ten seconds; do not call again or claim success. Briefly ask them to keep their face centered if useful, then keep the conversation natural. Do not claim face memory is unavailable. A later face-memory-result will confirm saved or cancelled."]
+                        : "The introduction is retained for up to sixty seconds, not saved yet. Native social memory owns retry and clarification. Do not call again, repeat their name question, claim success, or say memory is unavailable. Keep following their topic; only a native face-question cue can request clarification. A later face-memory-result will confirm saved or cancelled."]
                 } catch { return ["ok": false, "saved": false, "problem": error.localizedDescription] }
             }
             behavior.onControlTrace = { [weak navigationProbe] event in

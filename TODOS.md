@@ -557,6 +557,22 @@ Decisions already made:
 
 - [ ] **Dedicated face-model replacement — active, Apple baseline rejected by real use.**
   **Action plan — temporal social-memory state machine (2026-11-06; proposed defaults).**
+  **Implemented and installed:** native `FaceInteractionState` now owns conversational
+  names/provenance, learning states, question scheduling/playback/answers/refusals and bounded
+  recent raw-track provenance. `FaceInteractionPolicy` centralizes all six proposed interaction
+  controls. Raw token expiry no longer rejects a recently observed self-introduction before it
+  can enter the state machine. Fresh stable same-face evidence can recover an association; a
+  changed face cannot inherit it without explicit clarification actually spoken for that face.
+  Answered identity checks survive delayed camera evidence without repeated interrogation.
+  Reference updates wait for fresh same-face evidence or confident saved-person reacquisition.
+  One voice-loop tick replaces competing social timers; named-person/arrival speech is quiet
+  context rather than a second greeting. New phone-local clarification/refusal tools preserve
+  full-persona follow-ups and redaction. Camera pause cancels writes, not conversational names.
+  Fake-clock minute-long and native-store recovery tests pass. Final full `pnpm check` passes:
+  219 iOS tests, five hardware-only skips, no failures; lint, typecheck, service tests and builds
+  also pass. Signed 14 Pro build passes and is installed. No hardware test runner is left waiting.
+  Real one-minute conversation/name-save/person-swap acceptance remains pending; these tests
+  prove state-machine invariants and storage handoff, not natural speech or population accuracy.
   Supersedes the short-lived encounter token as the owner of a conversational introduction.
   Latest failed run: Julian's save call returned `encounter_changed` before entering the queue;
   no pending save existed, and stability returned later without recovery. Do not paper over this

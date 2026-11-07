@@ -111,8 +111,9 @@ final class LiveFaceRecognitionTests: XCTestCase {
         XCTAssertFalse(consensus.observe(a, at: now.addingTimeInterval(1.5)))
         XCTAssertFalse(consensus.observe(b, at: now.addingTimeInterval(3)))
         XCTAssertFalse(consensus.observe(nil, at: now.addingTimeInterval(4)))
-        XCTAssertFalse(consensus.observe(a, at: now.addingTimeInterval(5)))
-        XCTAssertFalse(consensus.observe(a, at: now.addingTimeInterval(10)))
+        XCTAssertTrue(consensus.observe(a, at: now.addingTimeInterval(5)))
+        XCTAssertTrue(consensus.observe(a, at: now.addingTimeInterval(10)))
+        XCTAssertFalse(consensus.observe(a, at: now.addingTimeInterval(19)))
     }
 
     func testTentativeBandIsNotRecognitionAndStillRequiresPersonMargin() {
@@ -245,7 +246,7 @@ final class LiveFaceRecognitionTests: XCTestCase {
     }
 
     @MainActor
-    func testQualityDipQueuesNameAndRequiresThreeFreshSameFaceFrames() throws {
+    func testQualityDipQueuesNameUntilCurrentFrameSupportsThreeUsableSamples() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
@@ -263,7 +264,7 @@ final class LiveFaceRecognitionTests: XCTestCase {
                                                      at: now.addingTimeInterval(0.4)), .pending)
         for t in [0.5, 0.6] {
             live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(t))
-            XCTAssertTrue(store.vault.friends.isEmpty)
+            XCTAssertEqual(store.vault.friends.map(\.name), ["Elise"])
         }
         live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(0.7))
         XCTAssertEqual(store.vault.friends.map(\.name), ["Elise"])
@@ -289,12 +290,12 @@ final class LiveFaceRecognitionTests: XCTestCase {
             case "switch": live.accept(.success(.init(descriptor: vector(2), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(0.1))
             case "loss": live.accept(.failure(FaceProbeCapture.CaptureError.noFace), capturedAt: now.addingTimeInterval(0.1))
             case "group": live.accept(.failure(FaceProbeCapture.CaptureError.multipleFaces), capturedAt: now.addingTimeInterval(0.1))
-            case "deadline": live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(11))
+            case "deadline": live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(61))
             case "quality-gap": live.accept(.failure(FaceProbeCapture.CaptureError.eyesMissing), capturedAt: now.addingTimeInterval(3))
             default: live.reset()
             }
             // Even a later stable face cannot inherit a cancelled name.
-            let later = Date().addingTimeInterval(12)
+            let later = Date().addingTimeInterval(62)
             for t in [0.0, 0.1, 0.2] {
                 live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: later.addingTimeInterval(t))
             }
@@ -302,6 +303,71 @@ final class LiveFaceRecognitionTests: XCTestCase {
             XCTAssertEqual(outcomes, [false], reason)
             live.reset()
         }
+    }
+
+    @MainActor
+    func testLateNameToolRecoversThroughExplicitFreshAssociationBeforeDiskWrite() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
+        let live = LiveFaceRecognition()
+        live.configure([])
+        let now = Date()
+        live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now)
+        let oldToken = try XCTUnwrap(live.presence.encounterID).uuidString
+        live.accept(.success(.init(descriptor: vector(2), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(0.1))
+        let newToken = try XCTUnwrap(live.presence.encounterID).uuidString
+        XCTAssertNotEqual(oldToken, newToken)
+        XCTAssertEqual(try live.rememberVisibleFriend(name: "Julian", encounterID: oldToken, store: store,
+                        at: now.addingTimeInterval(0.2), sourceTurnID: "user-turn-123"), .pending)
+        XCTAssertEqual(live.interaction.learning, .needsClarification)
+        for t in [0.3, 0.4] {
+            live.accept(.success(.init(descriptor: vector(2), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(t))
+        }
+        XCTAssertTrue(store.vault.friends.isEmpty)
+        let question = try XCTUnwrap(live.nextQuestion(at: now.addingTimeInterval(0.5), quiet: true, conversationAge: 15))
+        XCTAssertEqual(question.kind, .clarification)
+        let intent = try XCTUnwrap(question.intentID).uuidString
+        XCTAssertThrowsError(try live.resolvePendingFriend(intentID: intent, encounterID: newToken, confirmed: true,
+                                                          at: now.addingTimeInterval(0.5)))
+        live.questionStarted(question.id, at: now.addingTimeInterval(0.5))
+        XCTAssertEqual(try live.resolvePendingFriend(intentID: intent, encounterID: newToken, confirmed: true,
+                                                     at: now.addingTimeInterval(0.5)), .saved)
+        XCTAssertEqual(store.vault.friends.map(\.name), ["Julian"])
+        XCTAssertEqual(store.vault.friends[0].templates, [vector(2)])
+        XCTAssertThrowsError(try live.resolvePendingFriend(intentID: intent, encounterID: newToken, confirmed: true,
+                                                          at: now.addingTimeInterval(0.6)))
+        live.reset()
+    }
+
+    @MainActor
+    func testDelayedIdentityYesDoesNotReaskAndOnlyUpdatesAfterFreshConfidentReacquisition() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
+        try store.remember(name: "Zach", descriptor: vector())
+        let id = store.vault.friends[0].id.uuidString
+        let live = LiveFaceRecognition()
+        live.configure(store.vault.friends)
+        let now = Date()
+        for t in [0.0, 0.1, 0.2] {
+            live.accept(.success(.init(descriptor: vector(1.1), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(t))
+        }
+        let question = try XCTUnwrap(live.nextQuestion(at: now.addingTimeInterval(0.3), quiet: true, conversationAge: 15))
+        live.questionStarted(question.id, at: now.addingTimeInterval(0.3))
+        let old = try XCTUnwrap(question.encounterID).uuidString
+        live.accept(.failure(FaceProbeCapture.CaptureError.faceNearEdge), capturedAt: now.addingTimeInterval(0.4))
+        XCTAssertEqual(try live.resolveVisibleFriend(friendID: id, encounterID: old, confirmed: true, store: store,
+                                                     at: now.addingTimeInterval(0.5)), .pending)
+        XCTAssertEqual(store.vault.friends[0].templates.count, 1)
+        XCTAssertEqual(live.interaction.participantName, "Zach")
+        for t in [0.6, 0.7, 0.8] {
+            live.accept(.success(.init(descriptor: vector(0.1), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(t))
+            XCTAssertNil(live.nextQuestion(at: now.addingTimeInterval(t), quiet: true, conversationAge: 20))
+        }
+        XCTAssertEqual(store.vault.friends[0].templates.count, 2)
+        XCTAssertEqual(live.interaction.learning, .saved)
+        live.reset()
     }
 
     func testDistanceTrendsAreBoundedFiniteAndThrottled() throws {

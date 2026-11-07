@@ -75,7 +75,7 @@ enum OpenAIRealtimeMinter {
     /// conversation's lifecycle and knows nothing about whether a body was discovered. Stripping
     /// `look_now` along with the movement tools would have blinded a voice-only Rocky whose camera
     /// was, in fact, wide open and describing the room to her.
-    static let phoneToolNames: Set<String> = ["look_now", "remember_visible_friend", "resolve_visible_friend"]
+    static let phoneToolNames: Set<String> = ["look_now", "remember_visible_friend", "resolve_visible_friend", "resolve_pending_friend", "decline_face_introduction"]
 
     /// Strips the body tools out of the baked config and corrects the body context, for when
     /// discovery found no robot. Edits the JSON rather than keeping a second hand-written copy of

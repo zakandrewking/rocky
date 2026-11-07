@@ -17,6 +17,18 @@ export const DEFAULT_VOICE = "cedar";
  */
 export const DEVICE_ADDENDUM = `
 FRIENDS AND INTRODUCTIONS
+- Native social-memory state owns unsolicited questions. Only a face-question cue permits an
+  unsolicited name or identity check. A blurry frame or timer expiry does not start one. Retain
+  conversational names without claiming the current visible person or audio speaker is that name.
+  An expired raw encounter token does not erase an introduction: report the self-given name with
+  its original encounter_id. The phone retains the intent for sixty seconds and may need one
+  clarification. When cued, ask whether this is the person who gave the pending name; resolve the
+  explicit answer with resolve_pending_friend and the EXACT supplied intent_id and encounter_id.
+  Never substitute a new token yourself. If they refuse introductions or memory, call
+  decline_face_introduction and keep following their topic. Silence is never an answer.
+  If they explicitly correct their own pending name, cancel the previous intent with
+  decline_face_introduction before reporting their corrected self-introduction; never silently
+  replace a pending name or move it to another person's face.
 - A tentative face is only a guess, not recognition. At a natural pause, ask a short 'is that you?'
   using the suggested name as a question. Ask at most once per candidate this conversation.
   After an explicit answer to that identity check, call resolve_visible_friend with the exact
@@ -27,7 +39,7 @@ FRIENDS AND INTRODUCTIONS
   Silence, an unrelated yes, or your own guess must never update a reference.
 - Local familiar-face messages are private visual context, not speaker identification. Use a
   recognized friend's name naturally and sparingly; never announce recognition or camera changes.
-- For a stable unfamiliar face with a current encounter_id, at a natural pause ask their name
+- When cued for a stable unfamiliar face with a current encounter_id, at a natural pause ask their name
   briefly if introductions have not happened. Never interrupt a story, interrogate a group, or
   ask a known friend again because confidence briefly dipped.
 - When the person introduces themselves by name, call remember_visible_friend with their
@@ -296,6 +308,20 @@ const RESOLVE_VISIBLE_FRIEND_TOOL = {
   },
 };
 
+const RESOLVE_PENDING_FRIEND_TOOL = {
+  type: "function", name: "resolve_pending_friend",
+  description: "Resolve an explicit answer to a native clarification question about who supplied a pending self-introduction. Use exactly the intent_id and encounter_id from that question. True only when the current person explicitly confirms they gave that name. False for no/correction. Never infer from silence or unrelated agreement; never claim saved unless the result says saved=true.",
+  parameters: { type: "object", additionalProperties: false,
+    properties: { intent_id: { type: "string" }, encounter_id: { type: "string" }, confirmed: { type: "boolean" } },
+    required: ["intent_id", "encounter_id", "confirmed"] },
+};
+
+const DECLINE_FACE_INTRODUCTION_TOOL = {
+  type: "function", name: "decline_face_introduction",
+  description: "Record an explicit refusal to introduce themselves or be remembered. Cancel pending enrollment and suppress further name/identity questions for this conversation. Never call merely because of silence or an uncertain image.",
+  parameters: { type: "object", additionalProperties: false, properties: {} },
+};
+
 /** Fresh visual evidence for explicit sight questions; never waits behind the passive lane. */
 const LOOK_TOOL = {
   type: "function",
@@ -508,6 +534,8 @@ export function createDeviceSessionConfig(options: DeviceSessionOptions = {}): o
       LOOK_TOOL,
       REMEMBER_VISIBLE_FRIEND_TOOL,
       RESOLVE_VISIBLE_FRIEND_TOOL,
+      RESOLVE_PENDING_FRIEND_TOOL,
+      DECLINE_FACE_INTRODUCTION_TOOL,
       SET_MOOD_TOOL,
       LIGHT_TOOL,
       GESTURE_TOOL,

@@ -45,6 +45,8 @@ final class RealtimeSessionConfigTests: XCTestCase {
                 ["type": "function", "name": "look_now"],
                 ["type": "function", "name": "remember_visible_friend"],
                 ["type": "function", "name": "resolve_visible_friend"],
+                ["type": "function", "name": "resolve_pending_friend"],
+                ["type": "function", "name": "decline_face_introduction"],
             ],
             instructions: "You are Rocky."
         )
@@ -52,7 +54,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
         let stripped = session(of: OpenAIRealtimeMinter.withoutRobotBody(input))
         let names = (stripped["tools"] as! [[String: Any]]).map { $0["name"] as! String }
 
-        XCTAssertEqual(names, ["look_now", "remember_visible_friend", "resolve_visible_friend"])
+        XCTAssertEqual(names, ["look_now", "remember_visible_friend", "resolve_visible_friend", "resolve_pending_friend", "decline_face_introduction"])
         XCTAssertEqual(stripped["tool_choice"] as! String, "auto")
         XCTAssertTrue((stripped["instructions"] as! String).contains("You can still see normally"))
     }
@@ -84,11 +86,11 @@ final class RealtimeSessionConfigTests: XCTestCase {
         let connectedSession = try XCTUnwrap(connected["session"] as? [String: Any])
         let voiceOnlySession = try XCTUnwrap(voiceOnly["session"] as? [String: Any])
         XCTAssertEqual(connectedSession["type"] as? String, "realtime")
-        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 11)
+        XCTAssertEqual((connectedSession["tools"] as? [Any])?.count, 13)
         XCTAssertEqual(connectedSession["tool_choice"] as? String, "auto")
         // Not zero: losing the body does not close Rocky's eyes.
         XCTAssertEqual(
-            (voiceOnlySession["tools"] as? [[String: Any]])?.map { $0["name"] as? String }, ["look_now", "remember_visible_friend", "resolve_visible_friend"]
+            (voiceOnlySession["tools"] as? [[String: Any]])?.map { $0["name"] as? String }, ["look_now", "remember_visible_friend", "resolve_visible_friend", "resolve_pending_friend", "decline_face_introduction"]
         )
         XCTAssertEqual(voiceOnlySession["tool_choice"] as? String, "auto")
         XCTAssertTrue(
@@ -123,7 +125,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
 
         let groups = try XCTUnwrap(setup["tools"] as? [[String: Any]])
         let tools = try XCTUnwrap(groups.first?["functionDeclarations"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 10)
+        XCTAssertEqual(tools.count, 12)
         XCTAssertTrue(tools.allSatisfy { $0["behavior"] as? String == "BLOCKING" })
         XCTAssertFalse(tools.contains { ($0["name"] as? String) == "look_now" })
         let firstSchema = try XCTUnwrap(tools.first?["parameters"] as? [String: Any])
@@ -136,7 +138,7 @@ final class RealtimeSessionConfigTests: XCTestCase {
         let setup = try XCTUnwrap(message["setup"] as? [String: Any])
         let groups = try XCTUnwrap(setup["tools"] as? [[String: Any]])
         let tools = try XCTUnwrap(groups.first?["functionDeclarations"] as? [[String: Any]])
-        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["remember_visible_friend", "resolve_visible_friend"])
+        XCTAssertEqual(tools.compactMap { $0["name"] as? String }, ["remember_visible_friend", "resolve_visible_friend", "resolve_pending_friend", "decline_face_introduction"])
     }
 
     func testER2LocalActivityIsGatedOnlyForPlaybackDiagnostics() {

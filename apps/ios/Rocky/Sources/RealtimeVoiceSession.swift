@@ -96,27 +96,41 @@ final class RealtimeVoiceSession: ObservableObject {
     private var latestFacePresence: FacePresence?
     private var projectedFacePresence: FacePresence?
     private var faceSequence = 0
-    private var faceArrivals = FaceArrivalPolicy()
-    private var offeredIntroduction = false
-    private var checkedFaceIDs: Set<UUID> = []
     private var faceIntroductionTask: Task<Void, Never>?
-    private var faceIntroductionGeneration = 0
+    private var scheduledFaceQuestion: FaceInteractionQuestion?
+    private var faceQuestionProvider: ((Date, Bool, TimeInterval) -> FaceInteractionQuestion?)?
+    private var faceQuestionStarted: ((UUID, Date) -> Void)?
+    private var faceQuestionFinished: ((UUID) -> Void)?
+    private var faceQuestionInterrupted: (() -> Void)?
+    private var faceSocialContext: (() -> String)?
+    private var faceBeginConversation: (() -> Void)?
+    private var pendingFaceResolver: ((String, String, Bool) -> [String: Any])?
+    private var faceDecline: (() -> Void)?
     private var outputGate = ConversationOutputGate()
-    private var faceRememberer: ((String, String) -> [String: Any])?
-    nonisolated static let faceMemoryToolNames: Set<String> = ["remember_visible_friend", "resolve_visible_friend"]
+    private var faceRememberer: ((String, String, String) -> [String: Any])?
+    nonisolated static let faceMemoryToolNames: Set<String> = ["remember_visible_friend", "resolve_visible_friend", "resolve_pending_friend", "decline_face_introduction"]
     private var faceResolver: ((String, String, Bool) -> [String: Any])?
 
     func useFaceResolver(_ handler: @escaping (String, String, Bool) -> [String: Any]) {
         faceResolver = handler
     }
 
-    func useFaceRememberer(_ handler: @escaping (String, String) -> [String: Any]) {
+    func useFaceRememberer(_ handler: @escaping (String, String, String) -> [String: Any]) {
         faceRememberer = handler
+    }
+    func useFaceInteraction(next: @escaping (Date, Bool, TimeInterval) -> FaceInteractionQuestion?,
+                            started: @escaping (UUID, Date) -> Void, finished: @escaping (UUID) -> Void,
+                            interrupted: @escaping () -> Void, context: @escaping () -> String,
+                            begin: @escaping () -> Void, decline: @escaping () -> Void,
+                            resolvePending: @escaping (String, String, Bool) -> [String: Any]) {
+        faceQuestionProvider = next; faceQuestionStarted = started; faceQuestionFinished = finished
+        faceQuestionInterrupted = interrupted; faceSocialContext = context; faceBeginConversation = begin
+        pendingFaceResolver = resolvePending
+        faceDecline = decline
     }
     private var userIsSpeaking = false
     private var lastUserSpeechAt = Date.distantPast
     private var connectedAt = Date()
-    private var faceArrivalTask: Task<Void, Never>?
     /// False until her first word of the session has been *heard*. The UI keeps the loading
     /// animation up until then, so "loading" ends when Rocky starts talking rather than when a
     /// socket happens to be ready.
@@ -311,9 +325,7 @@ final class RealtimeVoiceSession: ObservableObject {
         userIsSpeaking = false
         lastUserSpeechAt = .distantPast
         projectedFacePresence = nil
-        faceArrivals = FaceArrivalPolicy()
-        offeredIntroduction = false
-        checkedFaceIDs = []
+        if openingInstructions == nil { faceBeginConversation?() }
         outputGate = ConversationOutputGate()
         wakeBodyIfStill(reason: "voice start")
         // A reconnect gets a brand-new WebRTC track, which starts enabled.
@@ -653,6 +665,8 @@ final class RealtimeVoiceSession: ObservableObject {
         userIsSpeaking = false
         faceIntroductionTask?.cancel()
         faceIntroductionTask = nil
+        faceQuestionInterrupted?()
+        scheduledFaceQuestion = nil
         outputGate.suppress(activeResponseId)
         if behavior?.stillForVoicePause(id: "voice-paused") == true {
             log("robot moved into still (voice paused)")
@@ -725,6 +739,8 @@ final class RealtimeVoiceSession: ObservableObject {
         outputGate.suppress(activeResponseId)
         faceIntroductionTask?.cancel()
         faceIntroductionTask = nil
+        faceQuestionInterrupted?()
+        scheduledFaceQuestion = nil
         userIsSpeaking = false
         suspendActivePerformance(notifyVoice: false, reason: "app backgrounded")
         stopLocalAudio()
@@ -863,82 +879,28 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     func updateFacePresence(_ presence: FacePresence) {
-        faceArrivalTask?.cancel()
         latestFacePresence = presence
         flushFacePresence()
-        if [.off, .nobody, .multiple, .recognized].contains(presence.kind) {
-            faceIntroductionTask?.cancel()
-            faceIntroductionTask = nil
-        }
-        if (presence.kind == .unfamiliar && !offeredIntroduction
-            || presence.kind == .tentative && presence.friendID.map { !checkedFaceIDs.contains($0) } == true), faceIntroductionTask == nil {
-            faceIntroductionGeneration += 1
-            let epoch = faceIntroductionGeneration
-            faceIntroductionTask = Task { [weak self] in
-                defer {
-                    if self?.faceIntroductionGeneration == epoch { self?.faceIntroductionTask = nil }
-                }
-                for _ in 0..<60 {
-                    try? await Task.sleep(for: .seconds(1))
-                    guard !Task.isCancelled, let self else { return }
-                    if let current = self.latestFacePresence, current.kind == .tentative,
-                       let id = current.friendID, !self.checkedFaceIDs.contains(id),
-                       self.quietForFaceGreeting, Date().timeIntervalSince(self.connectedAt) >= 8 {
-                        self.checkedFaceIDs.insert(id)
-                        self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("verify_"), text: """
-                            <identity-check-moment friend_id="\(id.uuidString)" encounter_id="\(current.encounterID?.uuidString ?? "unavailable")">For the current tentative face only, ask one brief
-                            natural 'is that you?' question using the suggested name as a question,
-                            not a fact. If this person has already confirmed or rejected that identity
-                            in this conversation, do not ask again. Resolve their explicit answer with
-                            resolve_visible_friend using the exact IDs from this check. If no, follow
-                            up naturally to learn their name, not another guess. Never interrupt or
-                            explain scores. This cue is spent after this response.</identity-check-moment>
-                            """, role: "system"))
-                        self.requestResponse(reason: "tentative face identity check")
-                        return
-                    }
-                    // An uncertain frame can postpone the question, but must not erase the
-                    // opportunity. Ask only when a fresh stable unfamiliar face is visible NOW;
-                    // requestResponse flushes its CURRENT token, never the old encounter's.
-                    guard !self.offeredIntroduction, Self.shouldOfferFaceIntroduction(current: self.latestFacePresence,
-                        quiet: self.quietForFaceGreeting, conversationAge: Date().timeIntervalSince(self.connectedAt)) else { continue }
-                    self.offeredIntroduction = true // at most one unsolicited introduction per conversation
-                    self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("intro_"), text: """
-                        <new-friend-moment>One unfamiliar person has remained in view during a quiet
-                        moment. If you have not already introduced yourselves and they have not
-                        declined, ask their name in one short, natural line in your established
-                        voice. Do not restart the conversation or explain recognition. If you know
-                        their self-given name already, remember the current face/name without a
-                        separate permission question unless they asked not to be remembered. This cue
-                        is spent after this turn; a camera blip is not a reason to ask again. If
-                        they already declined or already introduced themselves, leave
-                        the quiet alone: no repeated question or replacement topic.</new-friend-moment>
-                        """, role: "system"))
-                    self.requestResponse(reason: "new friend introduction")
-                    return
-                }
-            }
-            return
-        }
-        if faceArrivals.observe(presence, at: Date(),
-                                conversationAge: Date().timeIntervalSince(connectedAt), quiet: quietForFaceGreeting) {
-            faceArrivalTask = Task { [weak self] in
-                // Let a nearby speech-start event win before starting an unsolicited hello.
+        guard faceIntroductionTask == nil, state == .connected else { return }
+        // One clock drives the reducer. Camera blips do not spawn/cancel independent social timers.
+        faceIntroductionTask = Task { [weak self] in
+            while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled, let self, self.quietForFaceGreeting,
-                      self.latestFacePresence == presence else { return }
-                // Keep the session's full character instructions. A response-level instructions
-                // override would replace them with this tiny situational nudge.
-                self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("arrival_"), text: """
-                    <friend-arrival face_seq="\(self.faceSequence)">A familiar friend has come into
-                    view during a quiet moment. For the next response only, offer one brief, warm
-                    line in your established voice, using their name only if natural. Do not
-                    announce recognition or ask a follow-up question. Then leave room for them.
-                    This event is spent after that response; do not greet again because of it.</friend-arrival>
-                    """, role: "system"))
-                self.requestResponse(reason: "familiar friend arrived")
+                guard !Task.isCancelled, let self else { return }
+                let now = Date()
+                guard let question = self.faceQuestionProvider?(now, self.quietForFaceGreeting,
+                    now.timeIntervalSince(self.connectedAt)) else { continue }
+                self.scheduledFaceQuestion = question
+                self.client.send(ConversationItemCreateEvent(id: Self.shortItemId("face_q_"),
+                    text: FaceConversation.questionCue(question), role: "system"))
+                self.requestResponse(reason: "face interaction \(question.kind.rawValue)")
             }
         }
+    }
+
+    func refreshFaceSocialContext() {
+        guard canReachVoice, let context = faceSocialContext?() else { return }
+        client.send(ConversationItemCreateEvent(id: Self.shortItemId("social_"), text: context, role: "system"))
     }
 
     private var quietForFaceGreeting: Bool {
@@ -957,7 +919,7 @@ final class RealtimeVoiceSession: ObservableObject {
         faceSequence += 1
         client.send(ConversationItemCreateEvent(
             id: Self.shortItemId("face_"),
-            text: FaceConversation.context(latestFacePresence, sequence: faceSequence), role: "system"
+            text: FaceConversation.context(latestFacePresence, sequence: faceSequence) + "\n" + (faceSocialContext?() ?? ""), role: "system"
         ))
         projectedFacePresence = latestFacePresence
         // No names, vectors, or scores in diagnostic logs.
@@ -1140,10 +1102,10 @@ final class RealtimeVoiceSession: ObservableObject {
     }
 
     func disconnect() {
-        faceArrivalTask?.cancel()
         faceIntroductionTask?.cancel()
         faceIntroductionTask = nil
-        faceArrivalTask = nil
+        faceQuestionInterrupted?()
+        scheduledFaceQuestion = nil
         latestFacePresence = .off
         projectedFacePresence = nil
         userIsSpeaking = false
@@ -1263,6 +1225,8 @@ final class RealtimeVoiceSession: ObservableObject {
     /// app has already queued locally, so that has to happen here or Rocky keeps talking over the
     /// person interrupting her.
     private func handleUserStartedSpeaking() {
+        faceQuestionInterrupted?()
+        scheduledFaceQuestion = nil
         // Clear a performance before stopping its player. `stop()` synchronously reports playback
         // drained; leaving the script active there would advance to the next movement exactly when
         // the person was trying to interrupt it.
@@ -1305,6 +1269,7 @@ final class RealtimeVoiceSession: ObservableObject {
     private func handleSpeakingChange(_ speaking: Bool) {
         client.setLocalPlaybackActive(speaking)
         if speaking {
+            if let question = scheduledFaceQuestion { faceQuestionStarted?(question.id, Date()) }
             noteRockyStartedSpeaking()
             return
         }
@@ -1454,6 +1419,11 @@ final class RealtimeVoiceSession: ObservableObject {
     /// One place where a turn ends, however it ended. The microphone stays open across ordinary
     /// turns and this refresh only matters if pause raced with response completion.
     private func finishResponse(reason: String) {
+        if let question = scheduledFaceQuestion {
+            if reason == "playback ended" { faceQuestionFinished?(question.id) }
+            else { faceQuestionInterrupted?() }
+            scheduledFaceQuestion = nil
+        }
         firstAudioWatchdog?.cancel()
         firstAudioWatchdog = nil
         turnWatchdog?.cancel()
@@ -1814,14 +1784,24 @@ final class RealtimeVoiceSession: ObservableObject {
         // (`OpenAIRealtimeMinter.phoneToolNames` is the other half of that -- it keeps this tool
         // when the body tools are stripped.)
         if name == "look_now" { return await lookNow() }
+        if name == "decline_face_introduction" {
+            faceDecline?()
+            return Self.encodeResult(["ok": true, "saved": false, "guidance": "Respect the refusal; keep following their topic without another introduction or memory question."])
+        }
+        if name == "resolve_pending_friend" {
+            struct Arguments: Decodable { let intent_id: String; let encounter_id: String; let confirmed: Bool }
+            let args = try JSONDecoder().decode(Arguments.self, from: data)
+            guard state == .connected, let pendingFaceResolver else {
+                return Self.encodeResult(["ok": false, "problem": "Face learning is suspended."])
+            }
+            return Self.encodeResult(pendingFaceResolver(args.intent_id, args.encounter_id, args.confirmed))
+        }
         if name == "resolve_visible_friend" {
             struct Arguments: Decodable { let friend_id: String; let encounter_id: String; let confirmed: Bool }
             let args = try JSONDecoder().decode(Arguments.self, from: data)
             guard state == .connected, let faceResolver else {
                 return Self.encodeResult(["ok": false, "problem": "Face memory is unavailable while conversation is paused."])
             }
-            // The tool-result continuation owns the name follow-up after a rejection.
-            if !args.confirmed { offeredIntroduction = true }
             return Self.encodeResult(faceResolver(args.friend_id, args.encounter_id, args.confirmed))
         }
         if name == "remember_visible_friend" {
@@ -1830,7 +1810,7 @@ final class RealtimeVoiceSession: ObservableObject {
             guard state == .connected, let faceRememberer else {
                 return Self.encodeResult(["ok": false, "problem": "Face memory is unavailable while conversation is paused."])
             }
-            return Self.encodeResult(faceRememberer(args.name, args.encounter_id))
+            return Self.encodeResult(faceRememberer(args.name, args.encounter_id, activeResponseId ?? callId))
         }
 
         guard let behavior, behavior.connected else {

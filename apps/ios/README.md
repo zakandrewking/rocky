@@ -358,15 +358,31 @@ blocks late voice output and tool continuations, and backgrounding mutes the mic
 the existing foreground recovery replaces the suspended connection. Playback with no completion
 progress has a finite watchdog deadline instead of treating stuck queued buffers as live speech.
 
-Self-introductions must reach the save tool in the same conversational response, even if the
-current single-face enrollment candidate is briefly uncertain. The tool can return **pending**,
-not success: a name stays in memory for at most ten seconds, bound to that exact encounter.
-Three stable frames complete it automatically. A brief eye/edge-quality failure can preserve
-continuity for at most 2.5 seconds from the last valid sample, but resets enrollment readiness.
-Face loss, groups, a descriptor switch, expired continuity, camera stop or pause cancel the
-request; a later person can never inherit it. Completion/cancellation becomes private context
-for Rocky's next ordinary turn, not a second unsolicited response. Logs record pending/saved/
-cancelled/failed categories without names, tokens, frames or vectors.
+`FaceInteractionState` is the native owner of social memory, questions and learning intents.
+`FaceInteractionPolicy` centralizes the initial tuning defaults: an 8-second evidence window,
+3 of the last 5 usable observations, 60-second social identity grace, 120-second unanswered
+question cooldown, 60-second introduction intent, and 2-second enrollment freshness. These
+are provisional interaction parameters, not population-accuracy claims. Bad frames are missing
+evidence; three contrary usable observations revoke a visual association. Conversational names
+and answered/declined questions survive camera blips and warm pause/resume without identifying
+who is currently speaking. A timer expiring never initiates a question by itself.
+
+Self-introductions must reach the save tool in the same response, even with an expired raw track
+token. A recently observed token supplies provenance, not authority to write stale biometrics.
+The reducer retains the name/intent and returns **pending**, not saved. Fresh stable evidence
+supporting the original face association can complete it automatically, including a new raw token
+whose face matches the introduction's own anchor at the confident identity threshold. Genuinely
+uncertain or different-person evidence needs one contextual clarification; `resolve_pending_friend`
+accepts an explicit answer only for the fresh face and the exact clarification actually spoken.
+No face/name transfers automatically to a different person. Camera shutdown cancels queued writes;
+names remain conversational knowledge. `decline_face_introduction` records refusals natively.
+
+One voice-loop clock polls native effects at quiet moments; independent arrival/introduction/retry
+timers no longer compete. Questions are scheduled, speaking, asked, answered or declined. An
+interruption before audio does not consume the question, while a spoken check observes cooldown.
+Confirmed answers stay answered for this conversation. Store success/failure is the authority for
+saved/failed status. Results become private context without interrupting the conversation or
+duplicating a tool result. Diagnostic transition logs omit names, tokens, frames and embeddings.
 
 For a reference from the exact conversation camera: while talking, face the phone and open
 **friends & face test…**, then choose **Use face just seen in conversation** and save the same name.
@@ -397,10 +413,9 @@ trends; they contain no names, photos, or vectors. The log may still contain con
 the existing voice diagnostics—treat exported session logs as private.
 
 Confirmed identities become quiet conversational context. Rocky can use a name without asking
-who is there, does not infer the speaker from a face, and does not narrate recognition. An arrival
-may prompt one short hello after a quiet beat, never during speech or a performance. The first
-15 seconds of a session, brief camera gaps, and a 60-second per-friend cooldown suppress repeated
-greetings. Names can reach the conversation provider; face vectors stay on the phone. Normal
+who is there, does not infer the speaker from a face, and does not narrate recognition. A camera
+reacquisition does not start a separate arrival greeting. Native cues wait for quiet and never
+interrupt speech or a performance. Names can reach the conversation provider; face vectors stay on the phone. Normal
 conversation logs may contain a name Rocky speaks, but recognition diagnostics contain no names,
 vectors, images or scores.
 

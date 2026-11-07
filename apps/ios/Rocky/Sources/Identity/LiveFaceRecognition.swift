@@ -71,16 +71,17 @@ struct FaceDistanceTrend {
 }
 
 struct FaceConsensus {
-    private var candidate: UUID?
-    private var streak = 0
+    private var observations: [(Date, UUID)] = []
     private var lastAt: Date?
     mutating func observe(_ id: UUID?, at: Date) -> Bool {
         guard lastAt.map({ at > $0 }) ?? true else { return false }
-        if candidate == id, let lastAt, at.timeIntervalSince(lastAt) <= 2.5 {
-            streak += 1
-        } else { candidate = id; streak = 1 }
         lastAt = at
-        return id != nil && streak >= 3
+        let policy = FaceInteractionPolicy()
+        observations = observations.filter { at.timeIntervalSince($0.0) <= policy.evidenceWindow }
+        guard let id else { return false } // unusable frames are not contrary evidence
+        observations.append((at, id))
+        observations = Array(observations.suffix(policy.observationLimit))
+        return observations.filter { $0.1 == id }.count >= policy.requiredAgreement
     }
 }
 
@@ -94,14 +95,30 @@ final class LiveFaceRecognition: ObservableObject {
     @Published private(set) var nearestDistance: Double?
     var onChange: ((FacePresence) -> Void)?
     var onSaveOutcome: ((_ name: String, _ saved: Bool, _ reason: String) -> Void)?
-    private struct PendingSave {
-        let name: String
-        let encounterID: UUID
-        let requestedAt: Date
-        let store: FriendStore
+    private(set) var interaction = FaceInteractionState()
+    var onInteractionChange: (() -> Void)?
+    private var learningStore: FriendStore?
+
+    func beginConversation() { interaction = FaceInteractionState(); learningStore = nil }
+    func declineIntroduction() { interaction.decline(); learningStore = nil; logInteraction("introduction_declined") }
+    func nextQuestion(at: Date, quiet: Bool, conversationAge: TimeInterval) -> FaceInteractionQuestion? {
+        retryPendingSave(at: at)
+        let question = interaction.nextQuestion(at: at, quiet: quiet, conversationAge: conversationAge)
+        if question != nil { logInteraction("question_scheduled") }
+        return question
     }
-    private var pendingSave: PendingSave?
-    private var pendingSaveTimeout: Task<Void, Never>?
+    func questionStarted(_ id: UUID, at: Date) {
+        guard interaction.questions.contains(where: { $0.question.id == id && $0.status == .scheduled }) else { return }
+        interaction.questionStarted(id, at: at); logInteraction("question_audio_started")
+    }
+    func questionFinished(_ id: UUID) {
+        guard interaction.questions.contains(where: { $0.question.id == id && $0.status == .speaking }) else { return }
+        interaction.finishQuestion(id); logInteraction("question_completed")
+    }
+    func questionInterrupted() {
+        guard interaction.questions.contains(where: { [.scheduled, .speaking].contains($0.status) }) else { return }
+        interaction.interruptQuestion(); logInteraction("question_interrupted")
+    }
     private var friends: [FriendProfile] = []
     private var generation = 0
     private var consensus = FaceConsensus()
@@ -129,7 +146,11 @@ final class LiveFaceRecognition: ObservableObject {
         RockyLog.write("faces: model=AuraFace-v1 configured saved=\(friends.count) usable=\(current) needs_refresh=\(friends.count - current)")
     }
     func reset() {
-        cancelPendingSave(reason: "camera or friend configuration changed")
+        let pendingName = interaction.intent?.name
+        let wasPending = [.waiting, .needsClarification, .saving].contains(interaction.learning)
+        interaction.suspend()
+        learningStore = nil
+        if wasPending, let pendingName { onSaveOutcome?(pendingName, false, "camera or friend configuration changed") }
         generation += 1
         validAfter = Date()
         lastProcessedAt = .distantPast
@@ -148,98 +169,100 @@ final class LiveFaceRecognition: ObservableObject {
     }
 
     @discardableResult
-    func rememberVisibleFriend(name: String, encounterID: String, store: FriendStore, at: Date = Date()) throws -> SaveDisposition {
-        guard [.unfamiliar, .unknown].contains(presence.kind), let token = UUID(uuidString: encounterID),
-              token == presence.encounterID, token == encounter.currentID(at: at) else {
-            RockyLog.write("faces: save rejected reason=encounter_changed")
-            throw FaceEnrollmentError.encounterChanged
-        }
+    func rememberVisibleFriend(name: String, encounterID: String, store: FriendStore, at: Date = Date(), sourceTurnID: String = "direct") throws -> SaveDisposition {
+        guard let token = UUID(uuidString: encounterID) else { throw FaceEnrollmentError.encounterChanged }
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, FriendStore.cleanName(name) == name else { throw FriendStoreError.invalidName }
         guard !store.vault.friends.contains(where: { $0.name.caseInsensitiveCompare(name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame }) else {
             throw FaceEnrollmentError.existingName
         }
-        if presence.kind == .unknown {
-            if let pendingSave {
-                // Idempotent retries cannot extend the deadline or silently change the name.
-                guard pendingSave.encounterID == token, pendingSave.name == name else {
-                    throw FaceEnrollmentError.encounterChanged
-                }
-                return .pending
-            }
-            pendingSave = PendingSave(name: name, encounterID: token, requestedAt: at, store: store)
-            RockyLog.write("faces: save pending reason=awaiting_same_face_stability")
-            pendingSaveTimeout = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled else { return }
-                self?.cancelPendingSave(reason: "pending save expired")
-            }
-            return .pending
+        try interaction.introduce(name: name, token: token, sourceTurnID: sourceTurnID, at: at)
+        learningStore = store
+        retryPendingSave(at: at)
+        logInteraction("name_reported")
+        if interaction.learning == .failed { throw FriendStoreError.incompatible }
+        return interaction.learning == .saved ? .saved : .pending
+    }
+
+    func resolvePendingFriend(intentID: String, encounterID: String, confirmed: Bool, at: Date = Date()) throws -> SaveDisposition {
+        guard let id = UUID(uuidString: intentID), let token = UUID(uuidString: encounterID) else {
+            throw FaceEnrollmentError.encounterChanged
         }
-        let reference = try encounter.referenceForEnrollment(token: encounterID, at: at)
-        clearPendingSave()
-        try store.remember(name: name, descriptor: reference)
-        RockyLog.write("faces: saved new conversation friend after self-introduction")
-        configure(store.vault.friends) // immediately revoke the single-use encounter token
-        return .saved
-    }
-
-    private func clearPendingSave() {
-        pendingSave = nil
-        pendingSaveTimeout?.cancel()
-        pendingSaveTimeout = nil
-    }
-
-    private func cancelPendingSave(reason: String) {
-        guard let request = pendingSave else { return }
-        clearPendingSave()
-        RockyLog.write("faces: pending save cancelled reason=\(reason)")
-        onSaveOutcome?(request.name, false, reason)
+        try interaction.resolveClarification(intentID: id, token: token, confirmed: confirmed, at: at)
+        retryPendingSave(at: at)
+        logInteraction("clarification_answered")
+        if interaction.learning == .failed { throw FriendStoreError.incompatible }
+        return interaction.learning == .saved ? .saved : .pending
     }
 
     private func retryPendingSave(at: Date) {
-        guard let request = pendingSave else { return }
-        guard (0..<10).contains(at.timeIntervalSince(request.requestedAt)) else {
-            cancelPendingSave(reason: "pending save expired")
-            return
+        interaction.tick(at: at)
+        if interaction.learning == .cancelled, learningStore != nil {
+            learningStore = nil
+            if let name = interaction.intent?.name { onSaveOutcome?(name, false, "pending association cancelled or expired; no face reference saved") }
+            logInteraction("intent_cancelled")
         }
-        guard encounter.currentID(at: at) == request.encounterID,
-              presence.encounterID == request.encounterID else {
-            cancelPendingSave(reason: "face encounter changed")
-            return
-        }
-        guard presence.kind == .unfamiliar else { return }
+        guard let store = learningStore, let request = interaction.claimSave(at: at) else { return }
         do {
-            let disposition = try rememberVisibleFriend(name: request.name, encounterID: request.encounterID.uuidString,
-                                                       store: request.store, at: at)
-            if disposition == .saved {
-                RockyLog.write("faces: pending save completed")
-                onSaveOutcome?(request.name, true, "same face became stable")
+            let reference = try encounter.referenceForEnrollment(token: request.encounterID.uuidString, at: at)
+            if let id = request.friendID {
+                try store.addConfirmedSample(friendID: id, descriptor: reference)
+            } else {
+                guard !store.vault.friends.contains(where: { $0.name.caseInsensitiveCompare(request.name) == .orderedSame }) else {
+                    throw FaceEnrollmentError.existingName
+                }
+                try store.remember(name: request.name, descriptor: reference)
             }
+            interaction.saved()
+            learningStore = nil
+            configure(store.vault.friends)
+            onSaveOutcome?(request.name, true, "reference persisted")
+            logInteraction("save_succeeded")
         } catch {
-            clearPendingSave()
-            RockyLog.write("faces: pending save failed reason=store_or_validation")
+            interaction.failed()
+            learningStore = nil
             onSaveOutcome?(request.name, false, error.localizedDescription)
+            logInteraction("save_failed")
         }
+    }
+
+    private func logInteraction(_ event: String) {
+        let age = interaction.intent.map { max(0, Int(Date().timeIntervalSince($0.createdAt))) } ?? 0
+        let question = interaction.questions.last?.status.rawValue ?? "none"
+        RockyLog.write("faces: interaction event=\(event) learning=\(interaction.learning.rawValue) intent_age_s=\(age) question=\(question) question_count=\(interaction.questions.count)")
+        onInteractionChange?()
     }
 
     /// A spoken yes adds only this continuous face's descriptor, never an image. A no drops
     /// this guess for the encounter and enables a normal self-introduction without touching disk.
-    func resolveVisibleFriend(friendID: String, encounterID: String, confirmed: Bool, store: FriendStore, at: Date = Date()) throws {
-        guard presence.kind == .tentative, let id = UUID(uuidString: friendID),
-              id == presence.friendID, UUID(uuidString: encounterID) == presence.encounterID else {
+    @discardableResult
+    func resolveVisibleFriend(friendID: String, encounterID: String, confirmed: Bool, store: FriendStore, at: Date = Date()) throws -> SaveDisposition {
+        guard let id = UUID(uuidString: friendID), let token = UUID(uuidString: encounterID),
+              let friend = store.vault.friends.first(where: { $0.id == id }) else {
             throw FaceEnrollmentError.encounterChanged
         }
-        let reference = try encounter.referenceForEnrollment(token: encounterID, at: at)
+        let current = presence.kind == .tentative && presence.friendID == id && presence.encounterID == token
+            && (try? encounter.referenceForEnrollment(token: encounterID, at: at)) != nil
+        guard current || interaction.canAnswerIdentity(friendID: id, token: token, at: at) else {
+            throw FaceEnrollmentError.encounterChanged
+        }
         if confirmed {
-            try store.addConfirmedSample(friendID: id, descriptor: reference)
-            RockyLog.write("faces: updated reference after spoken identity confirmation")
-            configure(store.vault.friends)
+            interaction.confirmedReference(friendID: id, name: friend.name, token: token, at: at)
+            learningStore = store
+            retryPendingSave(at: at)
         } else {
-            rejectedEncounter = presence.encounterID
-            publish(FacePresence(kind: .unfamiliar, encounterID: presence.encounterID))
+            interaction.answerIdentity(friendID: id, name: friend.name, confirmed: false)
+            if current {
+                rejectedEncounter = presence.encounterID
+                let next = FacePresence(kind: .unfamiliar, encounterID: presence.encounterID)
+                interaction.observe(next, descriptor: latestMeasurement?.descriptor, at: at)
+                publish(next)
+            }
             RockyLog.write("faces: tentative identity rejected; ready for self-introduction")
         }
+        logInteraction("identity_answered")
+        if interaction.learning == .failed { throw FriendStoreError.incompatible }
+        return interaction.learning == .saved ? .saved : .pending
     }
     func process(_ data: Data, capturedAt: Date) async {
         guard capturedAt >= validAfter, capturedAt > lastProcessedAt else { return }
@@ -283,12 +306,12 @@ final class LiveFaceRecognition: ObservableObject {
             tentativeCandidate = tentative?.id
             // A near-miss of a saved friend is uncertainty, not a stranger to re-introduce.
             let distinctUnfamiliar = assessment.nearestDistance.map { $0 > FaceMatcher.verificationDistance } ?? true
-            let token = encounter.observe(distinctUnfamiliar || tentative != nil || rejectedEncounter != nil ? measurement.descriptor : nil, at: capturedAt)
+            let token = encounter.observe(measurement.descriptor, at: capturedAt)
             if let rejectedEncounter, encounter.id != rejectedEncounter { self.rejectedEncounter = nil }
             if let token, token == rejectedEncounter {
                 proposed = FacePresence(kind: .unfamiliar, encounterID: token)
             } else if confirmed, let friend {
-                proposed = FacePresence(kind: .recognized, friendID: friend.id, name: friend.name)
+                proposed = FacePresence(kind: .recognized, friendID: friend.id, name: friend.name, encounterID: token)
             } else if verifiedCandidate, let tentative, let token {
                 proposed = FacePresence(kind: .tentative, friendID: tentative.id, name: tentative.name, encounterID: token)
             } else if distinctUnfamiliar, let token {
@@ -301,6 +324,8 @@ final class LiveFaceRecognition: ObservableObject {
                 encounter.suspendForQuality(at: capturedAt)
             default:
                 encounter.reset()
+                consensus = FaceConsensus()
+                tentativeConsensus = FaceConsensus()
                 rejectedEncounter = nil
                 tentativeCandidate = nil
             }
@@ -317,6 +342,7 @@ final class LiveFaceRecognition: ObservableObject {
                 report(captureError.localizedDescription)
             } else { report("feature extraction failed") }
         }
+        interaction.observe(proposed, descriptor: latestMeasurement?.descriptor, at: capturedAt)
         publish(proposed)
         let savedGeneration = generation
         retryPendingSave(at: max(Date(), capturedAt))
@@ -332,7 +358,8 @@ final class LiveFaceRecognition: ObservableObject {
             self.nearestDistance = nil
             self.latestMeasurement = nil
             self.encounter.reset()
-            self.cancelPendingSave(reason: "camera results expired")
+            self.interaction.observe(.init(kind: .unknown), at: Date())
+            self.logInteraction("visual_evidence_expired")
             self.publish(FacePresence(kind: .unknown))
         }
     }
