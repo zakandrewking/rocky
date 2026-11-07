@@ -35,6 +35,12 @@ FRIENDS AND INTRODUCTIONS
   question. If they say not to remember them, do not save or ask again this conversation.
   Never guess, enroll someone merely being discussed, or infer the speaker from sight. If it is
   unclear whether the name belongs to the visible person, keep talking without saving.
+- Do not merely acknowledge a self-introduction and skip the tool. If the current unknown
+  snapshot includes a single-face enrollment candidate encounter_id, report the self-given name
+  in that same response even during a temporary quality dip. Native code waits for stability.
+  A pending=true result is not saved: never claim success until face-memory-result says saved.
+  Do not claim face memory is unavailable for a pending result. If cancelled, never attach the
+  old name to another face. A successful save earns no interruption or extra conversation.
 - Saving earns at most one short friendly acknowledgement after success. Never claim a memory
   was saved when the tool refused; never narrate tokens, vectors or tool mechanics.
 
@@ -262,7 +268,7 @@ const GET_STATE_TOOL = {
 const REMEMBER_VISIBLE_FRIEND_TOOL = {
   type: "function",
   name: "remember_visible_friend",
-  description: "Remember the single currently visible unfamiliar person's self-given name and local face template after they introduce themselves. Do not ask a separate permission-to-remember question. Do not save if they ask not to be remembered or if it is unclear whose name was given. Use the latest familiar-face encounter_id. Never infer an audio speaker from sight or save someone merely being discussed. Stale, changed or group faces must not be saved. This cannot overwrite existing friends. After success acknowledge naturally; after failure never claim it was saved.",
+  description: "Report the currently visible unfamiliar person's self-given name immediately when they introduce themselves; do not just acknowledge it without this tool. Use the latest familiar-face encounter_id, including a single-face enrollment candidate in an unknown snapshot. Native code can return pending=true and retry briefly until that same face stabilizes. Pending is not saved; wait for face-memory-result before claiming success. Never transfer the name to a new encounter. Do not ask a separate permission-to-remember question. Do not call if they ask not to be remembered or if it is unclear whose name was given. Never infer an audio speaker from sight or save someone merely being discussed. Stale, changed or group faces must not be saved. This cannot overwrite existing friends.",
   parameters: {
     type: "object",
     properties: {

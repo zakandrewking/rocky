@@ -64,4 +64,29 @@ final class FaceEncounterTests: XCTestCase {
         XCTAssertTrue(context.contains("a no leaves that friend's samples untouched"))
         XCTAssertFalse(context.contains("I recognize one visible saved friend"))
     }
+
+    func testQualityDipPreservesOnlyShortContinuityNotEnrollmentReadiness() throws {
+        var encounter = FaceEncounter()
+        let now = Date()
+        for i in 0..<3 { _ = encounter.observe(vector(), at: now.addingTimeInterval(Double(i))) }
+        let token = try XCTUnwrap(encounter.id).uuidString
+        encounter.suspendForQuality(at: now.addingTimeInterval(3))
+        XCTAssertEqual(encounter.currentID(at: now.addingTimeInterval(3))?.uuidString, token)
+        XCTAssertThrowsError(try encounter.referenceForEnrollment(token: token, at: now.addingTimeInterval(3)))
+        XCTAssertNil(encounter.observe(vector(), at: now.addingTimeInterval(3.1)))
+        XCTAssertNil(encounter.observe(vector(), at: now.addingTimeInterval(3.2)))
+        XCTAssertEqual(encounter.observe(vector(), at: now.addingTimeInterval(3.3))?.uuidString, token)
+        encounter.suspendForQuality(at: now.addingTimeInterval(6))
+        XCTAssertNil(encounter.id)
+    }
+
+    func testUncertainEnrollmentContextReportsNameWithoutClaimingIdentityOrSave() {
+        let id = UUID()
+        let context = FaceConversation.context(.init(kind: .unknown, encounterID: id), sequence: 1)
+        XCTAssertTrue(context.contains(id.uuidString))
+        XCTAssertTrue(context.contains("single-face enrollment candidate"))
+        XCTAssertTrue(context.contains("Do not merely acknowledge a self-introduction and skip the tool"))
+        XCTAssertTrue(context.contains("pending=true is NOT saved"))
+        XCTAssertFalse(context.contains("I recognize one visible saved friend"))
+    }
 }

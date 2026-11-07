@@ -358,6 +358,16 @@ blocks late voice output and tool continuations, and backgrounding mutes the mic
 the existing foreground recovery replaces the suspended connection. Playback with no completion
 progress has a finite watchdog deadline instead of treating stuck queued buffers as live speech.
 
+Self-introductions must reach the save tool in the same conversational response, even if the
+current single-face enrollment candidate is briefly uncertain. The tool can return **pending**,
+not success: a name stays in memory for at most ten seconds, bound to that exact encounter.
+Three stable frames complete it automatically. A brief eye/edge-quality failure can preserve
+continuity for at most 2.5 seconds from the last valid sample, but resets enrollment readiness.
+Face loss, groups, a descriptor switch, expired continuity, camera stop or pause cancel the
+request; a later person can never inherit it. Completion/cancellation becomes private context
+for Rocky's next ordinary turn, not a second unsolicited response. Logs record pending/saved/
+cancelled/failed categories without names, tokens, frames or vectors.
+
 For a reference from the exact conversation camera: while talking, face the phone and open
 **friends & face test…**, then choose **Use face just seen in conversation** and save the same name.
 The option appears only when a single, successfully processed face is less than two seconds old

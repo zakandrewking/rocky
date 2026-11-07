@@ -1,7 +1,8 @@
 import Foundation
 
 /// Temporary anonymous continuity, not another identity database. A token names one continuous
-/// single-face encounter, never an audio speaker. Any gap, switch, group, or camera reset revokes it.
+/// single-face encounter, never an audio speaker. A missing face, switch, group, or camera reset
+/// revokes it. One brief quality dip may preserve the token, but never enrollment readiness.
 struct FaceEncounter {
     private(set) var id: UUID?
     private(set) var reference: FaceFeaturePrintDescriptor?
@@ -20,6 +21,17 @@ struct FaceEncounter {
     }
 
     mutating func reset() { id = nil; reference = nil; count = 0; lastAt = nil }
+
+    func currentID(at: Date) -> UUID? {
+        guard let lastAt, (0...2.5).contains(at.timeIntervalSince(lastAt)) else { return nil }
+        return id
+    }
+
+    mutating func suspendForQuality(at: Date) {
+        // Do not advance lastAt: repeated bad frames cannot keep an old encounter alive.
+        if currentID(at: at) == nil { reset() }
+        else { count = 0 }
+    }
 
     func referenceForEnrollment(token: String, at: Date) throws -> FaceFeaturePrintDescriptor {
         guard let id, UUID(uuidString: token) == id, count >= 3, let lastAt,

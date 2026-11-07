@@ -556,6 +556,21 @@ Decisions already made:
   an assumption that the app container or Keychain happened to survive deletion.
 
 - [ ] **Dedicated face-model replacement — active, Apple baseline rejected by real use.**
+  **2026-11-06 pending self-introduction save:** latest approved log shows zero profiles at the
+  latest conversation start, no save call after Zach's introduction, then Elise's save call while
+  local presence was unknown; stability returned with no retry. New name-reporting instructions
+  require the tool in the same response even for a current single-face enrollment candidate.
+  Native code queues a validated name for up to ten seconds, bound to that exact encounter,
+  and saves once it has three stable frames. Only brief eyes/edge-quality failures preserve a
+  token (<=2.5 seconds from last valid sample), never readiness; missing/group/switched faces,
+  expired continuity, camera stop/pause/reset cancel. No late name transfers across people.
+  Pending is explicitly not saved. Native completion/cancellation becomes private context for
+  the next normal voice turn, not a second tool result or unsolicited response (OpenAI Docs
+  guided this distinction). Diagnostic status/reason logs omit names/tokens/media/vectors.
+  Full `pnpm check` passes: 205 iOS tests, five hardware-only skips, zero failures, plus service
+  tests, lint/typecheck/build. Signed device build passes and is installed on the 14 Pro. Phone was unlocked at preflight but
+  relocked before focused hardware tests could launch; that waiting runner was canceled, not
+  left to launch later. Real conversation name-save acceptance is still pending.
   **2026-11-06 tentative identity band:** retain confident <=0.90, add >0.90 through1.20
   for a three-frame, person-margin-separated tentative identity. During a quiet pause, check
   once per candidate per conversation rather than claiming recognition. Explicit yes through

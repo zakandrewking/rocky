@@ -143,6 +143,9 @@ struct ContentView: View {
             liveFaces.onChange = { [weak voiceSession] presence in
                 voiceSession?.updateFacePresence(presence)
             }
+            liveFaces.onSaveOutcome = { [weak voiceSession] name, saved, reason in
+                voiceSession?.noteFaceSaveOutcome(name: name, saved: saved, reason: reason)
+            }
             configureFriends()
             voiceSession.useFaceResolver { [weak liveFaces, weak friends] friendID, encounter, confirmed in
                 guard let liveFaces, let friends else { return ["ok": false, "problem": "Face memory is unavailable."] }
@@ -156,8 +159,11 @@ struct ContentView: View {
             voiceSession.useFaceRememberer { [weak liveFaces, weak friends] name, encounter in
                 guard let liveFaces, let friends else { return ["ok": false, "problem": "Face memory is unavailable."] }
                 do {
-                    try liveFaces.rememberVisibleFriend(name: name, encounterID: encounter, store: friends)
-                    return ["ok": true, "saved": true, "guidance": "The new friend is saved locally. Acknowledge warmly in a short natural line, then continue the shared topic. Do not describe the tool or storage."]
+                    let disposition = try liveFaces.rememberVisibleFriend(name: name, encounterID: encounter, store: friends)
+                    let saved = disposition == .saved
+                    return ["ok": true, "saved": saved, "pending": !saved, "guidance": saved
+                        ? "The new friend is saved locally. Acknowledge warmly in a short natural line, then continue the shared topic. Do not describe the tool or storage."
+                        : "The name is pending for this same continuous face, not saved yet. The phone will retry automatically for up to ten seconds; do not call again or claim success. Briefly ask them to keep their face centered if useful, then keep the conversation natural. Do not claim face memory is unavailable. A later face-memory-result will confirm saved or cancelled."]
                 } catch { return ["ok": false, "saved": false, "problem": error.localizedDescription] }
             }
             behavior.onControlTrace = { [weak navigationProbe] event in

@@ -13,7 +13,9 @@ enum FaceConversation {
             description = "One face might be saved friend \(name), but this is NOT a confirmed identity. friend_id=\(presence.friendID?.uuidString ?? "unavailable") encounter_id=\(presence.encounterID?.uuidString ?? "unavailable")."
         case .nobody: description = "No face is visible now; earlier face matches are no longer current."
         case .multiple: description = "Multiple faces are visible. I cannot confidently assign names or identify the speaker."
-        case .unknown: description = "I cannot confidently recognize a face right now. Do not carry a previous visual identity forward."
+        case .unknown:
+            description = "I cannot confidently recognize a face right now. Do not carry a previous visual identity forward."
+                + (presence.encounterID.map { " A single-face enrollment candidate is still current: encounter_id=\($0.uuidString). You may report a self-given name with remember_visible_friend now; native code will wait for stability before saving. This is not a recognized identity." } ?? "")
         case .unfamiliar:
             description = "One stable unfamiliar face is visible. Its temporary encounter_id is \(presence.encounterID?.uuidString ?? "unavailable"). This is not proof of who is speaking."
         case .off: description = "Local face recognition is off; earlier visual identities are no longer current."
@@ -38,6 +40,11 @@ enum FaceConversation {
         latest encounter_id and their self-given name. Do not ask a separate permission-to-remember
         question. If they say not to remember them, do not save. If it is unclear whether the name
         belongs to the visible person, keep talking without saving; never guess.
+        Do not merely acknowledge a self-introduction and skip the tool. A current single-face
+        enrollment candidate in an unknown snapshot also accepts the name: call in that same
+        response, even while quality is temporarily uncertain. Native code owns stability checks.
+        pending=true is NOT saved: wait for face-memory-result and never claim success early.
+        A failed or cancelled request cannot carry its name onto a different encounter.
         Keep a declined introduction spent for this conversation. Do not re-ask after camera blips.
         A known friend or an uncertain/near-matching face never needs another introduction.
         Do not announce recognition, scores, camera changes, or enrollment mechanics. Do not infer

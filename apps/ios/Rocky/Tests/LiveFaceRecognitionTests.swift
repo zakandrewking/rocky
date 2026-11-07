@@ -213,6 +213,97 @@ final class LiveFaceRecognitionTests: XCTestCase {
         live.reset()
     }
 
+    @MainActor
+    func testPendingNameSavesExactlyOnceWhenSameFaceStabilizes() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
+        let live = LiveFaceRecognition()
+        live.configure([])
+        let now = Date()
+        live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now)
+        XCTAssertEqual(live.presence.kind, .unknown)
+        let token = try XCTUnwrap(live.presence.encounterID).uuidString
+        var outcomes: [Bool] = []
+        live.onSaveOutcome = { _, saved, _ in outcomes.append(saved) }
+        XCTAssertEqual(try live.rememberVisibleFriend(name: "Zach", encounterID: token, store: store,
+                                                     at: now.addingTimeInterval(0.01)), .pending)
+        XCTAssertTrue(store.vault.friends.isEmpty)
+        // Same retry is idempotent; a different name cannot replace the pending association.
+        XCTAssertEqual(try live.rememberVisibleFriend(name: "Zach", encounterID: token, store: store,
+                                                     at: now.addingTimeInterval(0.02)), .pending)
+        XCTAssertThrowsError(try live.rememberVisibleFriend(name: "Elise", encounterID: token, store: store,
+                                                           at: now.addingTimeInterval(0.02)))
+        for t in [0.1, 0.2] {
+            live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(t))
+        }
+        XCTAssertEqual(store.vault.friends.map(\.name), ["Zach"])
+        XCTAssertEqual(outcomes, [true])
+        XCTAssertEqual(FriendStore(url: directory.appendingPathComponent("vault.json")).vault, store.vault)
+        live.reset()
+        XCTAssertEqual(outcomes, [true])
+    }
+
+    @MainActor
+    func testQualityDipQueuesNameAndRequiresThreeFreshSameFaceFrames() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FriendStore(url: directory.appendingPathComponent("vault.json"))
+        let live = LiveFaceRecognition()
+        live.configure([])
+        let now = Date()
+        for t in [0.0, 0.1, 0.2] {
+            live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(t))
+        }
+        let token = try XCTUnwrap(live.presence.encounterID).uuidString
+        live.accept(.failure(FaceProbeCapture.CaptureError.faceNearEdge), capturedAt: now.addingTimeInterval(0.3))
+        XCTAssertEqual(live.presence.kind, .unknown)
+        XCTAssertEqual(live.presence.encounterID?.uuidString, token)
+        XCTAssertEqual(try live.rememberVisibleFriend(name: "Elise", encounterID: token, store: store,
+                                                     at: now.addingTimeInterval(0.4)), .pending)
+        for t in [0.5, 0.6] {
+            live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(t))
+            XCTAssertTrue(store.vault.friends.isEmpty)
+        }
+        live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(0.7))
+        XCTAssertEqual(store.vault.friends.map(\.name), ["Elise"])
+        live.reset()
+    }
+
+    @MainActor
+    func testPendingNameNeverTransfersAcrossSwitchLossGroupResetOrDeadline() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for reason in ["switch", "loss", "group", "reset", "deadline", "quality-gap"] {
+            let store = FriendStore(url: directory.appendingPathComponent("\(reason).json"))
+            let live = LiveFaceRecognition()
+            live.configure([])
+            let now = Date()
+            live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now)
+            let token = try XCTUnwrap(live.presence.encounterID).uuidString
+            var outcomes: [Bool] = []
+            live.onSaveOutcome = { _, saved, _ in outcomes.append(saved) }
+            _ = try live.rememberVisibleFriend(name: "Zach", encounterID: token, store: store,
+                                               at: now.addingTimeInterval(0.01))
+            switch reason {
+            case "switch": live.accept(.success(.init(descriptor: vector(2), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(0.1))
+            case "loss": live.accept(.failure(FaceProbeCapture.CaptureError.noFace), capturedAt: now.addingTimeInterval(0.1))
+            case "group": live.accept(.failure(FaceProbeCapture.CaptureError.multipleFaces), capturedAt: now.addingTimeInterval(0.1))
+            case "deadline": live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: now.addingTimeInterval(11))
+            case "quality-gap": live.accept(.failure(FaceProbeCapture.CaptureError.eyesMissing), capturedAt: now.addingTimeInterval(3))
+            default: live.reset()
+            }
+            // Even a later stable face cannot inherit a cancelled name.
+            let later = Date().addingTimeInterval(12)
+            for t in [0.0, 0.1, 0.2] {
+                live.accept(.success(.init(descriptor: vector(), elapsedMilliseconds: 1)), capturedAt: later.addingTimeInterval(t))
+            }
+            XCTAssertTrue(store.vault.friends.isEmpty, reason)
+            XCTAssertEqual(outcomes, [false], reason)
+            live.reset()
+        }
+    }
+
     func testDistanceTrendsAreBoundedFiniteAndThrottled() throws {
         var trend = FaceDistanceTrend()
         let now = Date()

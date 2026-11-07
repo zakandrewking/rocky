@@ -37,6 +37,8 @@ describe("createDeviceSessionConfig", () => {
     expect(tool?.parameters).not.toHaveProperty("properties.consent");
     expect(config.instructions).toContain("Do not ask a separate permission-to-remember");
     expect(config.instructions).toContain("If they say not to remember them, do not save");
+    expect(config.instructions).toContain("Do not merely acknowledge a self-introduction and skip the tool");
+    expect(config.instructions).toContain("A pending=true result is not saved");
   });
   it("speaks as Rocky", () => {
     const rocky = createDeviceSessionConfig({ character: ROCKY }) as SessionConfig;
