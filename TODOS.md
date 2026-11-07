@@ -556,6 +556,70 @@ Decisions already made:
   an assumption that the app container or Keychain happened to survive deletion.
 
 - [ ] **Dedicated face-model replacement — active, Apple baseline rejected by real use.**
+  **Action plan — temporal social-memory state machine (2026-11-06; proposed defaults).**
+  Supersedes the short-lived encounter token as the owner of a conversational introduction.
+  Latest failed run: Julian's save call returned `encounter_changed` before entering the queue;
+  no pending save existed, and stability returned later without recovery. Do not paper over this
+  with another prompt-only change or blindly relax biometric matching thresholds.
+
+  1. **Separate three lifetimes in a single native reducer.** Conversation participants retain
+     self-given names, answered questions, declines/corrections and source turn IDs for the active
+     conversation. A social encounter links recent evidence to a possible participant, with
+     explicit confidence/freshness; raw camera tracks can come and go without creating a new
+     social encounter. Enrollment is a separate intent: pending / needs clarification / saving /
+     saved / cancelled / failed. Persistence success must come from the store, not generated text.
+     A face is not an audio-speaker identity. Camera-off/background suspends evidence and cancels
+     queued writes, but a warm resume need not forget who already introduced themselves.
+
+  2. **Centralize a small `FaceInteractionPolicy` configuration.** Initial tuning values, not
+     empirically validated accuracy claims:
+
+     | Parameter | Initial value | Meaning |
+     | --- | --- | --- |
+     | Evidence window / agreement | 8 s / 3 of last 5 usable observations | Aggregate good samples; bad frames are missing evidence, not a different person. Require mutually consistent descriptors and existing person margin. |
+     | Social identity grace | 60 s since supporting sight | Tolerate intermittent visibility without another hello or identity question. After grace, sight is stale, not proof the participant changed. |
+     | Identity-question cooldown | 120 s per proposed participant | Minimum spacing for an unanswered check. Once answered, suppress repeats for this conversation unless a sustained contradiction or explicit correction requires clarification. Timer expiry never triggers a question by itself. |
+     | Person-change evidence | 3 of last 5 usable observations | One contrary frame cannot replace a participant. Consistent different-person evidence revokes the visual association promptly, even during grace. Groups suspend association. |
+     | Pending introduction lifetime | 60 s | Retain the name/intent through camera dips. After expiry, stop automatic recovery but retain the conversational name; never attach it to whichever face appears next. |
+     | Enrollment evidence freshness | 2 s | A write needs current, consistent single-face evidence and an established name-to-face association. The 60-second grace is never permission to write stale biometrics. |
+
+     Retain confident <=0.90, tentative <=1.20, margin >=0.10 as separate provisional biometric
+     parameters. Do not confuse an interaction timeout with a biometric score threshold.
+
+  3. **Implement explicit transitions and one owner for questions.** Events include name heard,
+     identity confirmed/rejected, usable face evidence, quality dip, missing/group/different face,
+     elapsed time, camera lifecycle, and store success/failure. Reducer emits effects such as ask
+     name, verify identity, request clarification, persist sample, or keep quiet. Store question
+     status (scheduled / actually spoken / answered / declined), rather than marking it spent when
+     a response is merely requested; a barge-in may cancel a question before it is heard. Remove
+     competing introduction/arrival/retry timers in RealtimeVoiceSession once the reducer owns it.
+
+  4. **Recover a save without transferring a name.** A name-reporting tool creates an intent even
+     if its raw track token has expired; token expiry alone must not erase the introduction.
+     Keep its original evidence/provenance. Fresh reacquisition can complete it only when the
+     association is still supported. If continuity is genuinely lost or a different person appears,
+     transition to needs clarification, not automatic save. At the next natural pause ask one
+     contextual identity question (e.g. "Were you the one who said Julian?"); explicit confirmation
+     binds new evidence. This is not permission-to-remember. A no leaves the guessed profile
+     untouched and invites the current person's name. Pending/failed results never sound saved.
+
+  5. **Replay real failure shapes with a fake clock before phone rollout.** Cover a full minute
+     of focus/visibility oscillation; score jitter around 0.90/1.20; name reported after track-token
+     expiry; interrupted question before first audio; stable reacquisition; a new person during a
+     pending save; groups; explicit no/correction; silence; grace/cooldown/intent expiry; store
+     failure; pause/background/resume. Assert no repeat question after an answer, at most one
+     unresolved clarification, no name transfer, no stale write, and exactly one successful save.
+     Add bounded categorical transition logs (event/reason, state, ages and counts; no names,
+     embeddings/images or raw tokens). Capture score/continuity trends separately to tune from
+     evidence rather than guessing why an encounter changed.
+
+  6. **Integrate, then validate a one-minute conversation on the 14 Pro.** Keep embeddings and
+     face inference local, preserve full persona and barge-in behavior, and avoid a new camera or
+     audio graph. Pass relevant tests/typecheck/lint and signed build before installing. Acceptance:
+     introduce once, move naturally in/out of focus for a minute, see one verified disk save and
+     no repeated identity interrogation; then swap people and prove the old name is not reused.
+     Tune timing first from the resulting traces, with explicit reasons for any biometric changes.
+
   **2026-11-06 pending self-introduction save:** latest approved log shows zero profiles at the
   latest conversation start, no save call after Zach's introduction, then Elise's save call while
   local presence was unknown; stability returned with no retry. New name-reporting instructions
